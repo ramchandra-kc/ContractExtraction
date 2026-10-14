@@ -10,6 +10,9 @@ dependencies = [
     "python-dotenv>=1.0",
     "sqlalchemy>=2.0.36",
     "psycopg[binary]>=3.2",
+    "httpx>=0.27",
+    "pymupdf>=1.25",
+    "pdf-converter",
 ]
 
 [project.scripts]
@@ -25,6 +28,17 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/contract_extraction"]
 
+[tool.uv.sources]
+# PDF -> page JSON (pymupdf / ocr / hybrid), pinned to a tested commit.
+pdf-converter = { git = "https://github.com/ramchandra-kc/PdfConverter.git", rev = "6e90fe635c3e8ecf6a2d7ec694622df452e9b826" }
+# pdf-converter depends on this pymupdf4llm fork by URL; uv needs it declared here too.
+pymupdf4llm = { git = "https://github.com/ramchandra-kc/pymupdf4llm.git", subdirectory = "pymupdf4llm", rev = "fb01d614e38e2280ab95e0969621e940473c99fe" }
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra"
+addopts = "-ra -m 'not live'"
+markers = [
+    "live: needs real Ollama and Qdrant (run with CE_LIVE=1 uv run pytest -m live)",
+    "ocr: needs Tesseract installed",
+]
+filterwarnings = ["ignore:builtin type .* has no __module__ attribute:DeprecationWarning"]

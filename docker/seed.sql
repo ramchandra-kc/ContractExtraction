@@ -67,7 +67,10 @@ Rules:
 
 -- Decomposition and indexing
 INSERT INTO decomposition_configs (name, description, method, text_format)
-VALUES ('default', 'pymupdf4llm Markdown, invisible OCR text kept, repeating headers/footers removed', 'pymupdf', 'md');
+VALUES
+    ('default', 'pymupdf4llm Markdown, invisible OCR text kept, repeating headers/footers removed', 'pymupdf', 'md'),
+    ('ocr',     'Tesseract OCR of rendered pages (scanned PDFs without a text layer), Markdown',       'ocr',     'md'),
+    ('hybrid',  'pymupdf text where available, OCR for image regions, Markdown',                     'hybrid',  'md');
 
 INSERT INTO index_configs (name, description, embedding_model_id, chunk_size, chunk_overlap, vector_store, distance)
 SELECT 'default', '2000-char chunks with 300 overlap, nomic-embed-text, Qdrant', id, 2000, 300, 'qdrant', 'cosine'

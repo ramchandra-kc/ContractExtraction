@@ -24,6 +24,7 @@ from sqlalchemy.orm import Session  # noqa: E402
 from contract_extraction.core.settings import BACKEND_ROOT, load_settings  # noqa: E402
 from contract_extraction.persistence.db import Database  # noqa: E402
 from contract_extraction.storage import FileStorage  # noqa: E402
+from helpers import make_pdf  # noqa: E402
 
 DOCKER_DIR = BACKEND_ROOT.parent / "docker"
 
@@ -80,3 +81,8 @@ def db(engine: Engine) -> Database:
 @pytest.fixture
 def storage(tmp_path) -> FileStorage:
     return FileStorage(tmp_path / "storage")
+
+
+@pytest.fixture
+def sample_pdf(tmp_path):
+    return make_pdf(tmp_path / "msa.pdf")

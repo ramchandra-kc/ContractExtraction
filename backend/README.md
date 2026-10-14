@@ -10,9 +10,16 @@ See [architecture §4–§8](../docs/architecture.md).
 cd backend
 uv sync
 docker compose -f ../docker/docker-compose.yml up -d --build --wait   # Postgres + Qdrant
-uv run contract-extraction check                                      # settings, DB, schema, default pipeline
+uv run contract-extraction check                                      # settings, DB, schema, pipeline, Qdrant, LLM providers
+uv run contract-extraction ingest path/to/contract.pdf                # register → decompose → chunk → embed → index
 uv run pytest
 ```
+
+`ingest` reuses earlier work. The same file is stored once. The latest decomposition with the pipeline's decomposition config is reused
+unless you pass `--redecompose`. A ready index is reused, and it's rebuilt from its stored chunk rows if the Qdrant collection was lost.
+Use `--pipeline NAME` for a non-default pipeline config.
+
+OCR and hybrid decomposition (`decomposition_configs` rows `ocr` and `hybrid`) need Tesseract (`brew install tesseract`).
 
 ## Configuration
 
@@ -31,9 +38,13 @@ src/contract_extraction/
   core/          settings, logging, errors
   domain/        enums mirroring the schema's CHECK values; resolved pipeline config (frozen, snapshot())
   persistence/   db.py (engine, sessions), models.py (ORM mirroring docker/schema.sql), repositories/
+  providers/     chat, embedding and vector-store clients: Ollama, OpenAI-compatible (OpenRouter), Qdrant, in-memory
+  decomposition/ pdf-converter wrapper (pymupdf / ocr / hybrid), header/footer removal, decomposition stage
+  indexing/      chunking (per page, exact offsets, overlap), indexer (embed, upsert, chunk rows)
+  ingestion.py   register → decompose → index, reusing earlier work
   storage.py     local file storage (staging + hashing, per-document folders, path guards)
   secrets.py     API key lookup by the env var named in the database
-  cli.py         contract-extraction check
+  cli.py         contract-extraction check | ingest
 ```
 
 ## Tests
@@ -41,6 +52,10 @@ src/contract_extraction/
 `uv run pytest` recreates the `contract_extraction_test` database from `docker/schema.sql` and `docker/seed.sql`, then rolls back
 each test. Point it elsewhere with `TEST_DATABASE_URL` (the database name must end in `_test`). Without a reachable Postgres, the
 database tests are skipped.
+
+Markers:
+- `ocr` tests need Tesseract.
+- `live` tests are deselected by default. Run them against real Ollama and Qdrant with `CE_LIVE=1 uv run pytest -m live`.
 
 `tests/test_schema_matches_orm.py` compares `persistence/models.py` with the live schema (tables, columns, types, nullability, keys).
 Run it after editing `schema.sql`.

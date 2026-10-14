@@ -336,7 +336,8 @@ CREATE TABLE decompositions (
     storage_dir             text        NOT NULL,
     page_count              integer     NOT NULL,
     duration_ms             integer     NOT NULL,
-    created_at              timestamptz NOT NULL DEFAULT now(),
+    -- clock_timestamp(): several decompositions created in one transaction must still be ordered.
+    created_at              timestamptz NOT NULL DEFAULT clock_timestamp(),
     CONSTRAINT pk_decompositions PRIMARY KEY (id),
     CONSTRAINT fk_decompositions_document_id FOREIGN KEY (document_id) REFERENCES documents (id) ON DELETE CASCADE,
     CONSTRAINT fk_decompositions_decomposition_config_id FOREIGN KEY (decomposition_config_id) REFERENCES decomposition_configs (id),
