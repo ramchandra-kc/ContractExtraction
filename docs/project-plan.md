@@ -20,7 +20,8 @@ One phase is one commit or PR. A phase isn't started before the previous one is 
 | 4 | **Backend worker** | Claim loop (`SKIP LOCKED`), heartbeats, cancellation, stale-run cleanup (no automatic retries), `worker` / `status` / `cancel` / `run --queue` CLI | Concurrency and recovery tests pass; two workers never take the same run; a killed worker's run ends as failed | ✅ done |
 | 5 | **Backend API** | FastAPI over the existing repositories: health (liveness/readiness), config (read-only), documents (upload, file, pages, images), runs (queue, cancel, events, results, evidence); RFC 9457 errors; request ids; stable operationIds | API tests pass; upload → run → results works over HTTP with a worker | ✅ done |
 | 6 | **Gateway** | Starlette + httpx streaming proxy for `/api/v1/*`: request ids, edge-set forwarding headers, upload limit (413), 502/504 problems, CORS, aggregated health, nosniff | Gateway tests pass; upload → run → results works through :8080; 413 never reaches the API; API down → 503/502 | ✅ done |
-| 7 | **Frontend** | Vite + React + TS app, types generated from OpenAPI, upload, document list, run progress, results (best values, all outcomes, evidence, verdicts), page viewer | Vitest and `tsc` pass; a PDF uploaded in the UI reaches `succeeded` and results show up | ⬜ planned |
+| 7 | **Frontend** | Vite + React + TS app, types generated from OpenAPI, upload, document list, run progress, results (best values, all outcomes, evidence, verdicts), page viewer | Vitest and `tsc` pass; a PDF uploaded in the UI reaches `succeeded` and results show up | ✅ done |
+| 7b | **Config editing & ground truth** | Backend write endpoints and UI for editing pipeline configuration and labeling ground truth per document and field | API and UI tests pass; an edited config is used by the next run; labels show next to best values | ⬜ planned |
 | 8 | **Dev experience** | `scripts/dev.sh` to start everything, checks for each service, end-to-end smoke test, docs refresh | One command brings up the full stack; the smoke test passes | ⬜ planned |
 | 9 | **Authentication** | Auth in the gateway, frontend login, backend trusts the gateway | Unauthenticated requests are rejected at the gateway | ⬜ planned |
 
@@ -29,7 +30,7 @@ One phase is one commit or PR. A phase isn't started before the previous one is 
 - Phase 3: which decomposition methods to support at first (pymupdf only, or OCR and hybrid too), and whether image captioning is in scope.
 - Phase 3: is the external experiment-tracking API still needed?
 - Phase 5: results export formats (JSON, CSV).
-- Phase 7: polling or server-sent events for run progress.
+- Phase 7: polling or server-sent events for run progress. Decided: polling (SSE can come later through the gateway).
 
 ## Change log
 
@@ -52,3 +53,10 @@ One phase is one commit or PR. A phase isn't started before the previous one is 
   Deferred to the frontend phase: config editing and ground-truth labeling over HTTP.
 - 2026-10-14: Phase 6 completed. Review fixes: edge-set forwarding headers, validated request ids, closed streams, raw path forwarding,
   full timeouts, Starlette instead of FastAPI.
+- 2026-10-14: Phase 7 completed. React 19 + Vite + TypeScript, Tailwind v4 + shadcn/ui, TanStack Query, React Router.
+  - Types are generated from `frontend/openapi.json`. It's written by the new `contract-extraction openapi` command, which needs no database, and a backend test guards it against drift.
+  - Run progress is polled.
+  - The page viewer shows decomposed text next to the browser's PDF viewer, with no pdf.js.
+  - Evidence links to its page but isn't highlighted, because chunks can span pages.
+  - TypeScript is pinned to 5.9, since typescript-eslint and openapi-typescript don't support 6+ yet.
+  - Config editing and ground-truth labeling need backend write endpoints, so they moved to Phase 7b.

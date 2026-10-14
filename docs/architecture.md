@@ -264,6 +264,8 @@ Storage sits behind an interface, so local disk can later be swapped for MinIO o
 
 All routes are under `/api/v1`. The OpenAPI document (`/api/v1/openapi.json`, docs at `/api/v1/docs`) is the **contract**. Its
 `operationId`s are the endpoint function names, so generated frontend types stay stable.
+`contract-extraction openapi` writes the document without a database. The frontend commits it as `frontend/openapi.json` and generates its types from it.
+A backend test fails when that copy is stale.
 
 | Resource | Endpoints |
 |---|---|
@@ -338,7 +340,7 @@ See [ADR 0004](adr/0004-local-processes-docker-infra.md).
 | gateway | Python 3.12, uv, FastAPI, httpx (streaming), pytest |
 | docker | Postgres 16 (plain SQL schema, no migrations), Qdrant, Ollama, Docker Compose |
 | LLM providers | Ollama (local) or OpenRouter / OpenAI-compatible APIs (hosted) |
-| frontend | React 18, TypeScript, Vite, TanStack Query, React Router, Vitest + Testing Library |
+| frontend | React 19, TypeScript 5.9, Vite, Tailwind v4 + shadcn/ui, TanStack Query, React Router, openapi-typescript + openapi-fetch, react-markdown, Vitest + Testing Library + MSW (confirmed in Phase 7) |
 
 ## 13. Lessons carried over from the prototype
 

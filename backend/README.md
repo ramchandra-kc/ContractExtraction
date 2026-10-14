@@ -25,6 +25,7 @@ OCR and hybrid decomposition (`decomposition_configs` rows `ocr` and `hybrid`) n
 
 ```bash
 uv run contract-extraction api       # 127.0.0.1:8000 (API__HOST / API__PORT); docs at /api/v1/docs
+uv run contract-extraction openapi   # the OpenAPI document on stdout (-o FILE to write it); needs no database
 uv run contract-extraction worker    # executes the runs the API queues
 ```
 
@@ -118,3 +119,6 @@ Markers:
 
 `tests/test_schema_matches_orm.py` compares `persistence/models.py` with the live schema (tables, columns, types, nullability, keys).
 Run it after editing `schema.sql`.
+
+`tests/test_openapi_matches_frontend.py` compares the API's OpenAPI document with `frontend/openapi.json`, which the frontend's
+types are generated from. After changing the API, run `npm run gen:api` in `frontend/`.

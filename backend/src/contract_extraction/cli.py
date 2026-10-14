@@ -7,6 +7,7 @@
     contract-extraction status [RUN_ID]       recent runs, or one run's timeline and best values
     contract-extraction cancel RUN_ID         cancel a queued run / stop a running one before its next field
     contract-extraction api                   serve the HTTP API (127.0.0.1:8000, behind the gateway)
+    contract-extraction openapi [-o PATH]     write the API's OpenAPI document (no database needed)
     contract-extraction providers [set KEY --base-url URL | --enable | --disable]
                                               list LLM providers / switch e.g. native ↔ Docker Ollama
 """
@@ -252,6 +253,23 @@ def providers(key: str | None, base_url: str | None, enabled: bool | None) -> in
         db.dispose()
 
 
+def openapi_json() -> str:
+    """The API's OpenAPI document as stable, pretty JSON (the frontend's generated types are built from it)."""
+    from .api.app import create_app
+
+    return json.dumps(create_app().openapi(), indent=2, ensure_ascii=False) + "\n"
+
+
+def openapi(out: Path | None) -> int:
+    text = openapi_json()
+    if out is None:
+        sys.stdout.write(text)
+    else:
+        out.write_text(text, encoding="utf-8")
+        print(f"wrote {out}")
+    return 0
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="contract-extraction")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -283,6 +301,8 @@ def main(argv: list[str] | None = None) -> int:
     p_cancel.add_argument("run_id")
 
     sub.add_parser("api", help="serve the HTTP API on API__HOST:API__PORT (default 127.0.0.1:8000)")
+    p_openapi = sub.add_parser("openapi", help="write the API's OpenAPI document (stdout by default)")
+    p_openapi.add_argument("-o", "--output", type=Path, help="file to write, e.g. ../frontend/openapi.json")
 
     p_prov = sub.add_parser("providers", help="list LLM providers, or change one with 'providers set'")
     prov_sub = p_prov.add_subparsers(dest="action")
@@ -319,6 +339,8 @@ def main(argv: list[str] | None = None) -> int:
 
         serve()
         return 0
+    if args.command == "openapi":
+        return openapi(args.output)
     return 2
 
 
