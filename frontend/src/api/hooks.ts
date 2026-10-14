@@ -21,6 +21,7 @@ export const keys = {
   documentsAll: ['documents'] as const,
   document: (id: string) => ['document', id] as const,
   pages: (id: string, decompositionId?: string) => ['pages', id, decompositionId ?? 'latest'] as const,
+  groundTruth: (documentId: string) => ['groundTruth', documentId] as const,
   run: (id: string) => ['run', id] as const,
   events: (id: string) => ['run', id, 'events'] as const,
   results: (id: string) => ['run', id, 'results'] as const,
@@ -128,6 +129,57 @@ export function useCreateRun(documentId: string) {
       qc.invalidateQueries({ queryKey: keys.document(documentId) })
       qc.invalidateQueries({ queryKey: keys.documentsAll })
     },
+  })
+}
+
+// ---- ground truth ----------------------------------------------------------------------------
+
+/** Labels of the default pipeline's field set for a document (unlabelled fields included). */
+export function useGroundTruth(documentId: string) {
+  return useQuery({
+    queryKey: keys.groundTruth(documentId),
+    queryFn: async () =>
+      (
+        await unwrap(
+          api.GET('/api/v1/documents/{document_id}/ground-truth', { params: { path: { document_id: documentId } } }),
+        )
+      ).data,
+  })
+}
+
+/** A label changes the document's labels and the evaluation shown in any run's results. */
+function refreshLabels(qc: QueryClient, documentId: string) {
+  qc.invalidateQueries({ queryKey: keys.groundTruth(documentId) })
+  qc.invalidateQueries({ predicate: (q) => q.queryKey[0] === 'run' && q.queryKey[2] === 'results' })
+}
+
+export function useSetGroundTruth(documentId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async ({ fieldId, value, notes }: { fieldId: string; value: unknown; notes?: string | null }) =>
+      (
+        await unwrap(
+          api.PUT('/api/v1/documents/{document_id}/ground-truth/{field_id}', {
+            params: { path: { document_id: documentId, field_id: fieldId } },
+            body: { expected_value: value, notes: notes || null },
+          }),
+        )
+      ).data,
+    onSuccess: () => refreshLabels(qc, documentId),
+  })
+}
+
+export function useDeleteGroundTruth(documentId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (fieldId: string) => {
+      await unwrap(
+        api.DELETE('/api/v1/documents/{document_id}/ground-truth/{field_id}', {
+          params: { path: { document_id: documentId, field_id: fieldId } },
+        }),
+      )
+    },
+    onSuccess: () => refreshLabels(qc, documentId),
   })
 }
 

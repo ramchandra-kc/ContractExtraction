@@ -474,6 +474,175 @@
         }
       }
     },
+    "/api/v1/documents/{document_id}/ground-truth": {
+      "get": {
+        "tags": [
+          "ground truth"
+        ],
+        "summary": "List Ground Truth",
+        "description": "Every enabled field of a field set (the default pipeline's by default) with the document's label, if any.",
+        "operationId": "list_ground_truth",
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Document Id"
+            }
+          },
+          {
+            "name": "field_set_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Field Set Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroundTruthOut"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/documents/{document_id}/ground-truth/{field_id}": {
+      "put": {
+        "tags": [
+          "ground truth"
+        ],
+        "summary": "Set Ground Truth",
+        "description": "Create or replace a label. 422 for null; use \"\" for a value that is not in the contract.",
+        "operationId": "set_ground_truth",
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Document Id"
+            }
+          },
+          {
+            "name": "field_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Field Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/GroundTruthSet"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GroundTruthItem"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "ground truth"
+        ],
+        "summary": "Delete Ground Truth",
+        "operationId": "delete_ground_truth",
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Document Id"
+            }
+          },
+          {
+            "name": "field_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Field Id"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/runs": {
       "get": {
         "tags": [
@@ -820,6 +989,11 @@
     "schemas": {
       "BestValue": {
         "properties": {
+          "field_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Field Id"
+          },
           "field_key": {
             "type": "string",
             "title": "Field Key"
@@ -827,6 +1001,10 @@
           "field_label": {
             "type": "string",
             "title": "Field Label"
+          },
+          "value_type": {
+            "type": "string",
+            "title": "Value Type"
           },
           "value": {
             "title": "Value"
@@ -876,12 +1054,30 @@
             "type": "string",
             "format": "uuid",
             "title": "Field Result Id"
+          },
+          "expected_value": {
+            "title": "Expected Value",
+            "description": "Ground truth for the document and field; null when unlabelled"
+          },
+          "exact_match": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Exact Match",
+            "description": "Best value equals the ground truth; null when unlabelled"
           }
         },
         "type": "object",
         "required": [
+          "field_id",
           "field_key",
           "field_label",
+          "value_type",
           "value",
           "status",
           "retrieval_config",
@@ -1185,6 +1381,30 @@
           "created_at"
         ],
         "title": "DocumentOut"
+      },
+      "EvaluationOut": {
+        "properties": {
+          "fields": {
+            "type": "integer",
+            "title": "Fields"
+          },
+          "labelled": {
+            "type": "integer",
+            "title": "Labelled"
+          },
+          "matched": {
+            "type": "integer",
+            "title": "Matched"
+          }
+        },
+        "type": "object",
+        "required": [
+          "fields",
+          "labelled",
+          "matched"
+        ],
+        "title": "EvaluationOut",
+        "description": "Best values compared with the ground truth (matching is defined in v_run_evaluation)."
       },
       "EventOut": {
         "properties": {
@@ -1505,6 +1725,131 @@
           "created_at"
         ],
         "title": "FieldResultOut"
+      },
+      "FieldSetRef": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "version"
+        ],
+        "title": "FieldSetRef"
+      },
+      "GroundTruthItem": {
+        "properties": {
+          "field_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Field Id"
+          },
+          "field_key": {
+            "type": "string",
+            "title": "Field Key"
+          },
+          "field_label": {
+            "type": "string",
+            "title": "Field Label"
+          },
+          "value_type": {
+            "type": "string",
+            "title": "Value Type"
+          },
+          "expected_value": {
+            "title": "Expected Value",
+            "description": "The label; null when unlabelled, \"\" when not in this contract"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string",
+                "format": "date-time"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "field_id",
+          "field_key",
+          "field_label",
+          "value_type"
+        ],
+        "title": "GroundTruthItem"
+      },
+      "GroundTruthOut": {
+        "properties": {
+          "field_set": {
+            "$ref": "#/components/schemas/FieldSetRef"
+          },
+          "items": {
+            "items": {
+              "$ref": "#/components/schemas/GroundTruthItem"
+            },
+            "type": "array",
+            "title": "Items"
+          }
+        },
+        "type": "object",
+        "required": [
+          "field_set",
+          "items"
+        ],
+        "title": "GroundTruthOut"
+      },
+      "GroundTruthSet": {
+        "properties": {
+          "expected_value": {
+            "title": "Expected Value",
+            "description": "Any JSON value except null; \"\" means not in this contract"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "expected_value"
+        ],
+        "title": "GroundTruthSet"
       },
       "HTTPValidationError": {
         "properties": {
@@ -2530,6 +2875,9 @@
             "type": "array",
             "title": "Best"
           },
+          "evaluation": {
+            "$ref": "#/components/schemas/EvaluationOut"
+          },
           "results": {
             "items": {
               "$ref": "#/components/schemas/FieldResultOut"
@@ -2542,6 +2890,7 @@
         "required": [
           "run",
           "best",
+          "evaluation",
           "results"
         ],
         "title": "RunResults"

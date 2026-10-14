@@ -199,6 +199,47 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/documents/{document_id}/ground-truth": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Ground Truth
+         * @description Every enabled field of a field set (the default pipeline's by default) with the document's label, if any.
+         */
+        get: operations["list_ground_truth"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/documents/{document_id}/ground-truth/{field_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Ground Truth
+         * @description Create or replace a label. 422 for null; use "" for a value that is not in the contract.
+         */
+        put: operations["set_ground_truth"];
+        post?: never;
+        /** Delete Ground Truth */
+        delete: operations["delete_ground_truth"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/runs": {
         parameters: {
             query?: never;
@@ -322,10 +363,17 @@ export interface components {
     schemas: {
         /** BestValue */
         BestValue: {
+            /**
+             * Field Id
+             * Format: uuid
+             */
+            field_id: string;
             /** Field Key */
             field_key: string;
             /** Field Label */
             field_label: string;
+            /** Value Type */
+            value_type: string;
             /** Value */
             value: unknown;
             /** Status */
@@ -343,6 +391,16 @@ export interface components {
              * Format: uuid
              */
             field_result_id: string;
+            /**
+             * Expected Value
+             * @description Ground truth for the document and field; null when unlabelled
+             */
+            expected_value?: unknown;
+            /**
+             * Exact Match
+             * @description Best value equals the ground truth; null when unlabelled
+             */
+            exact_match?: boolean | null;
         };
         /** Body_upload_document */
         Body_upload_document: {
@@ -448,6 +506,18 @@ export interface components {
             created_at: string;
             latest_run?: components["schemas"]["RunSummary"] | null;
         };
+        /**
+         * EvaluationOut
+         * @description Best values compared with the ground truth (matching is defined in v_run_evaluation).
+         */
+        EvaluationOut: {
+            /** Fields */
+            fields: number;
+            /** Labelled */
+            labelled: number;
+            /** Matched */
+            matched: number;
+        };
         /** EventOut */
         EventOut: {
             /** Id */
@@ -552,6 +622,57 @@ export interface components {
              * Format: date-time
              */
             created_at: string;
+        };
+        /** FieldSetRef */
+        FieldSetRef: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Version */
+            version: number;
+        };
+        /** GroundTruthItem */
+        GroundTruthItem: {
+            /**
+             * Field Id
+             * Format: uuid
+             */
+            field_id: string;
+            /** Field Key */
+            field_key: string;
+            /** Field Label */
+            field_label: string;
+            /** Value Type */
+            value_type: string;
+            /**
+             * Expected Value
+             * @description The label; null when unlabelled, "" when not in this contract
+             */
+            expected_value?: unknown;
+            /** Notes */
+            notes?: string | null;
+            /** Updated At */
+            updated_at?: string | null;
+        };
+        /** GroundTruthOut */
+        GroundTruthOut: {
+            field_set: components["schemas"]["FieldSetRef"];
+            /** Items */
+            items: components["schemas"]["GroundTruthItem"][];
+        };
+        /** GroundTruthSet */
+        GroundTruthSet: {
+            /**
+             * Expected Value
+             * @description Any JSON value except null; "" means not in this contract
+             */
+            expected_value: unknown;
+            /** Notes */
+            notes?: string | null;
         };
         /** HTTPValidationError */
         HTTPValidationError: {
@@ -888,6 +1009,7 @@ export interface components {
             run: components["schemas"]["RunOut"];
             /** Best */
             best: components["schemas"]["BestValue"][];
+            evaluation: components["schemas"]["EvaluationOut"];
             /** Results */
             results: components["schemas"]["FieldResultOut"][];
         };
@@ -1274,6 +1396,105 @@ export interface operations {
                 content: {
                     "application/json": components["schemas"]["RunOut"];
                 };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_ground_truth: {
+        parameters: {
+            query?: {
+                field_set_id?: string | null;
+            };
+            header?: never;
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GroundTruthOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_ground_truth: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: string;
+                field_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["GroundTruthSet"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["GroundTruthItem"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_ground_truth: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                document_id: string;
+                field_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
             };
             /** @description Validation Error */
             422: {

@@ -210,8 +210,10 @@ class EventOut(_Out):
 
 
 class BestValue(BaseModel):
+    field_id: uuid.UUID
     field_key: str
     field_label: str
+    value_type: str
     value: Any
     status: str
     retrieval_config: str
@@ -219,6 +221,16 @@ class BestValue(BaseModel):
     issue: str | None
     explanation: str | None
     field_result_id: uuid.UUID
+    expected_value: Any = Field(None, description="Ground truth for the document and field; null when unlabelled")
+    exact_match: bool | None = Field(None, description="Best value equals the ground truth; null when unlabelled")
+
+
+class EvaluationOut(BaseModel):
+    """Best values compared with the ground truth (matching is defined in v_run_evaluation)."""
+
+    fields: int
+    labelled: int
+    matched: int
 
 
 class FieldResultOut(BaseModel):
@@ -238,6 +250,7 @@ class FieldResultOut(BaseModel):
 class RunResults(BaseModel):
     run: RunOut
     best: list[BestValue]
+    evaluation: EvaluationOut
     results: list[FieldResultOut]
 
 
@@ -282,3 +295,34 @@ class FieldResultDetail(FieldResultOut):
     hits: list[HitOut]
     llm_calls: list[LlmCallOut]
     judgements: list[JudgementOut]
+
+
+# ---- ground truth ------------------------------------------------------------------------------
+
+
+class FieldSetRef(BaseModel):
+    id: uuid.UUID
+    name: str
+    version: int
+
+
+class GroundTruthItem(BaseModel):
+    field_id: uuid.UUID
+    field_key: str
+    field_label: str
+    value_type: str
+    expected_value: Any = Field(None, description='The label; null when unlabelled, "" when not in this contract')
+    notes: str | None = None
+    updated_at: datetime | None = None
+
+
+class GroundTruthOut(BaseModel):
+    field_set: FieldSetRef
+    items: list[GroundTruthItem]
+
+
+class GroundTruthSet(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    expected_value: Any = Field(description='Any JSON value except null; "" means not in this contract')
+    notes: str | None = None

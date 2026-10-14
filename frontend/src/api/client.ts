@@ -15,6 +15,9 @@ export type EventOut = Schemas['EventOut']
 export type PipelineOut = Schemas['PipelineOut']
 export type PagesOut = Schemas['PagesOut']
 export type HealthOut = Schemas['HealthOut']
+export type GroundTruthOut = Schemas['GroundTruthOut']
+export type GroundTruthItem = Schemas['GroundTruthItem']
+export type EvaluationOut = Schemas['EvaluationOut']
 
 export const API = '/api/v1'
 

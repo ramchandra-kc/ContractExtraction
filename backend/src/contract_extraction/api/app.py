@@ -22,7 +22,7 @@ from ..core.settings import Settings, load_settings
 from ..persistence.db import Database
 from ..storage import FileStorage
 from . import problems
-from .routes import config, documents, runs, system
+from .routes import config, documents, ground_truth, runs, system
 
 API_PREFIX = "/api/v1"
 REQUEST_ID = "X-Request-ID"
@@ -67,7 +67,7 @@ def create_app(settings: Settings | None = None, db: Database | None = None, sto
                  (time.perf_counter() - started) * 1000, rid)
         return response
 
-    for module in (system, config, documents, runs):
+    for module in (system, config, documents, ground_truth, runs):
         app.include_router(module.router, prefix=API_PREFIX)
     return app
 

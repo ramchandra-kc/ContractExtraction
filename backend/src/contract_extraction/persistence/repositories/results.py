@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import and_, select
 from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.orm import Session
@@ -144,8 +144,12 @@ class ResultRepo:
         return uuid.UUID(value) if value else None
 
     def best_values(self, run_id: uuid.UUID) -> Sequence[RowMapping]:
-        bv = m.best_values
+        """Best value per field with its ground truth: ``expected_value`` (None when unlabelled) and
+        ``exact_match`` (None when unlabelled), both from v_run_evaluation."""
+        bv, ev = m.best_values, m.run_evaluation
         return self.session.execute(
-            select(bv, m.Field.position).join(m.Field, m.Field.id == bv.c.field_id)
+            select(bv, m.Field.position, m.Field.value_type, ev.c.expected_value, ev.c.exact_match)
+            .join(m.Field, m.Field.id == bv.c.field_id)
+            .join(ev, and_(ev.c.run_id == bv.c.run_id, ev.c.field_id == bv.c.field_id))
             .where(bv.c.run_id == run_id).order_by(m.Field.position)
         ).mappings().all()

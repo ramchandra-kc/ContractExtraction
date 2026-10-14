@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
+import { GroundTruthCard } from '@/features/GroundTruthCard'
 import { NewRunDialog } from '@/features/NewRunDialog'
 import { formatBytes, formatDateTime, formatMs, formatSpan } from '@/lib/format'
 
@@ -88,6 +89,8 @@ export function DocumentPage() {
           )}
         </CardContent>
       </Card>
+
+      <GroundTruthCard documentId={doc.id} />
 
       {doc.decompositions.length > 0 && (
         <Card>

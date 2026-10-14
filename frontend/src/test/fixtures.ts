@@ -2,6 +2,7 @@ import type {
   DocumentDetail,
   DocumentOut,
   FieldResultDetail,
+  GroundTruthOut,
   PipelineOut,
   RunOut,
   RunResults,
@@ -14,6 +15,9 @@ export const DEC_ID = '33333333-3333-3333-3333-333333333333'
 export const RESULT_A = '44444444-4444-4444-4444-444444444441'
 export const RESULT_B = '44444444-4444-4444-4444-444444444442'
 export const RESULT_C = '44444444-4444-4444-4444-444444444443'
+export const FIELD_CUSTOMER = '88888888-8888-8888-8888-888888888881'
+export const FIELD_PAYMENT = '88888888-8888-8888-8888-888888888882'
+export const FIELD_PARTIES = '88888888-8888-8888-8888-888888888883'
 
 export function runSummary(over: Partial<RunSummary> = {}): RunSummary {
   return {
@@ -94,8 +98,10 @@ export const results: RunResults = {
   run: run(),
   best: [
     {
+      field_id: FIELD_CUSTOMER,
       field_key: 'customer_name',
       field_label: 'Customer name',
+      value_type: 'text',
       value: 'Acme GmbH',
       status: 'extracted',
       retrieval_config: 'RAG01',
@@ -103,10 +109,14 @@ export const results: RunResults = {
       issue: 'NONE',
       explanation: 'Named in the preamble.',
       field_result_id: RESULT_A,
+      expected_value: 'acme gmbh',
+      exact_match: true,
     },
     {
+      field_id: FIELD_PAYMENT,
       field_key: 'payment_terms',
       field_label: 'Payment terms',
+      value_type: 'text',
       value: null,
       status: 'not_found',
       retrieval_config: 'RAG01',
@@ -114,8 +124,11 @@ export const results: RunResults = {
       issue: null,
       explanation: null,
       field_result_id: RESULT_B,
+      expected_value: null,
+      exact_match: null,
     },
   ],
+  evaluation: { fields: 2, labelled: 1, matched: 1 },
   results: [
     {
       id: RESULT_A,
@@ -155,6 +168,39 @@ export const results: RunResults = {
       verdict: 'FAIL',
       issue: 'INCOMPLETE',
       created_at: '2026-10-14T10:00:50Z',
+    },
+  ],
+}
+
+export const groundTruth: GroundTruthOut = {
+  field_set: { id: '99999999-9999-9999-9999-999999999999', name: 'contract_fields', version: 1 },
+  items: [
+    {
+      field_id: FIELD_CUSTOMER,
+      field_key: 'customer_name',
+      field_label: 'Customer name',
+      value_type: 'text',
+      expected_value: 'acme gmbh',
+      notes: 'from the preamble',
+      updated_at: '2026-10-14T11:00:00Z',
+    },
+    {
+      field_id: FIELD_PAYMENT,
+      field_key: 'payment_terms',
+      field_label: 'Payment terms',
+      value_type: 'text',
+      expected_value: null,
+      notes: null,
+      updated_at: null,
+    },
+    {
+      field_id: FIELD_PARTIES,
+      field_key: 'parties',
+      field_label: 'Parties',
+      value_type: 'list',
+      expected_value: '',
+      notes: null,
+      updated_at: '2026-10-14T11:00:00Z',
     },
   ],
 }

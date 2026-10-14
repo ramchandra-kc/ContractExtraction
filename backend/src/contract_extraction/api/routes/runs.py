@@ -14,6 +14,7 @@ from ...persistence.repositories.results import Outcome, ResultRepo
 from ..deps import get_session
 from ..schemas import (
     BestValue,
+    EvaluationOut,
     EventOut,
     FieldResultDetail,
     FieldResultOut,
@@ -80,11 +81,16 @@ def get_run_results(run_id: uuid.UUID, session: Session = Depends(get_session)):
     repo = ResultRepo(session)
     order = {r["name"]: i for i, r in enumerate(run.config_snapshot.get("retrievals", []))}
     outcomes = sorted(repo.outcomes(run.id), key=lambda o: (order.get(o.retrieval_config, 99), o.field.position))
-    best = [BestValue(field_key=b["field_key"], field_label=b["field_label"], value=b["value"], status=b["status"],
-                      retrieval_config=b["retrieval_config"], verdict=b["verdict"], issue=b["issue"],
-                      explanation=b["explanation"], field_result_id=b["field_result_id"])
+    best = [BestValue(field_id=b["field_id"], field_key=b["field_key"], field_label=b["field_label"],
+                      value_type=b["value_type"], value=b["value"],
+                      status=b["status"], retrieval_config=b["retrieval_config"], verdict=b["verdict"], issue=b["issue"],
+                      explanation=b["explanation"], field_result_id=b["field_result_id"],
+                      expected_value=b["expected_value"], exact_match=b["exact_match"])
             for b in repo.best_values(run.id)]
-    return RunResults(run=run_out(run), best=best, results=[FieldResultOut(**_outcome_out(o)) for o in outcomes])
+    evaluation = EvaluationOut(fields=len(best), labelled=sum(b.exact_match is not None for b in best),
+                               matched=sum(b.exact_match is True for b in best))
+    return RunResults(run=run_out(run), best=best, evaluation=evaluation,
+                      results=[FieldResultOut(**_outcome_out(o)) for o in outcomes])
 
 
 @router.get("/{run_id}/results/{field_result_id}", response_model=FieldResultDetail)

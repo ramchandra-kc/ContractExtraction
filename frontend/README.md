@@ -28,8 +28,8 @@ npm run gen:api      # after an API change: openapi.json + src/api/schema.d.ts
 | Route | Shows |
 |---|---|
 | `/` | Upload (drop or pick a PDF; the same file again opens the existing document) and the document list with each latest run |
-| `/documents/:id` | Document details, its runs and decompositions, **New run** (pipeline, kind, fields, RAG configs, judge, reuse, redecompose) |
-| `/runs/:id` | State, stage and progress, cancel, and tabs: best values, all outcomes (fields × RAG configs), timeline. `?result=<id>` opens a result's evidence, judgements and LLM calls |
+| `/documents/:id` | Document details, its runs, **ground truth** (one row per field: edit the expected value, mark it "Not in this contract", add notes, clear) and decompositions, **New run** (pipeline, kind, fields, RAG configs, judge, reuse, redecompose) |
+| `/runs/:id` | State, stage and progress, cancel, and tabs: best values (with the expected value, ✓ / ✗ and "Label…", which starts from the run's value), all outcomes (fields × RAG configs), timeline. `?result=<id>` opens a result's evidence, judgements and LLM calls |
 | `/documents/:id/pages` | Decomposed page text (what the LLM saw) next to the original PDF at the same page. `?page=N&decomposition=<id>` |
 
 ## How it works
@@ -44,8 +44,10 @@ npm run gen:api      # after an API change: openapi.json + src/api/schema.d.ts
   - Events are fetched incrementally with `?after=<last id>`.
   - Polling stops when the run finishes, and its events, results and document are fetched once more.
   - The document list polls only while a listed run is active. Health (`/api/v1/health/ready`) is checked every 30 s.
-- **No business rules:** the best value per field comes from the API (`best`). The "New run" button is disabled while a run is
-  active, but the API's 409 stays the authority.
+- **No business rules:** the best value per field comes from the API (`best`), and so do the match flag and the counts
+  (`evaluation`). The "New run" button is disabled while a run is active, but the API's 409 stays the authority.
+- **Labels** (`src/lib/groundTruth.ts`): text is stored as trimmed text, list fields as one item per line, json fields as parsed
+  JSON, and "Not in this contract" as `""`. Saving or clearing a label refreshes the document's labels and any open run results.
 - **Page viewer:** Markdown pages are rendered with `react-markdown`, and raw HTML in them is not interpreted. The PDF is
   the browser's own viewer in an iframe (`/api/v1/documents/{id}/file#page=N`).
 
@@ -71,3 +73,5 @@ src/
 ```
 
 UI components come from [shadcn/ui](https://ui.shadcn.com) (Tailwind v4, Radix). Add more with `npx shadcn@latest add <name>`.
+The CLI currently writes `import { cn } from "cn"` and installs an unrelated `cn` package. Afterwards, change the import to
+`@/lib/utils` in the new files and run `npm uninstall cn`.

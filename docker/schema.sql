@@ -626,6 +626,7 @@ CREATE INDEX ix_ground_truth_field_id ON ground_truth (field_id);
 
 -- Best value per run and field: a PASS from the highest-priority RAG config, otherwise the first
 -- extracted value in priority order, otherwise the first outcome. Every field with an outcome appears once.
+-- Priority comes from the run's own snapshot, so later pipeline edits never change a past run's best values.
 CREATE VIEW v_best_values AS
 SELECT DISTINCT ON (fr.run_id, fr.field_id)
     fr.run_id,
@@ -644,8 +645,12 @@ FROM field_results fr
 JOIN runs r                ON r.id = fr.run_id
 JOIN fields f              ON f.id = fr.field_id
 JOIN retrieval_configs rc  ON rc.id = fr.retrieval_config_id
-LEFT JOIN pipeline_config_retrievals pcr
-       ON pcr.pipeline_config_id = r.pipeline_config_id AND pcr.retrieval_config_id = fr.retrieval_config_id
+LEFT JOIN LATERAL (
+    SELECT e.position
+    FROM jsonb_array_elements(r.config_snapshot -> 'retrievals') WITH ORDINALITY AS e(retrieval, position)
+    WHERE (e.retrieval ->> 'id')::uuid = fr.retrieval_config_id
+    LIMIT 1
+) sp ON true
 LEFT JOIN LATERAL (
     SELECT jd.verdict, jd.issue, jd.explanation
     FROM judgements jd
@@ -656,11 +661,12 @@ LEFT JOIN LATERAL (
 ORDER BY fr.run_id, fr.field_id,
          (j.verdict = 'PASS') DESC NULLS LAST,
          (fr.status = 'extracted') DESC,
-         pcr.position NULLS LAST,
+         sp.position NULLS LAST,
          fr.created_at;
 
 -- Best values next to the ground truth. exact_match compares trimmed, case-insensitive text
--- (NULL when no label exists); finer scoring is left to analysis code.
+-- (NULL when no label exists; false for an error outcome, which must never count as correct).
+-- A label of "" means "not in this contract" and matches a not_found outcome. Finer scoring is left to analysis code.
 CREATE VIEW v_run_evaluation AS
 SELECT
     b.run_id,
@@ -673,6 +679,7 @@ SELECT
     b.verdict,
     CASE
         WHEN gt.id IS NULL THEN NULL
+        WHEN b.status = 'error' THEN false
         ELSE lower(btrim(coalesce(b.value #>> '{}', ''))) = lower(btrim(coalesce(gt.expected_value #>> '{}', '')))
     END              AS exact_match
 FROM v_best_values b

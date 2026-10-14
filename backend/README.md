@@ -35,7 +35,9 @@ curl -F file=@contract.pdf $B/documents                                   # 201 
 curl -X POST $B/documents/<id>/runs -H 'content-type: application/json' \
      -d '{"fields":["customer_name"],"retrievals":["RAG02"]}'               # 202, Location: /api/v1/runs/<run id>
 curl $B/runs/<run id>                                                      # poll state and progress
-curl $B/runs/<run id>/results                                              # best values + every outcome
+curl $B/runs/<run id>/results                                              # best values (with ground truth) + every outcome
+curl -X PUT $B/documents/<id>/ground-truth/<field id> -H 'content-type: application/json' \
+     -d '{"expected_value": "Acme Pty Ltd"}'                                # label a field ("" = not in this contract)
 ```
 
 See [architecture §8](../docs/architecture.md) for all endpoints. Errors are RFC 9457 problem details.

@@ -1,4 +1,5 @@
 import { Link, useParams, useSearchParams } from 'react-router'
+import type { EvaluationOut } from '@/api/client'
 import { isActive, useCancelRun, useDocument, useRun, useRunEvents, useRunResults } from '@/api/hooks'
 import { ProblemAlert } from '@/components/ProblemAlert'
 import { StateBadge } from '@/components/StateBadge'
@@ -13,6 +14,22 @@ import { FieldResultSheet } from '@/features/FieldResultSheet'
 import { OutcomesMatrix } from '@/features/OutcomesMatrix'
 import { ResultsTable } from '@/features/ResultsTable'
 import { formatDateTime, formatSpan } from '@/lib/format'
+
+function EvaluationSummary({ evaluation }: { evaluation: EvaluationOut }) {
+  if (evaluation.labelled === 0) {
+    return (
+      <p className="text-sm text-muted-foreground">
+        No ground truth for these fields yet. Use “Label…” to record the expected values.
+      </p>
+    )
+  }
+  return (
+    <p className="text-sm">
+      Ground truth: <strong>{evaluation.matched}</strong> of {evaluation.labelled} labelled fields match
+      {evaluation.labelled < evaluation.fields && ` (${evaluation.fields - evaluation.labelled} unlabelled)`}.
+    </p>
+  )
+}
 
 export function RunPage() {
   const { id = '' } = useParams()
@@ -106,8 +123,15 @@ export function RunPage() {
               <TabsTrigger value="all">All outcomes</TabsTrigger>
               <TabsTrigger value="timeline">Timeline</TabsTrigger>
             </TabsList>
-            <TabsContent value="best" className="pt-2">
-              {results.data ? <ResultsTable best={results.data.best} onOpen={openResult} /> : <Skeleton className="h-24" />}
+            <TabsContent value="best" className="space-y-3 pt-2">
+              {results.data ? (
+                <>
+                  {results.data.best.length > 0 && <EvaluationSummary evaluation={results.data.evaluation} />}
+                  <ResultsTable best={results.data.best} documentId={r.document_id} onOpen={openResult} />
+                </>
+              ) : (
+                <Skeleton className="h-24" />
+              )}
             </TabsContent>
             <TabsContent value="all" className="pt-2">
               {results.data ? (

@@ -21,7 +21,8 @@ One phase is one commit or PR. A phase isn't started before the previous one is 
 | 5 | **Backend API** | FastAPI over the existing repositories: health (liveness/readiness), config (read-only), documents (upload, file, pages, images), runs (queue, cancel, events, results, evidence); RFC 9457 errors; request ids; stable operationIds | API tests pass; upload → run → results works over HTTP with a worker | ✅ done |
 | 6 | **Gateway** | Starlette + httpx streaming proxy for `/api/v1/*`: request ids, edge-set forwarding headers, upload limit (413), 502/504 problems, CORS, aggregated health, nosniff | Gateway tests pass; upload → run → results works through :8080; 413 never reaches the API; API down → 503/502 | ✅ done |
 | 7 | **Frontend** | Vite + React + TS app, types generated from OpenAPI, upload, document list, run progress, results (best values, all outcomes, evidence, verdicts), page viewer | Vitest and `tsc` pass; a PDF uploaded in the UI reaches `succeeded` and results show up | ✅ done |
-| 7b | **Config editing & ground truth** | Backend write endpoints and UI for editing pipeline configuration and labeling ground truth per document and field | API and UI tests pass; an edited config is used by the next run; labels show next to best values | ⬜ planned |
+| 7b | **Ground truth & evaluation** | Ground-truth API and UI (document page, and labeling from a run); expected value, match and counts in run results; `v_best_values` ranks by the run's snapshot; `exact_match` false for error outcomes | API, view and UI tests pass; labels made in the UI show as ✓ / ✗ next to a run's best values | ✅ done |
+| 7c | **Config editing** | Write endpoints and UI for pipelines (compose, RAG order, judge, default), RAG configs, model profiles, fields and expansion queries, prompts (saving creates a new version; pipelines stay pinned), provider URL / enable and models. Decomposition and index configs are create-only (ingestion reuses their outputs by id). Names and keys can't change; deleting a row runs reference → 409 | API and UI tests pass; an edited config is used by the next run and past runs are unchanged | ⬜ planned |
 | 8 | **Dev experience** | `scripts/dev.sh` to start everything, checks for each service, end-to-end smoke test, docs refresh | One command brings up the full stack; the smoke test passes | ⬜ planned |
 | 9 | **Authentication** | Auth in the gateway, frontend login, backend trusts the gateway | Unauthenticated requests are rejected at the gateway | ⬜ planned |
 
@@ -60,3 +61,10 @@ One phase is one commit or PR. A phase isn't started before the previous one is 
   - Evidence links to its page but isn't highlighted, because chunks can span pages.
   - TypeScript is pinned to 5.9, since typescript-eslint and openapi-typescript don't support 6+ yet.
   - Config editing and ground-truth labeling need backend write endpoints, so they moved to Phase 7b.
+- 2026-10-14: Phase 7b split: ground truth & evaluation (7b, completed) and config editing (7c, planned).
+  - Fixed `v_best_values`, which ranked RAG configs by the pipeline's current RAG configs; it now uses the run's snapshot.
+  - Fixed `v_run_evaluation`: an `error` outcome never matches. Before, an empty label would have matched a failed call.
+  - Labels are any JSON value except null, because extracted values aren't typed by `value_type`; `""` means "not in this contract".
+  - Run results gained `field_id`, `value_type`, `expected_value` and `exact_match` per best value, and `evaluation` counts.
+  - The dev database got the two views with `CREATE OR REPLACE VIEW` instead of being recreated, to keep its data. That is safe
+    because their columns are unchanged; recreating the database (`down -v`) gives the same result.

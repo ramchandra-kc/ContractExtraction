@@ -201,4 +201,42 @@ def test_request_id_and_openapi(client):
         "health", "health_ready", "list_pipelines", "list_providers", "upload_document", "list_documents",
         "get_document", "get_document_file", "get_pages", "get_image", "create_run", "list_runs", "get_run",
         "cancel_run", "list_run_events", "get_run_results", "get_field_result",
+        "list_ground_truth", "set_ground_truth", "delete_ground_truth",
     }
+
+
+def test_ground_truth_and_evaluation(client, db, storage, harness):
+    doc = _upload(client, harness.pdf).json()
+    base = f"/api/v1/documents/{doc['id']}/ground-truth"
+    listed = client.get(base).json()
+    assert (listed["field_set"]["name"], listed["field_set"]["version"]) == ("contract_fields", 1)
+    assert len(listed["items"]) == 12 and all(i["expected_value"] is None and i["updated_at"] is None for i in listed["items"])
+    fields = {i["field_key"]: i["field_id"] for i in listed["items"]}
+
+    put = client.put(f"{base}/{fields['customer_name']}", json={"expected_value": "acme pty ltd", "notes": "preamble"})
+    assert put.status_code == 200, put.text
+    assert put.json()["expected_value"] == "acme pty ltd" and put.json()["notes"] == "preamble" and put.json()["updated_at"]
+    assert client.put(f"{base}/{fields['payment_terms']}", json={"expected_value": "60 days"}).status_code == 200
+
+    null = client.put(f"{base}/{fields['payment_terms']}", json={"expected_value": None})
+    assert null.status_code == 422 and null.headers["content-type"] == PROBLEM and "must not be null" in null.json()["detail"]
+    assert client.put(f"{base}/{fields['payment_terms']}", json={"notes": "x"}).status_code == 422
+    assert client.put(f"{base}/{doc['id']}", json={"expected_value": "x"}).status_code == 404
+    unknown_doc = f"/api/v1/documents/{fields['customer_name']}/ground-truth"
+    assert client.get(unknown_doc).status_code == 404
+
+    client.post(f"/api/v1/documents/{doc['id']}/runs", json=_run_options())
+    _process(db, storage, harness)
+    run_id = client.get("/api/v1/runs", params={"document_id": doc["id"]}).json()["items"][0]["id"]
+    results = client.get(f"/api/v1/runs/{run_id}/results").json()
+    best = {b["field_key"]: b for b in results["best"]}
+    assert best["customer_name"]["field_id"] == fields["customer_name"]
+    assert (best["customer_name"]["expected_value"], best["customer_name"]["exact_match"]) == ("acme pty ltd", True)
+    assert (best["payment_terms"]["expected_value"], best["payment_terms"]["exact_match"]) == ("60 days", False)
+    assert results["evaluation"] == {"fields": 2, "labelled": 2, "matched": 1}
+
+    assert client.delete(f"{base}/{fields['payment_terms']}").status_code == 204
+    assert client.delete(f"{base}/{fields['payment_terms']}").status_code == 404
+    results = client.get(f"/api/v1/runs/{run_id}/results").json()
+    assert results["evaluation"] == {"fields": 2, "labelled": 1, "matched": 1}
+    assert next(b for b in results["best"] if b["field_key"] == "payment_terms")["exact_match"] is None

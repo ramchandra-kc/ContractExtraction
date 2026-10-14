@@ -237,9 +237,13 @@ experiments 1──* runs 1──* run_events
 
 ### 7.4 Evaluation
 
-- **ground_truth**: human-labelled expected values per document and field.
+- **ground_truth**: human-labelled expected values per document and field. A label is any JSON value except null; `""` means
+  "not in this contract".
 - **`v_best_values`** (view): the best value per run and field (a PASS from the highest-priority RAG config, otherwise the first extracted value).
-- **`v_run_evaluation`** (view): best values next to the ground truth, with a simple exact-match flag.
+  Priority is read from the run's **snapshot**, so editing a pipeline never changes a past run's best values.
+- **`v_run_evaluation`** (view): best values next to the ground truth, with a simple exact-match flag: trimmed, case-insensitive text;
+  NULL when unlabelled; always false for an `error` outcome. A `""` label matches a `not_found` outcome. This view is the only place
+  matching is defined; the API returns its result with each best value, plus counts (`fields`, `labelled`, `matched`).
 
 ### Rules
 
@@ -272,7 +276,8 @@ A backend test fails when that copy is stale.
 | health | `GET /health` (liveness: process + DB), `GET /health/ready` (schema, default pipeline, Qdrant, model endpoints; 503 when degraded) |
 | config | `GET /config/pipelines`, `GET /config/providers` (read-only for now) |
 | documents | `POST /documents` (multipart upload: 201 new / 200 same file already stored), `GET /documents`, `GET /documents/{id}`, `GET /documents/{id}/file`, `GET /documents/{id}/pages`, `GET /documents/{id}/images/{image_id}`, `POST /documents/{id}/runs` (202 + `Location`) |
-| runs | `GET /runs`, `GET /runs/{id}`, `POST /runs/{id}/cancel`, `GET /runs/{id}/events?after=`, `GET /runs/{id}/results`, `GET /runs/{id}/results/{field_result_id}` |
+| ground truth | `GET /documents/{id}/ground-truth?field_set_id=` (every enabled field of the default pipeline's field set, labelled or not), `PUT /documents/{id}/ground-truth/{field_id}` (create or replace; 422 for null), `DELETE /documents/{id}/ground-truth/{field_id}` (204) |
+| runs | `GET /runs`, `GET /runs/{id}`, `POST /runs/{id}/cancel`, `GET /runs/{id}/events?after=`, `GET /runs/{id}/results` (best values with expected value and match, evaluation counts, every outcome), `GET /runs/{id}/results/{field_result_id}` |
 
 - **Writes only queue work.** Uploading stores the file. Creating a run queues it (202), and a worker executes it. Clients poll the run and its events.
 - **Errors** are RFC 9457 Problem Details (`application/problem+json`: `type`, `title`, `status`, `detail`, plus `errors[]` for validation).
