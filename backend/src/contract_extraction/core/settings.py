@@ -62,6 +62,12 @@ class WorkerSettings(BaseModel):
     stale_after_seconds: float = Field(120, gt=0)
 
 
+class ApiSettings(BaseModel):
+    # Loopback only: the API is reached through the gateway.
+    host: str = "127.0.0.1"
+    port: int = Field(8000, gt=0, lt=65536)
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_nested_delimiter="__", env_file_encoding="utf-8", extra="ignore")
 
@@ -72,6 +78,7 @@ class Settings(BaseSettings):
     qdrant: QdrantSettings = Field(default_factory=QdrantSettings)
     executor: ExecutorSettings = Field(default_factory=ExecutorSettings)
     worker: WorkerSettings = Field(default_factory=WorkerSettings)
+    api: ApiSettings = Field(default_factory=ApiSettings)
 
     # Raw values from the env files, for variables that are not settings (API keys named in the database).
     _file_values: dict[str, str] = PrivateAttr(default_factory=dict)

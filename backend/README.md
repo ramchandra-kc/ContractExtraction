@@ -21,6 +21,25 @@ Use `--pipeline NAME` for a non-default pipeline config.
 
 OCR and hybrid decomposition (`decomposition_configs` rows `ocr` and `hybrid`) need Tesseract (`brew install tesseract`).
 
+### HTTP API
+
+```bash
+uv run contract-extraction api       # 127.0.0.1:8000 (API__HOST / API__PORT); docs at /api/v1/docs
+uv run contract-extraction worker    # executes the runs the API queues
+```
+
+```bash
+B=http://localhost:8000/api/v1
+curl -F file=@contract.pdf $B/documents                                   # 201 new / 200 already stored
+curl -X POST $B/documents/<id>/runs -H 'content-type: application/json' \
+     -d '{"fields":["customer_name"],"retrievals":["RAG02"]}'               # 202, Location: /api/v1/runs/<run id>
+curl $B/runs/<run id>                                                      # poll state and progress
+curl $B/runs/<run id>/results                                              # best values + every outcome
+```
+
+See [architecture §8](../docs/architecture.md) for all endpoints. Errors are RFC 9457 problem details.
+The API has no CORS or auth of its own; it sits behind the gateway.
+
 ### Worker, status and cancel
 
 ```bash

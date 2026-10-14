@@ -18,4 +18,8 @@ class InvalidConfig(AppError):
 
 
 class InvalidInput(AppError):
-    """Input rejected before it reaches the database (file too large, bad name, ...)."""
+    """Input rejected before it reaches the database (bad file, unknown option, ...)."""
+
+
+class PayloadTooLarge(InvalidInput):
+    """An upload exceeds the configured size limit."""

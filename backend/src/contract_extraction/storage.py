@@ -20,7 +20,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import BinaryIO
 
-from .core.errors import InvalidInput
+from .core.errors import InvalidInput, PayloadTooLarge
 
 _UNSAFE = re.compile(r"[^A-Za-z0-9._ -]+")
 _CODE = re.compile(r"^DOC\d{3,}$")
@@ -63,7 +63,7 @@ class FileStorage:
                 while chunk := stream.read(_CHUNK):
                     size += len(chunk)
                     if max_bytes is not None and size > max_bytes:
-                        raise InvalidInput(f"File exceeds the {max_bytes // _CHUNK} MB upload limit")
+                        raise PayloadTooLarge(f"File exceeds the {max_bytes // _CHUNK} MB upload limit")
                     digest.update(chunk)
                     out.write(chunk)
             except BaseException:

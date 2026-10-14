@@ -7,6 +7,7 @@ from collections.abc import Sequence
 from typing import Any
 
 from sqlalchemy import func, select, update
+from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -174,5 +175,28 @@ class RunRepo:
         self.session.add(m.RunEvent(run_id=run_id, message=message, level=level, stage=stage, data=data or {}))
         self.session.flush()
 
-    def events(self, run_id: uuid.UUID) -> Sequence[m.RunEvent]:
-        return self.session.scalars(select(m.RunEvent).where(m.RunEvent.run_id == run_id).order_by(m.RunEvent.id)).all()
+    def events(self, run_id: uuid.UUID, after: int | None = None) -> Sequence[m.RunEvent]:
+        """The run's timeline in order; ``after`` returns only events newer than that event id (for polling)."""
+        q = select(m.RunEvent).where(m.RunEvent.run_id == run_id)
+        if after is not None:
+            q = q.where(m.RunEvent.id > after)
+        return self.session.scalars(q.order_by(m.RunEvent.id)).all()
+
+    def list(self, state: RunState | None = None, document_id: uuid.UUID | None = None,
+             limit: int = 25, offset: int = 0) -> tuple[Sequence[m.Run], int]:
+        """Newest first, with the total count for paging."""
+        conditions = [c for c in (m.Run.state == state if state else None,
+                                  m.Run.document_id == document_id if document_id else None) if c is not None]
+        rows = self.session.scalars(select(m.Run).where(*conditions)
+                                    .order_by(m.Run.queued_at.desc(), m.Run.id).limit(limit).offset(offset)).all()
+        total = self.session.scalar(select(func.count()).select_from(m.Run).where(*conditions)) or 0
+        return rows, total
+
+    def latest_for_documents(self, document_ids: list[uuid.UUID]) -> dict[uuid.UUID, m.Run]:
+        if not document_ids:
+            return {}
+        rows = self.session.scalars(
+            select(m.Run).where(m.Run.document_id.in_(document_ids)).ext(distinct_on(m.Run.document_id))
+            .order_by(m.Run.document_id, m.Run.queued_at.desc())
+        ).all()
+        return {r.document_id: r for r in rows}

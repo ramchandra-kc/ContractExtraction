@@ -262,16 +262,21 @@ Storage sits behind an interface, so local disk can later be swapped for MinIO o
 
 ## 8. API surface (backend, behind the gateway)
 
-All routes are under `/api/v1`. The backend's OpenAPI document is the **contract**: the frontend generates its TypeScript
-types from it.
+All routes are under `/api/v1`. The OpenAPI document (`/api/v1/openapi.json`, docs at `/api/v1/docs`) is the **contract**. Its
+`operationId`s are the endpoint function names, so generated frontend types stay stable.
 
-| Resource | Endpoints (planned) |
+| Resource | Endpoints |
 |---|---|
-| system | `GET /health`, `GET /config` (search configs, fields) |
-| documents | `POST /documents` (upload → queues a full run), `GET /documents`, `GET /documents/{id}`, `GET /documents/{id}/pages`, `GET /documents/{id}/images/{name}`, `POST /documents/{id}/runs` |
-| runs | `GET /runs/{id}`, `POST /runs/{id}/cancel`, `GET /runs/{id}/results`, `GET /runs/{id}/results/{resultId}`, `GET /runs/{id}/log` |
+| health | `GET /health` (liveness: process + DB), `GET /health/ready` (schema, default pipeline, Qdrant, model endpoints; 503 when degraded) |
+| config | `GET /config/pipelines`, `GET /config/providers` (read-only for now) |
+| documents | `POST /documents` (multipart upload: 201 new / 200 same file already stored), `GET /documents`, `GET /documents/{id}`, `GET /documents/{id}/file`, `GET /documents/{id}/pages`, `GET /documents/{id}/images/{image_id}`, `POST /documents/{id}/runs` (202 + `Location`) |
+| runs | `GET /runs`, `GET /runs/{id}`, `POST /runs/{id}/cancel`, `GET /runs/{id}/events?after=`, `GET /runs/{id}/results`, `GET /runs/{id}/results/{field_result_id}` |
 
-Errors use one JSON shape: `{"detail": "..."}` with 400, 404, 409, 413 or 422.
+- **Writes only queue work.** Uploading stores the file. Creating a run queues it (202), and a worker executes it. Clients poll the run and its events.
+- **Errors** are RFC 9457 Problem Details (`application/problem+json`: `type`, `title`, `status`, `detail`, plus `errors[]` for validation).
+  404 not found, 409 conflict (active run, finished run), 413 upload too large, 422 invalid input.
+- **Lists** return `{items, total, limit, offset}`. Timestamps are ISO-8601 UTC. Responses never expose filesystem paths; files are served by id.
+- **Request ids:** every response carries `X-Request-ID` (taken from the gateway, or created), and the API logs it with each request.
 
 ## 9. Gateway
 

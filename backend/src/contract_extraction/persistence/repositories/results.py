@@ -4,13 +4,16 @@ from __future__ import annotations
 
 import uuid
 from collections.abc import Sequence
+from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.orm import Session
 
+from ...core.errors import NotFound
 from ...domain.config import ModelProfile
 from ...domain.enums import FieldResultStatus, JudgeIssue, LlmCallPurpose, LlmCallStatus, Verdict
 from ...extraction.retrieval import Hit
@@ -18,6 +21,14 @@ from ...providers.base import ChatResult
 from .. import models as m
 
 _MILLION = Decimal(1_000_000)
+
+
+@dataclass(frozen=True)
+class Outcome:
+    result: m.FieldResult
+    field: m.Field
+    retrieval_config: str
+    judgement: m.Judgement | None
 
 
 def call_cost(profile: ModelProfile, result: ChatResult) -> Decimal | None:
@@ -80,6 +91,57 @@ class ResultRepo:
         return self.session.scalars(
             select(m.FieldResult).where(m.FieldResult.run_id == run_id).order_by(m.FieldResult.created_at)
         ).all()
+
+    def outcomes(self, run_id: uuid.UUID) -> list[Outcome]:
+        """Every field result of the run with its field, RAG config and latest verdict."""
+        rows = self.session.execute(
+            select(m.FieldResult, m.Field, m.RetrievalConfig.name)
+            .join(m.Field, m.Field.id == m.FieldResult.field_id)
+            .join(m.RetrievalConfig, m.RetrievalConfig.id == m.FieldResult.retrieval_config_id)
+            .where(m.FieldResult.run_id == run_id).order_by(m.FieldResult.created_at)
+        ).all()
+        latest = self.latest_judgements([fr.id for fr, _, _ in rows])
+        return [Outcome(fr, f, rc_name, latest.get(fr.id)) for fr, f, rc_name in rows]
+
+    def latest_judgements(self, field_result_ids: list[uuid.UUID]) -> dict[uuid.UUID, m.Judgement]:
+        if not field_result_ids:
+            return {}
+        rows = self.session.scalars(
+            select(m.Judgement).where(m.Judgement.field_result_id.in_(field_result_ids))
+            .ext(distinct_on(m.Judgement.field_result_id))
+            .order_by(m.Judgement.field_result_id, m.Judgement.created_at.desc())
+        ).all()
+        return {j.field_result_id: j for j in rows}
+
+    def outcome(self, run_id: uuid.UUID, field_result_id: uuid.UUID) -> Outcome:
+        for o in self.outcomes(run_id):
+            if o.result.id == field_result_id:
+                return o
+        raise NotFound(f"Field result {field_result_id} not found in run {run_id}")
+
+    def evidence(self, field_result_id: uuid.UUID) -> list[tuple[m.RetrievalHit, m.Chunk]]:
+        return list(self.session.execute(
+            select(m.RetrievalHit, m.Chunk).join(m.Chunk, m.Chunk.id == m.RetrievalHit.chunk_id)
+            .where(m.RetrievalHit.field_result_id == field_result_id).order_by(m.RetrievalHit.rank)
+        ).all())
+
+    def judgements(self, field_result_id: uuid.UUID) -> Sequence[m.Judgement]:
+        return self.session.scalars(select(m.Judgement).where(m.Judgement.field_result_id == field_result_id)
+                                    .order_by(m.Judgement.created_at)).all()
+
+    def llm_calls(self, field_result_id: uuid.UUID) -> list[m.LlmCall]:
+        """Calls that produced this result. A reused result made no calls of its own: the calls of the
+        result it was reused from are returned instead (found through the reuse event)."""
+        source = self.reused_from(field_result_id) or field_result_id
+        calls = list(self.session.scalars(select(m.LlmCall).where(m.LlmCall.field_result_id == source)
+                                          .order_by(m.LlmCall.created_at)))
+        return calls
+
+    def reused_from(self, field_result_id: uuid.UUID) -> uuid.UUID | None:
+        value = self.session.scalar(
+            select(m.RunEvent.data["reused_from"].astext)
+            .where(m.RunEvent.data["field_result_id"].astext == str(field_result_id)).limit(1))
+        return uuid.UUID(value) if value else None
 
     def best_values(self, run_id: uuid.UUID) -> Sequence[RowMapping]:
         bv = m.best_values

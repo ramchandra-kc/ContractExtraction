@@ -6,6 +6,7 @@
     contract-extraction run <pdf> --queue     only queue it; `contract-extraction worker` executes queued runs
     contract-extraction status [RUN_ID]       recent runs, or one run's timeline and best values
     contract-extraction cancel RUN_ID         cancel a queued run / stop a running one before its next field
+    contract-extraction api                   serve the HTTP API (127.0.0.1:8000, behind the gateway)
     contract-extraction providers [set KEY --base-url URL | --enable | --disable]
                                               list LLM providers / switch e.g. native ↔ Docker Ollama
 """
@@ -19,58 +20,24 @@ import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
-import httpx
-from sqlalchemy import func, inspect, select
+from sqlalchemy import func, select
 
 from .core.errors import AppError
 from .core.logging import setup_logging
-from .core.settings import Settings, load_settings
-from .domain.config import PipelineConfig
-from .domain.enums import ProviderKind, RunKind, RunState
+from .core.settings import load_settings
+from .domain.enums import RunKind, RunState
 from .persistence import models as m
 from .persistence.db import Database
 from .persistence.repositories import ConfigRepo, RunRepo
 from .persistence.repositories.results import ResultRepo
 from .pipeline.options import RunOptions
 from .providers.base import ProviderError
-from .providers.qdrant import QdrantStore
 from .storage import FileStorage
 
 
-def _ping_providers(pipeline: PipelineConfig, settings: Settings) -> list[str]:
-    """One line per distinct endpoint used by the pipeline; failures are prefixed with FAIL."""
-    lines = []
-    if pipeline.index.vector_store == "qdrant":
-        try:
-            QdrantStore(settings.qdrant.url, settings.qdrant.api_key or None).ping()
-            lines.append(f"  qdrant    : ok ({settings.qdrant.url})")
-        except ProviderError as exc:
-            lines.append(f"FAIL qdrant : {exc}")
-    models = [pipeline.extraction_profile.model, pipeline.index.embedding_model]
-    if pipeline.judge_profile:
-        models.append(pipeline.judge_profile.model)
-    seen = set()
-    for model in models:
-        p = model.provider
-        if (p.key, model.name) in seen:
-            continue
-        seen.add((p.key, model.name))
-        if p.kind != ProviderKind.OLLAMA:
-            lines.append(f"  {p.key:<10}: {model.name} (hosted; key from {p.api_key_env or 'none'})")
-            continue
-        try:
-            tags = httpx.get(f"{p.base_url.rstrip('/')}/api/tags", timeout=5).json()
-            names = {t.get("name") for t in tags.get("models", [])}
-            if model.name in names:
-                lines.append(f"  {p.key}: {model.name} ok ({p.base_url})")
-            else:
-                lines.append(f"FAIL {p.key}: {model.name} is not available at {p.base_url} (pull it, or point the provider elsewhere)")
-        except (httpx.HTTPError, ValueError) as exc:
-            lines.append(f"FAIL {p.key}: {p.base_url} unreachable ({exc.__class__.__name__})")
-    return lines
-
-
 def check() -> int:
+    from .health import readiness
+
     settings = load_settings()
     setup_logging(settings.log_level)
     db = Database(settings.database)
@@ -78,36 +45,24 @@ def check() -> int:
     print(f"database    : {db.safe_url()}")
     print(f"storage     : {settings.storage_root}")
     try:
-        db.ping()
-        missing = set(m.Base.metadata.tables) - set(inspect(db.engine).get_table_names())
-        if missing:
-            print(f"FAIL schema : missing tables {sorted(missing)} (recreate the database from docker/schema.sql)")
-            return 1
-        with db.session() as s:
-            p = ConfigRepo(s).resolve_pipeline()
-    except AppError as exc:
-        print(f"FAIL config : {exc}")
-        return 1
-    except Exception as exc:  # noqa: BLE001 - report any connection problem plainly
-        print(f"FAIL database: {exc.__class__.__name__}: {exc}")
-        return 1
+        components, p = readiness(db, settings)
     finally:
         db.dispose()
-
-    judge = f"{p.judge_profile.name} ({p.judge_profile.model.name})" if p.judge_enabled and p.judge_profile else "off"
-    print(f"pipeline    : {p.name}")
-    print(f"  decompose : {p.decomposition.name} ({p.decomposition.method}, {p.decomposition.text_format})")
-    print(f"  extraction: {p.extraction_profile.name} ({p.extraction_profile.model.name} via {p.extraction_profile.model.provider.key})")
-    print(f"  judge     : {judge}")
-    print(f"  embedding : {p.index.embedding_model.name} (chunks {p.index.chunk_size}/{p.index.chunk_overlap}, {p.index.vector_store})")
-    print(f"  fields    : {len(p.field_set.fields)} from {p.field_set.name} v{p.field_set.version}")
-    print(f"  retrieval : {', '.join(r.name for r in p.retrievals)}")
+    if p is not None:
+        judge = f"{p.judge_profile.name} ({p.judge_profile.model.name})" if p.judge_enabled and p.judge_profile else "off"
+        print(f"pipeline    : {p.name}")
+        print(f"  decompose : {p.decomposition.name} ({p.decomposition.method}, {p.decomposition.text_format})")
+        print(f"  extraction: {p.extraction_profile.name} ({p.extraction_profile.model.name} via {p.extraction_profile.model.provider.key})")
+        print(f"  judge     : {judge}")
+        print(f"  embedding : {p.index.embedding_model.name} (chunks {p.index.chunk_size}/{p.index.chunk_overlap}, {p.index.vector_store})")
+        print(f"  fields    : {len(p.field_set.fields)} from {p.field_set.name} v{p.field_set.version}")
+        print(f"  retrieval : {', '.join(r.name for r in p.retrievals)}")
     print("services    :")
-    lines = _ping_providers(p, settings)
-    print("\n".join(lines))
-    failed = any("FAIL" in line for line in lines)
-    print("FAIL" if failed else "OK")
-    return 1 if failed else 0
+    for c in components:
+        print(f"  {'ok  ' if c.ok else 'FAIL'} {c.name}: {c.detail}")
+    ok = all(c.ok for c in components)
+    print("OK" if ok else "FAIL")
+    return 0 if ok else 1
 
 
 def ingest(pdf: Path, pipeline_name: str | None, redecompose: bool) -> int:
@@ -327,6 +282,8 @@ def main(argv: list[str] | None = None) -> int:
     p_cancel = sub.add_parser("cancel", help="cancel a queued run, or stop a running one before its next field")
     p_cancel.add_argument("run_id")
 
+    sub.add_parser("api", help="serve the HTTP API on API__HOST:API__PORT (default 127.0.0.1:8000)")
+
     p_prov = sub.add_parser("providers", help="list LLM providers, or change one with 'providers set'")
     prov_sub = p_prov.add_subparsers(dest="action")
     p_set = prov_sub.add_parser("set", help="change a provider's URL or enable/disable it")
@@ -357,6 +314,11 @@ def main(argv: list[str] | None = None) -> int:
         return status(args.run_id, args.limit)
     if args.command == "cancel":
         return cancel(args.run_id)
+    if args.command == "api":
+        from .api.app import serve
+
+        serve()
+        return 0
     return 2
 
 

@@ -13,6 +13,9 @@ dependencies = [
     "httpx>=0.27",
     "pymupdf>=1.25",
     "pdf-converter",
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+    "python-multipart>=0.0.17",
 ]
 
 [project.scripts]
@@ -41,4 +44,7 @@ markers = [
     "live: needs real Ollama and Qdrant (run with CE_LIVE=1 uv run pytest -m live)",
     "ocr: needs Tesseract installed",
 ]
-filterwarnings = ["ignore:builtin type .* has no __module__ attribute:DeprecationWarning"]
+filterwarnings = [
+    "ignore:builtin type .* has no __module__ attribute:DeprecationWarning",
+    "ignore:Using `httpx` with `starlette.testclient` is deprecated",
+]
