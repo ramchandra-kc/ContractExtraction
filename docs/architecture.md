@@ -28,11 +28,13 @@ flowchart TB
         fs[("file storage<br/>local disk")]
     end
 
-    subgraph docker["Docker (database/)"]
-        pg[("Postgres :5432")]
-        qd[("Qdrant :6333")]
-        ol["Ollama :11434"]
+    subgraph docker["Docker (docker/docker-compose.yml)"]
+        pg[("Postgres :5432<br/>data + configuration")]
+        qd[("Qdrant :6333<br/>vectors")]
+        ol["Ollama :11434<br/>(optional profile)"]
     end
+
+    or["Hosted LLM provider<br/>e.g. OpenRouter"]
 
     browser --> fe
     fe -- "/api/*" --> gw
@@ -42,8 +44,13 @@ flowchart TB
     wk --> pg
     wk --> fs
     wk --> qd
-    wk --> ol
+    wk -. "LLM provider<br/>(chosen in DB config)" .-> ol
+    wk -.-> or
 ```
+
+Postgres, Qdrant and Ollama are independent services that happen to be started by one compose file. Only Postgres is
+"the database". Qdrant is the vector store. The LLM provider is pluggable: a local Ollama (Docker or native) or a hosted
+API such as OpenRouter, which needs no container.
 
 Plain-text version:
 
@@ -57,9 +64,12 @@ Browser ─► frontend (Vite :5173)
            backend API (:8000, 127.0.0.1 only)          backend worker (no HTTP)
               │                                             │
               └──────────── Postgres (:5432) ◄──────────────┤  API ⇄ worker talk ONLY through Postgres
-                                                            ├─► Qdrant  (:6333)   vectors
-                                                            ├─► Ollama  (:11434)  embeddings, extraction LLM, judge LLM
+                            data + configuration            ├─► Qdrant  (:6333)   vectors
+                                                            ├─► LLM provider      embeddings, extraction, judge
+                                                            │     Ollama (:11434, local) or OpenRouter (hosted)
                                                             └─► file storage      PDFs, page JSON, images, logs
+
+Docker (docker/docker-compose.yml): Postgres, Qdrant, Ollama (optional profile)
 ```
 
 ## 3. Components and boundaries
@@ -69,16 +79,19 @@ Browser ─► frontend (Vite :5173)
 | **frontend** | UI: upload, document list, run progress, results with judge verdicts, page viewer | gateway only (relative `/api/...` URLs) | know the backend's address; hold business rules |
 | **gateway** | routing `/api/*` → backend; request IDs; access logs; timeouts; upload size limit; CORS; aggregated `/health`; authentication (last phase) | backend API | contain business logic; access the database or storage |
 | **backend API** | REST resources (documents, runs, results, pages, system); validation; enqueueing runs; reading results | Postgres, file storage | be reached by the browser directly; run pipeline work inside a request |
-| **backend worker** | claims queued runs; heartbeats; cancellation; pipeline stages; writes results | Postgres, Qdrant, Ollama, file storage | expose HTTP |
-| **database** | Docker Compose for Postgres, Qdrant and Ollama; env examples; init scripts (including the test database); schema migrations; seed and backup scripts | none | contain application code |
+| **backend worker** | claims queued runs; heartbeats; cancellation; pipeline stages; writes results | Postgres, Qdrant, LLM provider, file storage | expose HTTP |
+| **docker** | one compose file for Postgres, Qdrant and (optionally) Ollama; the Postgres image with `schema.sql` and `seed.sql` baked in | none | contain application code |
 
 ### Dependency rules
 
 1. The browser → frontend → gateway → backend API chain is the only path in. Nothing skips a layer.
 2. **The API and the worker never call each other.** The API writes a `queued` run row, and a worker claims it.
    Postgres is the queue ([ADR 0003](adr/0003-postgres-as-run-queue.md)).
-3. Only the worker talks to Ollama and Qdrant. The API stays fast and never waits on an LLM.
-4. Schema changes live only in `database/` migrations. The backend's ORM models must match them.
+3. Only the worker talks to the LLM provider and Qdrant. The API stays fast and never waits on an LLM.
+4. `docker/schema.sql` is the single source of truth for the schema. The backend's ORM models must match it.
+   There are no migrations: change the file, then recreate the database (`down -v`, then `up --build`).
+5. Pipeline configuration (models, prompts, RAG settings, fields) lives in the database, not in env files.
+   Env files hold only connection details and secrets.
 
 ## 4. Backend internals
 
@@ -89,7 +102,7 @@ backend/
   core/          settings, logging, errors
   domain/        plain models: Document, Page, Chunk, Field, SearchConfig, FieldResult, Verdict
   persistence/   SQLAlchemy models, repositories, file storage
-  providers/     adapters behind interfaces: LLM (Ollama), embedder, vector store (Qdrant, in-memory for tests)
+  providers/     adapters behind interfaces: LLM and embedder (Ollama, OpenRouter / OpenAI-compatible), vector store (Qdrant, in-memory for tests)
   pipeline/      decomposition → chunking/indexing → retrieval → extraction → judge, orchestration
   worker/        claim loop, heartbeat, cancellation, stale-run recovery
   api/           FastAPI app, routers, request/response schemas
@@ -109,8 +122,10 @@ Providers sit behind interfaces, so tests can run with fakes and no Docker.
 | **Extract** | field prompt + chunks → value | Ollama in JSON mode; explicit `num_ctx` so long prompts are not silently cut |
 | **Judge** | value + evidence → verdict | separate LLM settings; can run in parallel with extraction |
 
-Fields and their prompts and expansion queries are **configuration** (a JSON template file), not code.
-Search configurations (e.g. `RAG01…RAG07`: top-k, threshold, expansion on or off) are configuration too.
+Everything that shapes a run is **configuration stored in the database** (see §7.1), not code:
+LLM providers and models, generation settings, system prompts, decomposition and chunking/embedding settings,
+RAG configurations (`RAG01…RAG07`: top-k, threshold, expansion on or off), and fields with their prompts and expansion
+queries. A **pipeline config** bundles them into a recipe. Every run stores the fully resolved recipe as a snapshot.
 
 ## 6. Run lifecycle
 
@@ -131,25 +146,81 @@ stateDiagram-v2
 - Each run stores the **options** chosen by the caller and a **snapshot of the effective non-secret settings**.
 - The frontend polls the run (default every 2 s). Push updates (SSE) can come later through the gateway.
 
-## 7. Data model (conceptual)
+## 7. Data model
+
+The full definition is in [`docker/schema.sql`](../docker/schema.sql): 26 tables and 2 views in four groups. The default
+configuration is in [`docker/seed.sql`](../docker/seed.sql).
+
+### 7.1 Model & RAG configuration
+
+```mermaid
+erDiagram
+    llm_providers ||--o{ llm_models : serves
+    llm_models ||--o{ model_profiles : "generation settings"
+    llm_models ||--o{ index_configs : "embedding model"
+    field_sets ||--o{ fields : contains
+    fields ||--o{ field_queries : "expansion queries"
+    pipeline_configs }o--|| decomposition_configs : uses
+    pipeline_configs }o--|| index_configs : uses
+    pipeline_configs }o--|| field_sets : extracts
+    pipeline_configs }o--|| model_profiles : "extraction / judge"
+    pipeline_configs }o--|| prompt_templates : "system prompts"
+    pipeline_configs ||--o{ pipeline_config_retrievals : "RAG configs in priority order"
+    retrieval_configs ||--o{ pipeline_config_retrievals : ""
+```
+
+| Table | Holds |
+|---|---|
+| `llm_providers` | Ollama, OpenRouter or any OpenAI-compatible endpoint: base URL, and the **name** of the env var with the API key (no secrets in the DB) |
+| `llm_models` | chat, embedding or vision models per provider: context window, embedding dimension, token prices |
+| `model_profiles` | a model plus generation settings (temperature, top_p, top_k, num_ctx, JSON mode, timeout) |
+| `prompt_templates` | versioned system prompts (extraction, judge, caption); one active version per name |
+| `decomposition_configs` | PDF → text settings (method, format, OCR, header/footer removal, optional captioning profile) |
+| `index_configs` | chunk size and overlap, embedding model, vector store, distance metric |
+| `retrieval_configs` | RAG settings: top-k, score threshold, query expansion, per-query top, minimum score |
+| `field_sets`, `fields`, `field_queries` | versioned field sets; each field has a key, label, value type, user prompt and expansion queries |
+| `pipeline_configs`, `pipeline_config_retrievals` | the recipe a run executes, with its RAG configs in priority order; one is the default |
+
+### 7.2 Documents & artifacts
 
 ```
-documents 1──* decompositions 1──* pages
-    │               └──* vector_indexes
-    └──* runs ─→ decomposition, vector_index (set as stages complete)
-            └──* field_results 1──* retrieval_hits
+documents 1──* decompositions 1──* pages 1──* page_images
+                    └──* vector_indexes 1──* chunks
 ```
 
-- **documents**: uploaded PDF (sha256, size, page count, storage path, short code like `DOC001`).
-- **decompositions**: one per decomposition attempt (method, format, options, duration). Never overwritten.
-- **pages**: text, header and footer, metadata per page.
-- **vector_indexes**: backend, index name, embedder model, dimension, chunk count, chunking options.
-- **runs**: kind (`full` / `decompose` / `extract`), state, stage, progress, options, settings snapshot, worker, heartbeat, error.
-- **field_results**: per run × search config × field: value, raw answer, context, timings, judge verdict.
-- **retrieval_hits**: rank, chunk, score and page for each field result.
+- **documents**: an uploaded PDF (code `DOC001`…, sha256 unique, so the same file is stored once; tags; metadata).
+- **decompositions**: one per attempt, with its config snapshot. Never overwritten.
+- **pages**: text, header and footer, size, metadata, and a generated full-text search column.
+- **vector_indexes**: one collection per decomposition × index config, reused by later runs.
+- **chunks**: chunk text with page and character ranges. `chunks.id` is the vector-store point id, so evidence can be traced exactly.
 
-Large artifacts (PDF, page JSON, images, logs) live in **file storage**, and rows store their paths. Status columns are text
-with CHECK constraints, so adding a value doesn't need an enum migration.
+### 7.3 Runs & results
+
+```
+experiments 1──* runs 1──* run_events
+                   └──* field_results 1──* retrieval_hits *──1 chunks
+                              ├──* llm_calls
+                              └──* judgements
+```
+
+- **runs**: the job queue (state, stage, progress, attempts, heartbeat), the pipeline config, and a `config_snapshot` with the resolved recipe.
+- **run_events**: the run's timeline and log.
+- **field_results**: one outcome per run × RAG config × field (`extracted` / `not_found` / `error`).
+- **retrieval_hits**: the chunks used as evidence, with score and matching query.
+- **llm_calls**: every LLM call, with prompts, response, token usage, latency and cost.
+- **judgements**: verdicts (`PASS` / `FAIL` / `ERROR` / `SKIPPED`) plus an issue type. A result can be judged again, and the latest judgement counts.
+
+### 7.4 Evaluation
+
+- **ground_truth**: human-labelled expected values per document and field.
+- **`v_best_values`** (view): the best value per run and field (a PASS from the highest-priority RAG config, otherwise the first extracted value).
+- **`v_run_evaluation`** (view): best values next to the ground truth, with a simple exact-match flag.
+
+### Rules
+
+- Configuration referenced by runs or results can't be deleted. Deleting a document deletes everything derived from it.
+- Large artifacts (PDF, page JSON, images, logs) live in **file storage**, and rows store their paths.
+- Status columns are text with named CHECK constraints. `updated_at` is maintained by triggers.
 
 ### File storage layout
 
@@ -190,11 +261,11 @@ See [ADR 0002](adr/0002-custom-gateway.md).
 
 ## 10. Configuration conventions
 
-- Each part reads config only from **its own folder** (`backend/config/`, `gateway/config/`, `frontend/`, `database/`).
+- **Pipeline configuration lives in the database** (§7.1). Env files only hold connection details and secrets such as `OPENROUTER_API_KEY`.
+- Each part reads its env config only from **its own folder** (`backend/config/`, `gateway/config/`, `frontend/`, `docker/`).
 - Layered `.env` files, later ones overriding earlier ones: `.env` → `.env.<APP_ENV>` → `.env.local` → `.env.<APP_ENV>.local`.
   Real environment variables override all files. `*.local` files are never committed.
 - Nested keys use `__`, e.g. `EXTRACTION_LLM__MODEL=llama3.1:8b`, `UPSTREAM__BACKEND_URL=http://127.0.0.1:8000`.
-- Lists that don't fit env vars (search configurations, field templates) live in JSON files that the env settings point to.
 - The frontend only sees `VITE_*` variables, and never secrets.
 
 ### Ports
@@ -204,14 +275,15 @@ See [ADR 0002](adr/0002-custom-gateway.md).
 | frontend (Vite dev) | 5173 | localhost |
 | gateway | 8080 | localhost |
 | backend API | 8000 | 127.0.0.1 (reached only through the gateway) |
-| Postgres | 5432 | Docker, published to localhost |
-| Qdrant | 6333 | Docker, published to localhost |
-| Ollama | 11434 | Docker, published to localhost (an existing local Ollama can be reused) |
+| Postgres | 5432 (`POSTGRES_PORT`) | Docker, published to 127.0.0.1 |
+| Qdrant | 6333 (`QDRANT_PORT`) | Docker, published to 127.0.0.1 |
+| Ollama | 11434 (`OLLAMA_PORT`) | Docker profile `ollama`, published to 127.0.0.1 (or a native Ollama, or a hosted provider instead) |
 
 ## 11. Runtime (local)
 
-- **Docker:** Postgres, Qdrant and Ollama, started by `scripts/infra-up.sh` from `database/docker-compose.yml`.
-  The script reuses a Qdrant or Ollama that is already running and pulls the required Ollama models.
+- **Docker:** `docker/docker-compose.yml` starts Postgres and Qdrant, plus Ollama with `--profile ollama`.
+  The Postgres image is built from `docker/Dockerfile` with `schema.sql` and `seed.sql` baked in. They run on an empty volume,
+  so `down -v`, then `up --build`, gives a clean database.
 - **Local processes:** backend API, one or more backend workers, gateway and frontend. Phase 8 adds `scripts/dev.sh`
   to start them all with one command.
 
@@ -223,7 +295,8 @@ See [ADR 0004](adr/0004-local-processes-docker-infra.md).
 |---|---|
 | backend | Python 3.12, uv, FastAPI, Pydantic v2 + pydantic-settings, SQLAlchemy 2, psycopg 3, httpx, pymupdf / pymupdf4llm, pytest |
 | gateway | Python 3.12, uv, FastAPI, httpx (streaming), pytest |
-| database | Postgres 16, Qdrant, Ollama (Docker Compose), Alembic migrations |
+| docker | Postgres 16 (plain SQL schema, no migrations), Qdrant, Ollama, Docker Compose |
+| LLM providers | Ollama (local) or OpenRouter / OpenAI-compatible APIs (hosted) |
 | frontend | React 18, TypeScript, Vite, TanStack Query, React Router, Vitest + Testing Library |
 
 ## 13. Lessons carried over from the prototype

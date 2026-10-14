@@ -1,0 +1,58 @@
+# Docker services for ContractExtraction: Postgres, Qdrant and (optionally) Ollama.
+#
+#   docker compose -f docker/docker-compose.yml up -d --build --wait                    # Postgres + Qdrant
+#   docker compose -f docker/docker-compose.yml --profile ollama up -d --build --wait   # + local Ollama
+#   docker compose -f docker/docker-compose.yml down -v                                 # stop and wipe all data
+#
+# schema.sql and seed.sql are baked into the Postgres image (Dockerfile) and run only when the volume is
+# empty, so after editing them: `down -v`, then `up --build` gives a clean database with the new schema.
+# Every value below can be overridden from the environment (e.g. POSTGRES_PORT=55432).
+name: contract-extraction
+
+services:
+  postgres:
+    build: .
+    image: contract-extraction-postgres:local
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-contract}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-contract}
+      POSTGRES_DB: ${POSTGRES_DB:-contract_extraction}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    restart: unless-stopped
+
+  qdrant:
+    image: qdrant/qdrant:v1.12.4
+    ports:
+      - "127.0.0.1:${QDRANT_PORT:-6333}:6333"
+    volumes:
+      - qdrant-data:/qdrant/storage
+    restart: unless-stopped
+
+  # Only needed when an LLM provider in the database points at a local Ollama.
+  # Pull models with: docker compose -f docker/docker-compose.yml exec ollama ollama pull llama3.1:8b
+  ollama:
+    image: ollama/ollama:0.5.4
+    profiles: ["ollama"]
+    ports:
+      - "127.0.0.1:${OLLAMA_PORT:-11434}:11434"
+    volumes:
+      - ollama-data:/root/.ollama
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+    restart: unless-stopped
+
+volumes:
+  postgres-data:
+  qdrant-data:
+  ollama-data:

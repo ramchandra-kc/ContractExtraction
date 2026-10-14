@@ -11,10 +11,10 @@ backend and database are separate**, while one researcher can still work on the 
 
 ## Decision
 
-One git repository with one top-level folder per part: `frontend/`, `gateway/`, `backend/`, `database/`. Each part:
+One git repository with one top-level folder per part: `frontend/`, `gateway/`, `backend/`, `docker/`. Each part:
 
 - has its own dependencies, config folder, tests and run command
-- talks to the others only through a documented interface (HTTP for frontend → gateway → backend, SQL and migrations for the database)
+- talks to the others only through a documented interface (HTTP for frontend → gateway → backend, and SQL for the database, whose schema is `docker/schema.sql`)
 - doesn't import code from another part
 
 The project is a rewrite from scratch. The prototype (`DocumentExtraction`) is kept read-only as a reference.

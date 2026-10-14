@@ -13,9 +13,9 @@ One phase is one commit or PR. A phase isn't started before the previous one is 
 | # | Phase | Scope | Done when | Status |
 |---|---|---|---|---|
 | 0 | **Architecture** | Repo, README, architecture, project plan, ADRs, placeholder folders | Docs reviewed | ✅ done |
-| 1 | **Database** | `database/docker-compose.yml` (Postgres, Qdrant, Ollama), env examples, init scripts (test DB), `scripts/infra-up.sh`, Alembic setup, first migration with the schema in architecture §7 | `infra-up.sh` brings everything up healthy; migration applies and rolls back cleanly | ⬜ planned |
-| 2 | **Backend core** | uv project, layered settings, logging, domain models, SQLAlchemy models matching the migration, repositories, file storage | Unit and repository tests pass against the test DB | ⬜ planned |
-| 3 | **Backend pipeline** | Provider interfaces (LLM, embedder, vector store) with Ollama, Qdrant and in-memory versions; decomposition; chunking and indexing; retrieval; extraction; judge; field templates and search configs as config; CLI to run one PDF end to end | Offline end-to-end test with fakes passes; `sample.pdf` runs end to end against real Ollama and Qdrant | ⬜ planned |
+| 1 | **Docker services & database schema** | `docker/docker-compose.yml` (Postgres, Qdrant, optional Ollama); `docker/Dockerfile`; `schema.sql` (26 tables, 2 views: model and RAG config, documents, runs, results, LLM calls, judgements, evaluation); `seed.sql` (default providers, models, prompts, RAG01–07, 12 contract fields, default pipeline) | Services healthy; schema and seed apply on an empty volume; constraint checks pass | ✅ done |
+| 2 | **Backend core** | uv project, layered settings, logging, domain models, SQLAlchemy models matching `schema.sql`, repositories (including reading config from the DB), file storage | Unit and repository tests pass against a test database | ⬜ planned |
+| 3 | **Backend pipeline** | Provider interfaces (LLM, embedder, vector store) with Ollama, OpenRouter, Qdrant and in-memory versions; decomposition; chunking and indexing; retrieval; extraction; judge; LLM-call logging; CLI to run one PDF end to end | Offline end-to-end test with fakes passes; `sample.pdf` runs end to end against real services | ⬜ planned |
 | 4 | **Backend worker** | Claim loop (`SKIP LOCKED`), heartbeats, cancellation, stale-run recovery, retry limit, per-run log file, settings snapshot | Concurrency and recovery tests pass; two workers never take the same run | ⬜ planned |
 | 5 | **Backend API** | FastAPI app, routes from architecture §8, error mapping, upload limit, OpenAPI | API integration tests pass; OpenAPI published | ⬜ planned |
 | 6 | **Gateway** | uv project, streaming proxy, request IDs, access log, timeouts, upload limit, CORS, aggregated health | Gateway tests with a fake upstream pass; frontend-style requests reach the backend through :8080 | ⬜ planned |
@@ -25,7 +25,7 @@ One phase is one commit or PR. A phase isn't started before the previous one is 
 
 ## Open questions (decided in the phase that needs them)
 
-- Phase 1: which init steps belong in the Postgres container and which in migrations.
+- Phase 2: how backend tests get their database (a `contract_extraction_test` DB, or a throwaway container).
 - Phase 3: which decomposition methods to support at first (pymupdf only, or OCR and hybrid too), and whether image captioning is in scope.
 - Phase 3: is the external experiment-tracking API still needed?
 - Phase 5: results export formats (JSON, CSV).
@@ -34,3 +34,6 @@ One phase is one commit or PR. A phase isn't started before the previous one is 
 ## Change log
 
 - 2026-10-14: Phase 0 completed. Architecture, plan and ADRs 0001–0004 written.
+- 2026-10-14: Phase 1 completed. The `database/` folder was replaced by `docker/` (one compose file; Qdrant and Ollama
+  are no longer described as part of the database). Plain SQL schema without migrations. Pipeline configuration
+  (providers, models, prompts, RAG configs, fields) moved into the database. LLM providers are pluggable (Ollama or OpenRouter).
