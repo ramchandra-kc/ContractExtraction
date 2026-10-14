@@ -30,4 +30,6 @@ install natively.
   Back up first with `pg_dump` if needed.
 - The schema and seed are copied into the image rather than bind-mounted, so this works even when Docker Desktop can't
   access the project folder (e.g. macOS privacy restrictions on `~/Documents`).
+- Five processes plus Docker are a lot to start by hand, so `scripts/dev.sh` (Phase 8) starts them all in one terminal
+  and stops them together.
 - Containerizing the app services is deferred. The separation of parts keeps that option open.

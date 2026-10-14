@@ -23,7 +23,7 @@ One phase is one commit or PR. A phase isn't started before the previous one is 
 | 7 | **Frontend** | Vite + React + TS app, types generated from OpenAPI, upload, document list, run progress, results (best values, all outcomes, evidence, verdicts), page viewer | Vitest and `tsc` pass; a PDF uploaded in the UI reaches `succeeded` and results show up | ✅ done |
 | 7b | **Ground truth & evaluation** | Ground-truth API and UI (document page, and labeling from a run); expected value, match and counts in run results; `v_best_values` ranks by the run's snapshot; `exact_match` false for error outcomes | API, view and UI tests pass; labels made in the UI show as ✓ / ✗ next to a run's best values | ✅ done |
 | 7c | **Config editing** | Write endpoints and UI for pipelines (compose, RAG order, judge, default), RAG configs, model profiles, fields and expansion queries, prompts (saving creates a new version; pipelines stay pinned), provider URL / enable and models. Decomposition and index configs are create-only (ingestion reuses their outputs by id). Names and keys can't change; deleting a row runs reference → 409 | API and UI tests pass; an edited config is used by the next run and past runs are unchanged | ✅ done |
-| 8 | **Dev experience** | `scripts/dev.sh` to start everything, checks for each service, end-to-end smoke test, docs refresh | One command brings up the full stack; the smoke test passes | ⬜ planned |
+| 8 | **Dev experience** | `scripts/dev.sh` (`up`, `status`, `smoke`, `test`, `down`, `reset`): Docker services, dependencies, check, then API, workers, gateway and frontend in one terminal with prefixed logs, fail-fast and graceful Ctrl-C; end-to-end smoke test through the gateway; docs refresh | One command brings up the full stack; the smoke test passes | ✅ done |
 | 9 | **Authentication** | Auth in the gateway, frontend login, backend trusts the gateway | Unauthenticated requests are rejected at the gateway | ⬜ planned |
 
 ## Open questions (decided in the phase that needs them)
@@ -78,3 +78,22 @@ One phase is one commit or PR. A phase isn't started before the previous one is 
     (there is no per-row GET).
   - Not verified in a browser against the real stack: the dev database was reset during the phase and the browser check
     was skipped. API, invariant (real executor, scripted models) and UI tests cover the behaviour.
+- 2026-10-14: Phase 8 completed. `scripts/dev.sh` and `backend/tests/test_smoke.py` (marker `smoke`, `CE_SMOKE=1`); the rest is in the
+  [README](../README.md) and [architecture §11](architecture.md).
+  - The first draft was revised before implementation. Ctrl-C reaches every process in the terminal's group, and the
+    script's own SIGTERM (doubled again by `uv run` / `npm run` forwarding) would have been the worker's second signal,
+    which means "exit now". The script now runs the installed entry points in their own process groups and sends one SIGTERM.
+    It is written for macOS's bash 3.2.
+  - `status` reuses `contract-extraction check` instead of probing Postgres, Qdrant and Ollama again in bash.
+  - `reset` also empties the storage folder, because document codes restart at DOC001 with a new database and the old
+    folders would be left as orphans. It keeps Docker Ollama's volume (the pulled models).
+  - The smoke PDF is generated once and cached in `.dev/smoke.pdf`, because pymupdf writes a new trailer id on every save and the same
+    bytes are needed for "already stored" (200).
+  - Dropped: hot reload for the API and gateway (needs an app factory import string, and the reload subprocess would lose
+    the logging setup), and a 413 check in the smoke test (covered by the gateway's tests).
+  - Verified: `up` against the real stack with native Ollama; `status`; `smoke` twice (17 s, then 6 s; customer_name =
+    "Acme Pty Ltd", PASS); Ctrl-C during a run (a single signal, the run ended `cancelled`, no processes left); a killed
+    gateway stops the stack with exit 1; a busy port fails before anything starts; an unreachable model warns and still starts;
+    `test` (backend 163, gateway 18, frontend 38, typecheck and lint). Shellcheck is clean.
+  - Not verified: `reset --yes` (the destructive path was not run during the phase; declining the prompt changes nothing) and
+    a browser walkthrough of the UI.

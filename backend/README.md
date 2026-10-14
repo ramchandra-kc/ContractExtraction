@@ -1,8 +1,9 @@
 # backend
 
-The Python package `contract_extraction`. It will contain the REST API (Phase 5) and the pipeline worker (Phases 3–4).
-It currently provides the core they build on: settings, domain models, persistence and file storage.
-See [architecture §4–§8](../docs/architecture.md).
+The Python package `contract_extraction`: the REST API, the pipeline worker and the `contract-extraction` CLI, over shared
+settings, domain models, persistence, providers and file storage. See [architecture §4–§8](../docs/architecture.md).
+To run the whole stack, use `scripts/dev.sh` from the repository root (see the [README](../README.md)); the commands
+below run single parts.
 
 ## Setup
 
@@ -105,10 +106,15 @@ src/contract_extraction/
   providers/     chat, embedding and vector-store clients: Ollama, OpenAI-compatible (OpenRouter), Qdrant, in-memory
   decomposition/ pdf-converter wrapper (pymupdf / ocr / hybrid), header/footer removal, decomposition stage
   indexing/      chunking (per page, exact offsets, overlap), indexer (embed, upsert, chunk rows)
+  extraction/    retrieval (query expansion, thresholds, merge), prompts, answer parsing, judge
+  pipeline/      run options and the executor (stages, progress, events, reuse of repeated evidence)
+  api/           FastAPI app, routes/, schemas, problem details, dependencies (session per request)
   ingestion.py   register → decompose → index, reusing earlier work
   storage.py     local file storage (staging + hashing, per-document folders, path guards)
   secrets.py     API key lookup by the env var named in the database
-  cli.py         contract-extraction check | ingest
+  health.py      liveness and readiness, shared by /health and `check`
+  worker.py      claim loop (SKIP LOCKED), heartbeat, cancellation, stale-run cleanup
+  cli.py         contract-extraction check | ingest | run | worker | status | cancel | api | openapi | providers
 ```
 
 ## Tests
@@ -120,6 +126,9 @@ database tests are skipped.
 Markers:
 - `ocr` tests need Tesseract.
 - `live` tests are deselected by default. Run them against real Ollama and Qdrant with `CE_LIVE=1 uv run pytest -m live`.
+- `smoke` (`tests/test_smoke.py`) is deselected by default. It runs end to end over HTTP against the running dev stack
+  (frontend proxy → gateway → API → worker → models): `scripts/dev.sh smoke`. It uses no test database. It uploads one fixed
+  PDF (cached in `.dev/smoke.pdf`) and queues a one-field run, which stays in the dev database.
 
 `tests/test_schema_matches_orm.py` compares `persistence/models.py` with the live schema (tables, columns, types, nullability, keys).
 Run it after editing `schema.sql`.

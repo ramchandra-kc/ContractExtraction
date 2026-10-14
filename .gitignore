@@ -20,6 +20,7 @@ database/*.env
 !database/*.env.example
 
 # Runtime data
+.dev/
 storage/
 storage-test/
 *.log

@@ -1,7 +1,7 @@
 # Architecture
 
-> Status: **Phase 0, agreed design.** Nothing below is implemented yet. Each part is built in its own phase
-> (see [project-plan.md](project-plan.md)), and each phase may refine the details here after its plan is reviewed.
+> Status: **implemented through Phase 8.** Each phase updates this document with what it built and decided
+> (see [project-plan.md](project-plan.md)).
 
 ## 1. Purpose
 
@@ -22,7 +22,7 @@ flowchart TB
 
     subgraph local["Local processes"]
         fe["frontend<br/>React SPA · Vite :5173"]
-        gw["gateway<br/>FastAPI + httpx :8080"]
+        gw["gateway<br/>Starlette + httpx :8080"]
         api["backend API<br/>FastAPI :8000 (127.0.0.1)"]
         wk["backend worker<br/>no HTTP"]
         fs[("file storage<br/>local disk")]
@@ -95,21 +95,28 @@ Docker (docker/docker-compose.yml): Postgres, Qdrant, Ollama (optional profile)
 
 ## 4. Backend internals
 
-The backend is one Python package with two entry points (API and worker) over shared layers:
+The backend is one Python package, `contract_extraction`, with two entry points (API and worker) over shared layers:
 
 ```
-backend/
-  core/          settings, logging, errors
-  domain/        plain models: Document, Page, Chunk, Field, SearchConfig, FieldResult, Verdict
-  persistence/   SQLAlchemy models, repositories, file storage
-  providers/     adapters behind interfaces: LLM and embedder (Ollama, OpenRouter / OpenAI-compatible), vector store (Qdrant, in-memory for tests)
-  pipeline/      decomposition → chunking/indexing → retrieval → extraction → judge, orchestration
-  worker/        claim loop, heartbeat, cancellation, stale-run recovery
-  api/           FastAPI app, routers, request/response schemas
-  cli/           local commands (run a PDF end to end, check services)
+backend/src/contract_extraction/
+  core/           settings, logging, errors
+  domain/         enums mirroring the schema's CHECK values; the resolved pipeline config (frozen, snapshot())
+  persistence/    SQLAlchemy models mirroring schema.sql, repositories
+  providers/      adapters behind interfaces: chat and embedding (Ollama, OpenAI-compatible), vector store (Qdrant, in-memory)
+  decomposition/  PDF → pages (pymupdf / OCR / hybrid), header and footer removal
+  indexing/       chunking with exact offsets, embedding and upserting
+  extraction/     retrieval, prompts, answer parsing, judge
+  pipeline/       run options and the executor (stages, progress, events, reuse)
+  api/            FastAPI app, routes/, request/response schemas, problem details
+  ingestion.py    register → decompose → index, reusing earlier work
+  storage.py      local file storage
+  health.py       liveness and readiness, shared by the API and `check`
+  worker.py       claim loop, heartbeat, cancellation, stale-run recovery
+  cli.py          contract-extraction check | ingest | run | worker | status | cancel | api | openapi | providers
 ```
 
-Layers depend only downward (`api`/`worker`/`cli` → `pipeline` → `domain`, `persistence`, `providers` → `core`).
+Layers depend only downward (`api` / `worker` / `cli` → `pipeline` → `extraction`, `indexing`, `decomposition` →
+`domain`, `persistence`, `providers` → `core`).
 Providers sit behind interfaces, so tests can run with fakes and no Docker.
 
 ## 5. Pipeline
@@ -329,7 +336,7 @@ See [ADR 0002](adr/0002-custom-gateway.md) and [`gateway/README.md`](../gateway/
 - Each part reads its env config only from **its own folder** (`backend/config/`, `gateway/config/`, `frontend/`, `docker/`).
 - Layered `.env` files, later ones overriding earlier ones: `.env` → `.env.<APP_ENV>` → `.env.local` → `.env.<APP_ENV>.local`.
   Real environment variables override all files. `*.local` files are never committed.
-- Nested keys use `__`, e.g. `EXTRACTION_LLM__MODEL=llama3.1:8b`, `UPSTREAM__BACKEND_URL=http://127.0.0.1:8000`.
+- Nested keys use `__`, e.g. `DATABASE__URL=postgresql+psycopg://…`, `UPSTREAM__URL=http://127.0.0.1:8000`.
 - The frontend only sees `VITE_*` variables, and never secrets.
 
 ### Ports
@@ -353,17 +360,20 @@ See [ADR 0002](adr/0002-custom-gateway.md) and [`gateway/README.md`](../gateway/
 - **Docker:** `docker/docker-compose.yml` starts Postgres and Qdrant, plus Ollama with `--profile ollama`.
   The Postgres image is built from `docker/Dockerfile` with `schema.sql` and `seed.sql` baked in. They run on an empty volume,
   so `down -v`, then `up --build`, gives a clean database.
-- **Local processes:** backend API, one or more backend workers, gateway and frontend. Phase 8 adds `scripts/dev.sh`
-  to start them all with one command.
+- **Local processes:** backend API, one or more backend workers, gateway and frontend. `scripts/dev.sh` starts the
+  Docker services and all of them with one command, in the foreground. It runs the installed entry points directly
+  (not through `uv run` / `npm run`) in their own process groups, so Ctrl-C sends each process exactly one SIGTERM and
+  the worker stops gracefully. `scripts/dev.sh status` reuses `contract-extraction check` and adds the processes, and
+  `scripts/dev.sh smoke` runs an end-to-end test through the gateway (`backend/tests/test_smoke.py`).
 
 See [ADR 0004](adr/0004-local-processes-docker-infra.md).
 
-## 12. Technology (proposed, confirmed in each phase's plan)
+## 12. Technology
 
 | Part | Stack |
 |---|---|
 | backend | Python 3.12, uv, FastAPI, Pydantic v2 + pydantic-settings, SQLAlchemy 2, psycopg 3, httpx, pymupdf / pymupdf4llm, pytest |
-| gateway | Python 3.12, uv, FastAPI, httpx (streaming), pytest |
+| gateway | Python 3.12, uv, Starlette, httpx (streaming), pytest |
 | docker | Postgres 16 (plain SQL schema, no migrations), Qdrant, Ollama, Docker Compose |
 | LLM providers | Ollama (local) or OpenRouter / OpenAI-compatible APIs (hosted) |
 | frontend | React 19, TypeScript 5.9, Vite, Tailwind v4 + shadcn/ui, TanStack Query, React Router, openapi-typescript + openapi-fetch, react-markdown, Vitest + Testing Library + MSW (confirmed in Phase 7) |

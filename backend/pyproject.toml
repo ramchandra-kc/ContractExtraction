@@ -39,10 +39,11 @@ pymupdf4llm = { git = "https://github.com/ramchandra-kc/pymupdf4llm.git", subdir
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
-addopts = "-ra -m 'not live'"
+addopts = "-ra -m 'not live and not smoke'"
 markers = [
     "live: needs real Ollama and Qdrant (run with CE_LIVE=1 uv run pytest -m live)",
     "ocr: needs Tesseract installed",
+    "smoke: end to end against the running dev stack (scripts/dev.sh smoke)",
 ]
 filterwarnings = [
     "ignore:builtin type .* has no __module__ attribute:DeprecationWarning",
