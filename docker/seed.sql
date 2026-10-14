@@ -24,7 +24,7 @@ INSERT INTO model_profiles (name, description, model_id, temperature, top_p, top
 SELECT v.name, v.description, m.id, v.temperature, v.top_p, v.top_k, 8192, true, 600
 FROM (VALUES
     ('extraction-default', 'Field extraction with llama3.1:8b', 0.2, 0.2, 20),
-    ('judge-default',      'LLM judge with llama3.1:8b',        0.8, 0.8, 100)
+    ('judge-default',      'LLM judge with llama3.1:8b',        0.1, 0.8, 100)
 ) AS v (name, description, temperature, top_p, top_k)
 JOIN llm_models m ON m.name = 'llama3.1:8b' AND m.kind = 'chat';
 
