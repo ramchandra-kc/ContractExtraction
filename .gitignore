@@ -21,6 +21,7 @@ database/*.env
 
 # Runtime data
 storage/
+storage-test/
 *.log
 
 # Editors / OS
