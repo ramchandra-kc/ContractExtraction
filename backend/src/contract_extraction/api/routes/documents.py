@@ -8,7 +8,6 @@ from typing import Annotated
 from fastapi import APIRouter, Depends, File, Query, Response, UploadFile, status
 from fastapi.responses import FileResponse
 from sqlalchemy import select
-from sqlalchemy.orm import Session
 
 from ...core.errors import InvalidInput, NotFound
 from ...core.settings import Settings
@@ -17,7 +16,7 @@ from ...persistence.repositories import ConfigRepo, DocumentRepo, RunRepo
 from ...persistence.repositories.artifacts import DecompositionRepo
 from ...pipeline.options import narrow
 from ...storage import FileStorage
-from ..deps import get_session, get_settings, get_storage
+from ..deps import SessionDep, get_settings, get_storage
 from ..schemas import (
     DecompositionOut,
     DocumentDetail,
@@ -48,7 +47,7 @@ def document_out(doc: m.Document, latest: m.Run | None) -> DocumentOut:
 def upload_document(
     file: Annotated[UploadFile, File(description="A PDF file")],
     response: Response,
-    session: Session = Depends(get_session),
+    session: SessionDep,
     storage: FileStorage = Depends(get_storage),
     settings: Settings = Depends(get_settings),
 ):
@@ -66,7 +65,7 @@ def upload_document(
 
 
 @router.get("", response_model=Page[DocumentOut])
-def list_documents(session: Session = Depends(get_session),
+def list_documents(session: SessionDep,
                    limit: int = Query(25, ge=1, le=200), offset: int = Query(0, ge=0)):
     """Newest first, each with its latest run."""
     rows, total = DocumentRepo(session).list(limit, offset)
@@ -75,7 +74,7 @@ def list_documents(session: Session = Depends(get_session),
 
 
 @router.get("/{document_id}", response_model=DocumentDetail)
-def get_document(document_id: uuid.UUID, session: Session = Depends(get_session)):
+def get_document(document_id: uuid.UUID, session: SessionDep):
     doc = DocumentRepo(session).get(document_id)
     runs = RunRepo(session).list_for_document(doc.id)
     decompositions = session.scalars(select(m.Decomposition).where(m.Decomposition.document_id == doc.id)
@@ -92,7 +91,7 @@ def get_document(document_id: uuid.UUID, session: Session = Depends(get_session)
 
 @router.get("/{document_id}/file", response_class=FileResponse,
             responses={200: {"content": {"application/pdf": {}}, "description": "The original file"}})
-def get_document_file(document_id: uuid.UUID, session: Session = Depends(get_session),
+def get_document_file(document_id: uuid.UUID, session: SessionDep,
                       storage: FileStorage = Depends(get_storage)):
     doc = DocumentRepo(session).get(document_id)
     path = storage.resolve(doc.storage_path)
@@ -102,7 +101,7 @@ def get_document_file(document_id: uuid.UUID, session: Session = Depends(get_ses
 
 
 @router.get("/{document_id}/pages", response_model=PagesOut)
-def get_pages(document_id: uuid.UUID, decomposition_id: uuid.UUID | None = None, session: Session = Depends(get_session)):
+def get_pages(document_id: uuid.UUID, session: SessionDep, decomposition_id: uuid.UUID | None = None):
     """Pages of a decomposition (the latest one by default) with their images."""
     doc = DocumentRepo(session).get(document_id)
     repo = DecompositionRepo(session)
@@ -123,7 +122,7 @@ def get_pages(document_id: uuid.UUID, decomposition_id: uuid.UUID | None = None,
 
 @router.get("/{document_id}/images/{image_id}", response_class=FileResponse,
             responses={200: {"content": {"image/*": {}}, "description": "Image file"}})
-def get_image(document_id: uuid.UUID, image_id: uuid.UUID, session: Session = Depends(get_session),
+def get_image(document_id: uuid.UUID, image_id: uuid.UUID, session: SessionDep,
               storage: FileStorage = Depends(get_storage)):
     img = session.scalars(
         select(m.PageImage).join(m.Page).join(m.Decomposition)
@@ -138,7 +137,7 @@ def get_image(document_id: uuid.UUID, image_id: uuid.UUID, session: Session = De
 
 
 @router.post("/{document_id}/runs", response_model=RunOut, status_code=status.HTTP_202_ACCEPTED)
-def create_run(document_id: uuid.UUID, body: RunCreate, response: Response, session: Session = Depends(get_session)):
+def create_run(document_id: uuid.UUID, body: RunCreate, response: Response, session: SessionDep):
     """Queue a run; a worker executes it. 409 when the document already has a queued or running run."""
     doc = DocumentRepo(session).get(document_id)
     options = body.options()

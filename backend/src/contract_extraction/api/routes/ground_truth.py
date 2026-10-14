@@ -4,13 +4,12 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, Response, status
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Response, status
 
 from ...persistence import models as m
 from ...persistence.repositories import DocumentRepo
 from ...persistence.repositories.ground_truth import GroundTruthRepo
-from ..deps import get_session
+from ..deps import SessionDep
 from ..schemas import FieldSetRef, GroundTruthItem, GroundTruthOut, GroundTruthSet
 
 router = APIRouter(prefix="/documents/{document_id}/ground-truth", tags=["ground truth"])
@@ -25,8 +24,7 @@ def _item(field: m.Field, label: m.GroundTruth | None) -> GroundTruthItem:
 
 
 @router.get("", response_model=GroundTruthOut)
-def list_ground_truth(document_id: uuid.UUID, field_set_id: uuid.UUID | None = None,
-                      session: Session = Depends(get_session)):
+def list_ground_truth(document_id: uuid.UUID, session: SessionDep, field_set_id: uuid.UUID | None = None):
     """Every enabled field of a field set (the default pipeline's by default) with the document's label, if any."""
     DocumentRepo(session).get(document_id)
     repo = GroundTruthRepo(session)
@@ -37,14 +35,14 @@ def list_ground_truth(document_id: uuid.UUID, field_set_id: uuid.UUID | None = N
 
 @router.put("/{field_id}", response_model=GroundTruthItem)
 def set_ground_truth(document_id: uuid.UUID, field_id: uuid.UUID, body: GroundTruthSet,
-                     session: Session = Depends(get_session)):
+                     session: SessionDep):
     """Create or replace a label. 422 for null; use "" for a value that is not in the contract."""
     DocumentRepo(session).get(document_id)
     return _item(*GroundTruthRepo(session).set(document_id, field_id, body.expected_value, body.notes))
 
 
 @router.delete("/{field_id}", status_code=status.HTTP_204_NO_CONTENT, response_class=Response)
-def delete_ground_truth(document_id: uuid.UUID, field_id: uuid.UUID, session: Session = Depends(get_session)):
+def delete_ground_truth(document_id: uuid.UUID, field_id: uuid.UUID, session: SessionDep):
     DocumentRepo(session).get(document_id)
     GroundTruthRepo(session).delete(document_id, field_id)
     return Response(status_code=status.HTTP_204_NO_CONTENT)

@@ -4,14 +4,13 @@ from __future__ import annotations
 
 import uuid
 
-from fastapi import APIRouter, Depends, Query
-from sqlalchemy.orm import Session
+from fastapi import APIRouter, Query
 
 from ...domain.enums import RunState
 from ...persistence import models as m
 from ...persistence.repositories import RunRepo
 from ...persistence.repositories.results import Outcome, ResultRepo
-from ..deps import get_session
+from ..deps import SessionDep
 from ..schemas import (
     BestValue,
     EvaluationOut,
@@ -48,7 +47,7 @@ def _outcome_out(o: Outcome) -> dict:
 
 
 @router.get("", response_model=Page[RunSummary])
-def list_runs(session: Session = Depends(get_session), state: RunState | None = None,
+def list_runs(session: SessionDep, state: RunState | None = None,
               document_id: uuid.UUID | None = None, limit: int = Query(25, ge=1, le=200), offset: int = Query(0, ge=0)):
     """Newest first."""
     rows, total = RunRepo(session).list(state, document_id, limit, offset)
@@ -56,26 +55,26 @@ def list_runs(session: Session = Depends(get_session), state: RunState | None = 
 
 
 @router.get("/{run_id}", response_model=RunOut)
-def get_run(run_id: uuid.UUID, session: Session = Depends(get_session)):
+def get_run(run_id: uuid.UUID, session: SessionDep):
     return run_out(RunRepo(session).get(run_id))
 
 
 @router.post("/{run_id}/cancel", response_model=RunOut)
-def cancel_run(run_id: uuid.UUID, session: Session = Depends(get_session)):
+def cancel_run(run_id: uuid.UUID, session: SessionDep):
     """Queued: cancelled at once. Running: stops before its next field. Finished: 409."""
     return run_out(RunRepo(session).cancel(run_id))
 
 
 @router.get("/{run_id}/events", response_model=list[EventOut])
-def list_run_events(run_id: uuid.UUID, after: int | None = Query(None, description="Only events with a larger id"),
-                    session: Session = Depends(get_session)):
+def list_run_events(run_id: uuid.UUID, session: SessionDep,
+                    after: int | None = Query(None, description="Only events with a larger id")):
     """The run's timeline; poll with ``after`` set to the last id received."""
     RunRepo(session).get(run_id)
     return RunRepo(session).events(run_id, after)
 
 
 @router.get("/{run_id}/results", response_model=RunResults)
-def get_run_results(run_id: uuid.UUID, session: Session = Depends(get_session)):
+def get_run_results(run_id: uuid.UUID, session: SessionDep):
     """Best value per field plus every outcome per RAG config (partial while the run is going)."""
     run = RunRepo(session).get(run_id)
     repo = ResultRepo(session)
@@ -94,7 +93,7 @@ def get_run_results(run_id: uuid.UUID, session: Session = Depends(get_session)):
 
 
 @router.get("/{run_id}/results/{field_result_id}", response_model=FieldResultDetail)
-def get_field_result(run_id: uuid.UUID, field_result_id: uuid.UUID, session: Session = Depends(get_session)):
+def get_field_result(run_id: uuid.UUID, field_result_id: uuid.UUID, session: SessionDep):
     """Evidence, LLM calls (for a reused result: those of the original) and judgements of one outcome."""
     repo = ResultRepo(session)
     o = repo.outcome(run_id, field_result_id)

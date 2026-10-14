@@ -9,6 +9,7 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+from sqlalchemy.exc import IntegrityError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from ..core.errors import AppError, Conflict, InvalidConfig, InvalidInput, NotFound, PayloadTooLarge
@@ -41,10 +42,31 @@ def status_for(exc: AppError) -> int:
     return next((code for cls, code in _STATUS if isinstance(exc, cls)), 400)
 
 
+# Postgres SQLSTATE → (status, detail) for constraint violations the database catches.
+_INTEGRITY: dict[str, tuple[int, str]] = {
+    "23505": (409, "A row with this name already exists"),
+    "23503": (409, "It is in use: runs, results or other configuration still refer to it"),
+    "23514": (422, "A value is outside its allowed range"),
+    "23502": (422, "A required value is missing"),
+}
+
+
+def integrity_problem(exc: IntegrityError) -> JSONResponse:
+    sqlstate = getattr(exc.orig, "sqlstate", None)
+    status, detail = _INTEGRITY.get(sqlstate or "", (409, "The change conflicts with existing data"))
+    constraint = getattr(getattr(exc.orig, "diag", None), "constraint_name", None)
+    return problem(status, f"{detail} ({constraint})" if constraint else detail)
+
+
 def install(app: FastAPI) -> None:
     @app.exception_handler(AppError)
     def app_error(request: Request, exc: AppError) -> JSONResponse:
         return problem(status_for(exc), str(exc))
+
+    @app.exception_handler(IntegrityError)
+    def integrity_error(request: Request, exc: IntegrityError) -> JSONResponse:
+        log.info("Integrity error on %s %s: %s", request.method, request.url.path, exc.orig)
+        return integrity_problem(exc)
 
     @app.exception_handler(RequestValidationError)
     def validation_error(request: Request, exc: RequestValidationError) -> JSONResponse:

@@ -1,14 +1,13 @@
-"""Configuration stored in the database (read-only for now)."""
+"""Configuration summaries for running (resolved pipelines, providers). Editing is in config_edit.py."""
 
 from __future__ import annotations
 
-from fastapi import APIRouter, Depends
-from sqlalchemy.orm import Session
+from fastapi import APIRouter
 
 from ...core.errors import AppError
 from ...domain.config import ModelProfile, PipelineConfig
 from ...persistence.repositories import ConfigRepo
-from ..deps import get_session
+from ..deps import SessionDep
 from ..schemas import FieldOut, PipelineOut, ProfileOut, ProviderOut, RetrievalOut
 
 router = APIRouter(prefix="/config", tags=["config"])
@@ -34,7 +33,7 @@ def _pipeline(p: PipelineConfig, is_default: bool, description: str | None) -> P
 
 
 @router.get("/pipelines", response_model=list[PipelineOut])
-def list_pipelines(session: Session = Depends(get_session)):
+def list_pipelines(session: SessionDep):
     """Pipeline configs with their RAG configs (priority order), fields and models."""
     repo = ConfigRepo(session)
     out = []
@@ -47,6 +46,6 @@ def list_pipelines(session: Session = Depends(get_session)):
 
 
 @router.get("/providers", response_model=list[ProviderOut])
-def list_providers(session: Session = Depends(get_session)):
+def list_providers(session: SessionDep):
     """LLM providers with their URLs and models (API keys are never returned, only the variable name)."""
     return ConfigRepo(session).providers()

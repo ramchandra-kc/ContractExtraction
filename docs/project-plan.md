@@ -22,7 +22,7 @@ One phase is one commit or PR. A phase isn't started before the previous one is 
 | 6 | **Gateway** | Starlette + httpx streaming proxy for `/api/v1/*`: request ids, edge-set forwarding headers, upload limit (413), 502/504 problems, CORS, aggregated health, nosniff | Gateway tests pass; upload → run → results works through :8080; 413 never reaches the API; API down → 503/502 | ✅ done |
 | 7 | **Frontend** | Vite + React + TS app, types generated from OpenAPI, upload, document list, run progress, results (best values, all outcomes, evidence, verdicts), page viewer | Vitest and `tsc` pass; a PDF uploaded in the UI reaches `succeeded` and results show up | ✅ done |
 | 7b | **Ground truth & evaluation** | Ground-truth API and UI (document page, and labeling from a run); expected value, match and counts in run results; `v_best_values` ranks by the run's snapshot; `exact_match` false for error outcomes | API, view and UI tests pass; labels made in the UI show as ✓ / ✗ next to a run's best values | ✅ done |
-| 7c | **Config editing** | Write endpoints and UI for pipelines (compose, RAG order, judge, default), RAG configs, model profiles, fields and expansion queries, prompts (saving creates a new version; pipelines stay pinned), provider URL / enable and models. Decomposition and index configs are create-only (ingestion reuses their outputs by id). Names and keys can't change; deleting a row runs reference → 409 | API and UI tests pass; an edited config is used by the next run and past runs are unchanged | ⬜ planned |
+| 7c | **Config editing** | Write endpoints and UI for pipelines (compose, RAG order, judge, default), RAG configs, model profiles, fields and expansion queries, prompts (saving creates a new version; pipelines stay pinned), provider URL / enable and models. Decomposition and index configs are create-only (ingestion reuses their outputs by id). Names and keys can't change; deleting a row runs reference → 409 | API and UI tests pass; an edited config is used by the next run and past runs are unchanged | ✅ done |
 | 8 | **Dev experience** | `scripts/dev.sh` to start everything, checks for each service, end-to-end smoke test, docs refresh | One command brings up the full stack; the smoke test passes | ⬜ planned |
 | 9 | **Authentication** | Auth in the gateway, frontend login, backend trusts the gateway | Unauthenticated requests are rejected at the gateway | ⬜ planned |
 
@@ -68,3 +68,13 @@ One phase is one commit or PR. A phase isn't started before the previous one is 
   - Run results gained `field_id`, `value_type`, `expected_value` and `exact_match` per best value, and `evaluation` counts.
   - The dev database got the two views with `CREATE OR REPLACE VIEW` instead of being recreated, to keep its data. That is safe
     because their columns are unchanged; recreating the database (`down -v`) gives the same result.
+- 2026-10-14: Phase 7c completed. Config editing through `/config/*` and the UI's Configuration page; the rules are in
+  [architecture §7.1](architecture.md).
+  - Fixed a Phase 5 bug: the request's session committed **after** the response was sent, so a failed commit still reached
+    the client as a success (verified: 201 for a write that was rolled back). The session dependency now uses FastAPI's
+    `scope="function"`, and a regression test fails without it.
+  - Database constraint errors are mapped to problem responses by SQLSTATE (409 / 422) instead of ending as 500.
+  - Creates answer 201 with the row and no `Location`, because rows are read back through `GET /config/catalog`
+    (there is no per-row GET).
+  - Not verified in a browser against the real stack: the dev database was reset during the phase and the browser check
+    was skipped. API, invariant (real executor, scripted models) and UI tests cover the behaviour.

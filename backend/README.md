@@ -38,6 +38,8 @@ curl $B/runs/<run id>                                                      # pol
 curl $B/runs/<run id>/results                                              # best values (with ground truth) + every outcome
 curl -X PUT $B/documents/<id>/ground-truth/<field id> -H 'content-type: application/json' \
      -d '{"expected_value": "Acme Pty Ltd"}'                                # label a field ("" = not in this contract)
+curl $B/config/catalog                                                     # every config row, for editing
+curl -X PATCH $B/config/retrievals/RAG01 -H 'content-type: application/json' -d '{"top_k": 5}'   # affects runs queued afterwards
 ```
 
 See [architecture §8](../docs/architecture.md) for all endpoints. Errors are RFC 9457 problem details.

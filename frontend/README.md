@@ -31,6 +31,7 @@ npm run gen:api      # after an API change: openapi.json + src/api/schema.d.ts
 | `/documents/:id` | Document details, its runs, **ground truth** (one row per field: edit the expected value, mark it "Not in this contract", add notes, clear) and decompositions, **New run** (pipeline, kind, fields, RAG configs, judge, reuse, redecompose) |
 | `/runs/:id` | State, stage and progress, cancel, and tabs: best values (with the expected value, ✓ / ✗ and "Label…", which starts from the run's value), all outcomes (fields × RAG configs), timeline. `?result=<id>` opens a result's evidence, judgements and LLM calls |
 | `/documents/:id/pages` | Decomposed page text (what the LLM saw) next to the original PDF at the same page. `?page=N&decomposition=<id>` |
+| `/config` | Configuration, in tabs (`?tab=`): pipelines (compose, RAG order with ↑/↓, make default), RAG configs, fields and expansion queries, models & profiles (provider URL, enable/disable), prompts (new versions), decomposition & index configs (create-only). Edits affect runs queued afterwards; deletes show the API's 409 when a row is in use |
 
 ## How it works
 
@@ -67,7 +68,8 @@ src/
   api/          client.ts (openapi-fetch, ProblemError), hooks.ts (queries, mutations, polling), schema.d.ts (generated)
   components/   Layout, badges, ProblemAlert, JsonValue, HealthIndicator, Pager; ui/ holds shadcn/ui components
   features/     UploadDropzone, NewRunDialog, ResultsTable, OutcomesMatrix, FieldResultSheet, EventsTimeline
-  pages/        DocumentsPage, DocumentPage, RunPage, PagesPage
+  pages/        DocumentsPage, DocumentPage, RunPage, PagesPage, ConfigPage
+  features/config/  one tab per config area, form helpers (dialogs, inputs, two-click delete); api/config.ts holds the writes
   lib/          config, formatting, query client, cn()
   test/         MSW server, typed fixtures, render helper
 ```

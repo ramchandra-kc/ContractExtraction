@@ -206,6 +206,23 @@ erDiagram
 | `field_sets`, `fields`, `field_queries` | versioned field sets; each field has a key, label, value type, user prompt and expansion queries |
 | `pipeline_configs`, `pipeline_config_retrievals` | the recipe a run executes, with its RAG configs in priority order; one is the default |
 
+**Editing** (API `/config/*` and the UI's Configuration page). Runs execute from their snapshot, so edits only affect runs
+queued afterwards. The rules (in `ConfigWriter`):
+
+- Edited in place: pipelines, RAG configs, model profiles, fields and their expansion queries, a provider's URL and
+  enabled flag, and a model's enabled flag, context window and prices.
+- Names and keys never change, nor does a model's name, kind or embedding dimension. Run options, snapshots and results
+  refer to them, and vector indexes depend on the dimension.
+- Decomposition and index configs are **create-only**: ingestion reuses decompositions and indexes by config id.
+- Prompts are versioned. Saving creates the next version and makes it the active one; pipelines keep the version they
+  point to until they are changed.
+- A pipeline write must leave that pipeline runnable. Every other write, except enabling or disabling a provider or model,
+  must leave the **default** pipeline runnable (422 otherwise). A disabled provider or model shows up as the affected
+  pipelines' `error`.
+- Rows that runs, results or other configuration still refer to can't be deleted (409). Fields, prompts, providers and
+  models are never deleted; disable them instead. The default pipeline can't be deleted.
+- Results show a field's current label; the prompt a run actually used stays in its snapshot.
+
 ### 7.2 Documents & artifacts
 
 ```
@@ -274,7 +291,8 @@ A backend test fails when that copy is stale.
 | Resource | Endpoints |
 |---|---|
 | health | `GET /health` (liveness: process + DB), `GET /health/ready` (schema, default pipeline, Qdrant, model endpoints; 503 when degraded) |
-| config | `GET /config/pipelines`, `GET /config/providers` (read-only for now) |
+| config (run) | `GET /config/pipelines` (resolved pipelines for queueing runs), `GET /config/providers` |
+| config (edit) | `GET /config/catalog` (every config row, for editing); POST/PATCH/DELETE on `/config/pipelines/{name}` (+ `POST …/{name}/default`), `/config/retrievals/{name}`, `/config/profiles/{name}`; POST/DELETE on `/config/decompositions/{name}`, `/config/indexes/{name}`; `POST /config/prompts`, `POST /config/prompts/{name}/versions`; `POST /config/field-sets/{name}/{version}/fields`, `PATCH /config/fields/{id}`; `PATCH /config/providers/{key}`, `POST /config/providers/{key}/models`, `PATCH /config/models/{id}`. Creates answer 201 with the row, updates 200, deletes 204 |
 | documents | `POST /documents` (multipart upload: 201 new / 200 same file already stored), `GET /documents`, `GET /documents/{id}`, `GET /documents/{id}/file`, `GET /documents/{id}/pages`, `GET /documents/{id}/images/{image_id}`, `POST /documents/{id}/runs` (202 + `Location`) |
 | ground truth | `GET /documents/{id}/ground-truth?field_set_id=` (every enabled field of the default pipeline's field set, labelled or not), `PUT /documents/{id}/ground-truth/{field_id}` (create or replace; 422 for null), `DELETE /documents/{id}/ground-truth/{field_id}` (204) |
 | runs | `GET /runs`, `GET /runs/{id}`, `POST /runs/{id}/cancel`, `GET /runs/{id}/events?after=`, `GET /runs/{id}/results` (best values with expected value and match, evaluation counts, every outcome), `GET /runs/{id}/results/{field_result_id}` |
@@ -284,6 +302,9 @@ A backend test fails when that copy is stale.
   404 not found, 409 conflict (active run, finished run), 413 upload too large, 422 invalid input.
 - **Lists** return `{items, total, limit, offset}`. Timestamps are ISO-8601 UTC. Responses never expose filesystem paths; files are served by id.
 - **Request ids:** every response carries `X-Request-ID` (taken from the gateway, or created), and the API logs it with each request.
+- **Transactions:** one session per request, committed **before** the response is sent (`SessionDep`, FastAPI dependency
+  `scope="function"`). A failed commit becomes a problem response instead of a success for a lost write. Database
+  constraint errors are mapped by SQLSTATE: unique → 409, in use (foreign key) → 409, check or not-null → 422.
 
 ## 9. Gateway
 

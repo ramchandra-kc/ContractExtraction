@@ -202,7 +202,38 @@ def test_request_id_and_openapi(client):
         "get_document", "get_document_file", "get_pages", "get_image", "create_run", "list_runs", "get_run",
         "cancel_run", "list_run_events", "get_run_results", "get_field_result",
         "list_ground_truth", "set_ground_truth", "delete_ground_truth",
+        "get_catalog", "create_pipeline", "update_pipeline", "delete_pipeline", "set_default_pipeline",
+        "create_retrieval", "update_retrieval", "delete_retrieval", "create_profile", "update_profile", "delete_profile",
+        "create_decomposition", "delete_decomposition", "create_index_config", "delete_index_config",
+        "create_prompt", "create_prompt_version", "create_field", "update_field", "update_provider", "create_model",
+        "update_model",
     }
+
+
+def test_a_constraint_error_at_commit_is_mapped(client, monkeypatch):
+    """The session commits inside the request (scope="function"), so a constraint violation raised by the
+    commit goes through the problem handlers (409) instead of ending as a generic 500, and nothing is saved."""
+    from sqlalchemy.exc import IntegrityError
+    from sqlalchemy.orm import SessionTransaction
+
+    class UniqueViolation(Exception):
+        sqlstate = "23505"
+        diag = None
+
+    original = SessionTransaction.commit
+
+    def failing_commit(self, *args, **kwargs):
+        # A flush also commits an inner sub-transaction; only the outermost one is the request's commit.
+        if self._parent is None:
+            raise IntegrityError("COMMIT", None, UniqueViolation())
+        return original(self, *args, **kwargs)
+
+    monkeypatch.setattr(SessionTransaction, "commit", failing_commit)
+    as_seen_by_a_browser = TestClient(client.app, raise_server_exceptions=False)
+    r = as_seen_by_a_browser.post("/api/v1/config/retrievals", json={"name": "never-saved", "top_k": 3, "score_threshold": "0.5"})
+    assert r.status_code == 409 and r.headers["content-type"] == PROBLEM and "already exists" in r.json()["detail"]
+    monkeypatch.undo()
+    assert all(x["name"] != "never-saved" for x in client.get("/api/v1/config/catalog").json()["retrievals"])
 
 
 def test_ground_truth_and_evaluation(client, db, storage, harness):

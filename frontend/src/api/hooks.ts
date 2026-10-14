@@ -17,6 +17,7 @@ export const isActive = (state: string | undefined | null) => state === 'queued'
 export const keys = {
   health: ['health'] as const,
   pipelines: ['pipelines'] as const,
+  catalog: ['catalog'] as const,
   documents: (limit: number, offset: number) => ['documents', { limit, offset }] as const,
   documentsAll: ['documents'] as const,
   document: (id: string) => ['document', id] as const,

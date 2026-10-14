@@ -57,7 +57,11 @@ export interface paths {
          */
         get: operations["list_pipelines"];
         put?: never;
-        post?: never;
+        /**
+         * Create Pipeline
+         * @description A new pipeline; 422 when it could not run (e.g. a prompt with the wrong role or a disabled model).
+         */
+        post: operations["create_pipeline"];
         delete?: never;
         options?: never;
         head?: never;
@@ -82,6 +86,357 @@ export interface paths {
         options?: never;
         head?: never;
         patch?: never;
+        trace?: never;
+    };
+    "/api/v1/config/catalog": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Get Catalog
+         * @description All configuration rows with what they reference, for editing. Pipelines carry ``error`` when they cannot run.
+         */
+        get: operations["get_catalog"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/config/pipelines/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Pipeline
+         * @description 409 for the default pipeline or one that runs used.
+         */
+        delete: operations["delete_pipeline"];
+        options?: never;
+        head?: never;
+        /**
+         * Update Pipeline
+         * @description Change what a pipeline uses; ``retrievals`` replaces the RAG configs in the given priority order.
+         */
+        patch: operations["update_pipeline"];
+        trace?: never;
+    };
+    "/api/v1/config/pipelines/{name}/default": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Set Default Pipeline
+         * @description Make this the default pipeline (runs queued without a pipeline name use it).
+         */
+        post: operations["set_default_pipeline"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/config/retrievals": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Retrieval */
+        post: operations["create_retrieval"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/config/retrievals/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Retrieval
+         * @description 409 while a pipeline or a result refers to it.
+         */
+        delete: operations["delete_retrieval"];
+        options?: never;
+        head?: never;
+        /** Update Retrieval */
+        patch: operations["update_retrieval"];
+        trace?: never;
+    };
+    "/api/v1/config/profiles": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Profile */
+        post: operations["create_profile"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/config/profiles/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /**
+         * Delete Profile
+         * @description 409 while a pipeline uses it (LLM calls keep their model name, so past calls do not block it).
+         */
+        delete: operations["delete_profile"];
+        options?: never;
+        head?: never;
+        /** Update Profile */
+        patch: operations["update_profile"];
+        trace?: never;
+    };
+    "/api/v1/config/decompositions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Decomposition
+         * @description Create-only: decompositions are reused by config id, so a config never changes after it is made.
+         */
+        post: operations["create_decomposition"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/config/decompositions/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Decomposition */
+        delete: operations["delete_decomposition"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/config/indexes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Index Config
+         * @description Create-only: vector indexes are reused by config id, so a config never changes after it is made.
+         */
+        post: operations["create_index_config"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/config/indexes/{name}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        /** Delete Index Config */
+        delete: operations["delete_index_config"];
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/config/prompts": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Prompt
+         * @description A new prompt name at version 1; 409 when the name exists (save a new version instead).
+         */
+        post: operations["create_prompt"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/config/prompts/{name}/versions": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Prompt Version
+         * @description The next version becomes active. Pipelines keep the version they use until they are changed.
+         */
+        post: operations["create_prompt_version"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/config/field-sets/{name}/{version}/fields": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Create Field
+         * @description Add a field after the last one of the field set.
+         */
+        post: operations["create_field"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/config/fields/{field_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Field
+         * @description ``queries`` replaces the expansion queries in the given order. Disable a field instead of deleting it.
+         */
+        patch: operations["update_field"];
+        trace?: never;
+    };
+    "/api/v1/config/providers/{key}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Provider
+         * @description Point a provider at another server or enable/disable it (pipelines using it then show an error).
+         */
+        patch: operations["update_provider"];
+        trace?: never;
+    };
+    "/api/v1/config/providers/{key}/models": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Create Model */
+        post: operations["create_model"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/config/models/{model_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        /**
+         * Update Model
+         * @description Enabled flag, context window and prices. Name, kind and embedding dimension never change.
+         */
+        patch: operations["update_model"];
         trace?: never;
     };
     "/api/v1/documents": {
@@ -410,6 +765,241 @@ export interface components {
              */
             file: string;
         };
+        /** Catalog */
+        Catalog: {
+            /** Providers */
+            providers: components["schemas"]["CatalogProvider"][];
+            /** Profiles */
+            profiles: components["schemas"]["CatalogProfile"][];
+            /** Prompts */
+            prompts: components["schemas"]["CatalogPrompt"][];
+            /** Decompositions */
+            decompositions: components["schemas"]["CatalogDecomposition"][];
+            /** Indexes */
+            indexes: components["schemas"]["CatalogIndex"][];
+            /** Retrievals */
+            retrievals: components["schemas"]["CatalogRetrieval"][];
+            /** Field Sets */
+            field_sets: components["schemas"]["CatalogFieldSet"][];
+            /** Pipelines */
+            pipelines: components["schemas"]["CatalogPipeline"][];
+        };
+        /** CatalogDecomposition */
+        CatalogDecomposition: {
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+            /** Method */
+            method: string;
+            /** Text Format */
+            text_format: string;
+            /** Keep Invisible Text */
+            keep_invisible_text: boolean;
+            /** Remove Headers Footers */
+            remove_headers_footers: boolean;
+            /** Ocr Language */
+            ocr_language: string;
+            /** Dpi */
+            dpi: number;
+        };
+        /** CatalogField */
+        CatalogField: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Description */
+            description: string | null;
+            /** Value Type */
+            value_type: string;
+            /** User Prompt */
+            user_prompt: string;
+            /** Position */
+            position: number;
+            /** Is Enabled */
+            is_enabled: boolean;
+            /** Queries */
+            queries: string[];
+        };
+        /** CatalogFieldSet */
+        CatalogFieldSet: {
+            /** Name */
+            name: string;
+            /** Version */
+            version: number;
+            /** Description */
+            description: string | null;
+            /** Fields */
+            fields: components["schemas"]["CatalogField"][];
+        };
+        /** CatalogIndex */
+        CatalogIndex: {
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+            /**
+             * Embedding Model Id
+             * Format: uuid
+             */
+            embedding_model_id: string;
+            /** Embedding Model */
+            embedding_model: string;
+            /** Chunk Size */
+            chunk_size: number;
+            /** Chunk Overlap */
+            chunk_overlap: number;
+            /** Vector Store */
+            vector_store: string;
+            /** Distance */
+            distance: string;
+            /** Batch Size */
+            batch_size: number;
+        };
+        /** CatalogModel */
+        CatalogModel: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /** Kind */
+            kind: string;
+            /** Context Window */
+            context_window: number | null;
+            /** Embedding Dimension */
+            embedding_dimension: number | null;
+            /** Input Cost Per Mtok */
+            input_cost_per_mtok: string | null;
+            /** Output Cost Per Mtok */
+            output_cost_per_mtok: string | null;
+            /** Is Enabled */
+            is_enabled: boolean;
+        };
+        /** CatalogPipeline */
+        CatalogPipeline: {
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+            /** Is Default */
+            is_default: boolean;
+            /** Decomposition */
+            decomposition: string;
+            /** Index */
+            index: string;
+            field_set: components["schemas"]["VersionRef"];
+            /** Extraction Profile */
+            extraction_profile: string;
+            extraction_prompt: components["schemas"]["VersionRef"];
+            /** Judge Enabled */
+            judge_enabled: boolean;
+            /** Judge Profile */
+            judge_profile: string | null;
+            judge_prompt: components["schemas"]["VersionRef"] | null;
+            /** Judge Parallel */
+            judge_parallel: boolean;
+            /**
+             * Retrievals
+             * @description RAG config names in priority order
+             */
+            retrievals: string[];
+            /**
+             * Error
+             * @description Why the pipeline cannot run right now, if it cannot
+             */
+            error?: string | null;
+        };
+        /** CatalogProfile */
+        CatalogProfile: {
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+            /**
+             * Model Id
+             * Format: uuid
+             */
+            model_id: string;
+            /** Model */
+            model: string;
+            /** Provider */
+            provider: string;
+            /** Temperature */
+            temperature: string;
+            /** Top P */
+            top_p: string | null;
+            /** Top K */
+            top_k: number | null;
+            /** Max Tokens */
+            max_tokens: number | null;
+            /** Num Ctx */
+            num_ctx: number | null;
+            /** Json Mode */
+            json_mode: boolean;
+            /** Timeout Seconds */
+            timeout_seconds: number;
+        };
+        /** CatalogPrompt */
+        CatalogPrompt: {
+            /** Name */
+            name: string;
+            /** Version */
+            version: number;
+            /** Role */
+            role: string;
+            /** Body */
+            body: string;
+            /** Notes */
+            notes: string | null;
+            /** Is Active */
+            is_active: boolean;
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+        };
+        /** CatalogProvider */
+        CatalogProvider: {
+            /** Key */
+            key: string;
+            /** Kind */
+            kind: string;
+            /** Base Url */
+            base_url: string;
+            /** Api Key Env */
+            api_key_env: string | null;
+            /** Is Enabled */
+            is_enabled: boolean;
+            /** Models */
+            models: components["schemas"]["CatalogModel"][];
+        };
+        /** CatalogRetrieval */
+        CatalogRetrieval: {
+            /** Name */
+            name: string;
+            /** Description */
+            description: string | null;
+            /** Top K */
+            top_k: number;
+            /** Score Threshold */
+            score_threshold: string;
+            /** Query Expansion */
+            query_expansion: boolean;
+            /** Per Query Top */
+            per_query_top: number;
+            /** Min Score */
+            min_score: string;
+        };
         /** ComponentOut */
         ComponentOut: {
             /** Name */
@@ -419,6 +1009,45 @@ export interface components {
             /** Detail */
             detail: string;
         };
+        /** DecompositionCreate */
+        DecompositionCreate: {
+            /**
+             * Name
+             * @description Letters, digits, '.', '_' and '-'; cannot be changed later
+             */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /** @default pymupdf */
+            method: components["schemas"]["DecompositionMethod"];
+            /** @default md */
+            text_format: components["schemas"]["TextFormat"];
+            /**
+             * Keep Invisible Text
+             * @default true
+             */
+            keep_invisible_text: boolean;
+            /**
+             * Remove Headers Footers
+             * @default true
+             */
+            remove_headers_footers: boolean;
+            /**
+             * Ocr Language
+             * @default eng
+             */
+            ocr_language: string;
+            /**
+             * Dpi
+             * @default 200
+             */
+            dpi: number;
+        };
+        /**
+         * DecompositionMethod
+         * @enum {string}
+         */
+        DecompositionMethod: "pymupdf" | "ocr" | "hybrid";
         /** DecompositionOut */
         DecompositionOut: {
             /**
@@ -442,6 +1071,11 @@ export interface components {
              */
             created_at: string;
         };
+        /**
+         * Distance
+         * @enum {string}
+         */
+        Distance: "cosine" | "dot" | "euclid";
         /** DocumentDetail */
         DocumentDetail: {
             /**
@@ -537,6 +1171,33 @@ export interface components {
             data: {
                 [key: string]: unknown;
             };
+        };
+        /** FieldCreate */
+        FieldCreate: {
+            /**
+             * Key
+             * @description Cannot be changed later
+             */
+            key: string;
+            /** Label */
+            label: string;
+            /** Description */
+            description?: string | null;
+            /** @default text */
+            value_type: components["schemas"]["ValueType"];
+            /** User Prompt */
+            user_prompt: string;
+            /**
+             * Is Enabled
+             * @default true
+             */
+            is_enabled: boolean;
+            /**
+             * Queries
+             * @description Expansion queries in order; blank ones are dropped
+             * @default []
+             */
+            queries: string[];
         };
         /** FieldOut */
         FieldOut: {
@@ -635,6 +1296,20 @@ export interface components {
             /** Version */
             version: number;
         };
+        /** FieldUpdate */
+        FieldUpdate: {
+            /** Label */
+            label?: string;
+            /** Description */
+            description?: string | null;
+            value_type?: components["schemas"]["ValueType"];
+            /** User Prompt */
+            user_prompt?: string;
+            /** Is Enabled */
+            is_enabled?: boolean;
+            /** Queries */
+            queries?: string[];
+        };
         /** GroundTruthItem */
         GroundTruthItem: {
             /**
@@ -720,6 +1395,40 @@ export interface components {
             /** Url */
             url: string;
         };
+        /** IndexCreate */
+        IndexCreate: {
+            /**
+             * Name
+             * @description Letters, digits, '.', '_' and '-'; cannot be changed later
+             */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /**
+             * Embedding Model Id
+             * Format: uuid
+             */
+            embedding_model_id: string;
+            /**
+             * Chunk Size
+             * @default 2000
+             */
+            chunk_size: number;
+            /**
+             * Chunk Overlap
+             * @default 300
+             */
+            chunk_overlap: number;
+            /** @default qdrant */
+            vector_store: components["schemas"]["VectorStore"];
+            /** @default cosine */
+            distance: components["schemas"]["Distance"];
+            /**
+             * Batch Size
+             * @default 32
+             */
+            batch_size: number;
+        };
         /** JudgementOut */
         JudgementOut: {
             /** Verdict */
@@ -777,6 +1486,25 @@ export interface components {
              */
             created_at: string;
         };
+        /** ModelCreate */
+        ModelCreate: {
+            /** Name */
+            name: string;
+            kind: components["schemas"]["ModelKind"];
+            /** Context Window */
+            context_window?: number | null;
+            /** Embedding Dimension */
+            embedding_dimension?: number | null;
+            /** Input Cost Per Mtok */
+            input_cost_per_mtok?: number | string | null;
+            /** Output Cost Per Mtok */
+            output_cost_per_mtok?: number | string | null;
+        };
+        /**
+         * ModelKind
+         * @enum {string}
+         */
+        ModelKind: "chat" | "embedding" | "vision";
         /** ModelOut */
         ModelOut: {
             /** Name */
@@ -787,6 +1515,17 @@ export interface components {
             context_window?: number | null;
             /** Embedding Dimension */
             embedding_dimension?: number | null;
+        };
+        /** ModelUpdate */
+        ModelUpdate: {
+            /** Is Enabled */
+            is_enabled?: boolean;
+            /** Context Window */
+            context_window?: number | null;
+            /** Input Cost Per Mtok */
+            input_cost_per_mtok?: number | string | null;
+            /** Output Cost Per Mtok */
+            output_cost_per_mtok?: number | string | null;
         };
         /** PageOut */
         PageOut: {
@@ -839,6 +1578,42 @@ export interface components {
             /** Pages */
             pages: components["schemas"]["PageOut"][];
         };
+        /** PipelineCreate */
+        PipelineCreate: {
+            /**
+             * Name
+             * @description Letters, digits, '.', '_' and '-'; cannot be changed later
+             */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /** Decomposition */
+            decomposition: string;
+            /** Index */
+            index: string;
+            field_set: components["schemas"]["VersionRef"];
+            /** Extraction Profile */
+            extraction_profile: string;
+            extraction_prompt: components["schemas"]["VersionRef"];
+            /**
+             * Judge Enabled
+             * @default true
+             */
+            judge_enabled: boolean;
+            /** Judge Profile */
+            judge_profile?: string | null;
+            judge_prompt?: components["schemas"]["VersionRef"] | null;
+            /**
+             * Judge Parallel
+             * @default false
+             */
+            judge_parallel: boolean;
+            /**
+             * Retrievals
+             * @description RAG config names in priority order
+             */
+            retrievals: string[];
+        };
         /** PipelineOut */
         PipelineOut: {
             /** Name */
@@ -868,6 +1643,66 @@ export interface components {
              */
             fields: components["schemas"]["FieldOut"][];
         };
+        /** PipelineUpdate */
+        PipelineUpdate: {
+            /** Description */
+            description?: string | null;
+            /** Decomposition */
+            decomposition?: string;
+            /** Index */
+            index?: string;
+            field_set?: components["schemas"]["VersionRef"];
+            /** Extraction Profile */
+            extraction_profile?: string;
+            extraction_prompt?: components["schemas"]["VersionRef"];
+            /** Judge Enabled */
+            judge_enabled?: boolean;
+            /** Judge Profile */
+            judge_profile?: string | null;
+            judge_prompt?: components["schemas"]["VersionRef"] | null;
+            /** Judge Parallel */
+            judge_parallel?: boolean;
+            /** Retrievals */
+            retrievals?: string[];
+        };
+        /** ProfileCreate */
+        ProfileCreate: {
+            /**
+             * Name
+             * @description Letters, digits, '.', '_' and '-'; cannot be changed later
+             */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /**
+             * Model Id
+             * Format: uuid
+             */
+            model_id: string;
+            /**
+             * Temperature
+             * @default 0.2
+             */
+            temperature: number | string;
+            /** Top P */
+            top_p?: number | string | null;
+            /** Top K */
+            top_k?: number | null;
+            /** Max Tokens */
+            max_tokens?: number | null;
+            /** Num Ctx */
+            num_ctx?: number | null;
+            /**
+             * Json Mode
+             * @default true
+             */
+            json_mode: boolean;
+            /**
+             * Timeout Seconds
+             * @default 600
+             */
+            timeout_seconds: number;
+        };
         /** ProfileOut */
         ProfileOut: {
             /** Name */
@@ -878,6 +1713,55 @@ export interface components {
             provider: string;
             /** Temperature */
             temperature: string;
+        };
+        /** ProfileUpdate */
+        ProfileUpdate: {
+            /** Description */
+            description?: string | null;
+            /**
+             * Model Id
+             * Format: uuid
+             */
+            model_id?: string;
+            /** Temperature */
+            temperature?: number | string;
+            /** Top P */
+            top_p?: number | string | null;
+            /** Top K */
+            top_k?: number | null;
+            /** Max Tokens */
+            max_tokens?: number | null;
+            /** Num Ctx */
+            num_ctx?: number | null;
+            /** Json Mode */
+            json_mode?: boolean;
+            /** Timeout Seconds */
+            timeout_seconds?: number;
+        };
+        /** PromptCreate */
+        PromptCreate: {
+            /**
+             * Name
+             * @description Letters, digits, '.', '_' and '-'; cannot be changed later
+             */
+            name: string;
+            role: components["schemas"]["PromptRole"];
+            /** Body */
+            body: string;
+            /** Notes */
+            notes?: string | null;
+        };
+        /**
+         * PromptRole
+         * @enum {string}
+         */
+        PromptRole: "extraction_system" | "judge_system" | "caption";
+        /** PromptVersionCreate */
+        PromptVersionCreate: {
+            /** Body */
+            body: string;
+            /** Notes */
+            notes?: string | null;
         };
         /** ProviderOut */
         ProviderOut: {
@@ -894,6 +1778,42 @@ export interface components {
             /** Models */
             models: components["schemas"]["ModelOut"][];
         };
+        /** ProviderUpdate */
+        ProviderUpdate: {
+            /** Base Url */
+            base_url?: string;
+            /** Is Enabled */
+            is_enabled?: boolean;
+        };
+        /** RetrievalCreate */
+        RetrievalCreate: {
+            /**
+             * Name
+             * @description Letters, digits, '.', '_' and '-'; cannot be changed later
+             */
+            name: string;
+            /** Description */
+            description?: string | null;
+            /** Top K */
+            top_k: number;
+            /** Score Threshold */
+            score_threshold: number | string;
+            /**
+             * Query Expansion
+             * @default true
+             */
+            query_expansion: boolean;
+            /**
+             * Per Query Top
+             * @default 3
+             */
+            per_query_top: number;
+            /**
+             * Min Score
+             * @default 0.30
+             */
+            min_score: number | string;
+        };
         /** RetrievalOut */
         RetrievalOut: {
             /** Name */
@@ -908,6 +1828,21 @@ export interface components {
             per_query_top: number;
             /** Min Score */
             min_score: string;
+        };
+        /** RetrievalUpdate */
+        RetrievalUpdate: {
+            /** Description */
+            description?: string | null;
+            /** Top K */
+            top_k?: number;
+            /** Score Threshold */
+            score_threshold?: number | string;
+            /** Query Expansion */
+            query_expansion?: boolean;
+            /** Per Query Top */
+            per_query_top?: number;
+            /** Min Score */
+            min_score?: number | string;
         };
         /**
          * RunCreate
@@ -1052,6 +1987,11 @@ export interface components {
             /** Finished At */
             finished_at: string | null;
         };
+        /**
+         * TextFormat
+         * @enum {string}
+         */
+        TextFormat: "md" | "html";
         /** ValidationError */
         ValidationError: {
             /** Location */
@@ -1064,6 +2004,23 @@ export interface components {
             input?: unknown;
             /** Context */
             ctx?: Record<string, never>;
+        };
+        /**
+         * ValueType
+         * @enum {string}
+         */
+        ValueType: "text" | "date" | "number" | "money" | "list" | "boolean" | "json";
+        /**
+         * VectorStore
+         * @enum {string}
+         */
+        VectorStore: "qdrant" | "memory";
+        /** VersionRef */
+        VersionRef: {
+            /** Name */
+            name: string;
+            /** Version */
+            version: number;
         };
     };
     responses: never;
@@ -1152,6 +2109,39 @@ export interface operations {
             };
         };
     };
+    create_pipeline: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PipelineCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogPipeline"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     list_providers: {
         parameters: {
             query?: never;
@@ -1168,6 +2158,683 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["ProviderOut"][];
+                };
+            };
+        };
+    };
+    get_catalog: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["Catalog"];
+                };
+            };
+        };
+    };
+    delete_pipeline: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_pipeline: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PipelineUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogPipeline"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_default_pipeline: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogPipeline"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_retrieval: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RetrievalCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogRetrieval"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_retrieval: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_retrieval: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["RetrievalUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogRetrieval"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_profile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProfileCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogProfile"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_profile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_profile: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProfileUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogProfile"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_decomposition: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["DecompositionCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogDecomposition"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_decomposition: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_index_config: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["IndexCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogIndex"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    delete_index_config: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            204: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content?: never;
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_prompt: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PromptCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogPrompt"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_prompt_version: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["PromptVersionCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogPrompt"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_field: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                name: string;
+                version: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FieldCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogField"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_field: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                field_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FieldUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogField"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_provider: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ProviderUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogProvider"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    create_model: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                key: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    update_model: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                model_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ModelUpdate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["CatalogModel"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

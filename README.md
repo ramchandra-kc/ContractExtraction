@@ -55,6 +55,6 @@ Ports can be changed with `POSTGRES_PORT`, `QDRANT_PORT` and `OLLAMA_PORT`. Post
 
 ## Status
 
-Phases 0–7b are done: architecture, Docker services, the backend (core, pipeline, worker, API), the gateway, the frontend, and
-ground truth with evaluation. Next are config editing (7c), the dev script (8) and authentication (9). Each phase gets its own plan, which is approved before implementation.
+Phases 0–7c are done: architecture, Docker services, the backend (core, pipeline, worker, API), the gateway, the frontend,
+ground truth with evaluation, and config editing. Next are the dev script (8) and authentication (9). Each phase gets its own plan, which is approved before implementation.
 See the [project plan](docs/project-plan.md).

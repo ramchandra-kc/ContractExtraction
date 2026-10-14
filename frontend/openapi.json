@@ -93,6 +93,46 @@
             }
           }
         }
+      },
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Create Pipeline",
+        "description": "A new pipeline; 422 when it could not run (e.g. a prompt with the wrong role or a disabled model).",
+        "operationId": "create_pipeline",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PipelineCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogPipeline"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
       }
     },
     "/api/v1/config/providers": {
@@ -114,6 +154,936 @@
                   },
                   "type": "array",
                   "title": "Response List Providers"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/config/catalog": {
+      "get": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Get Catalog",
+        "description": "All configuration rows with what they reference, for editing. Pipelines carry ``error`` when they cannot run.",
+        "operationId": "get_catalog",
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Catalog"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/config/pipelines/{name}": {
+      "patch": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Update Pipeline",
+        "description": "Change what a pipeline uses; ``retrievals`` replaces the RAG configs in the given priority order.",
+        "operationId": "update_pipeline",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PipelineUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogPipeline"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Delete Pipeline",
+        "description": "409 for the default pipeline or one that runs used.",
+        "operationId": "delete_pipeline",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/config/pipelines/{name}/default": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Set Default Pipeline",
+        "description": "Make this the default pipeline (runs queued without a pipeline name use it).",
+        "operationId": "set_default_pipeline",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogPipeline"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/config/retrievals": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Create Retrieval",
+        "operationId": "create_retrieval",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RetrievalCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogRetrieval"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/config/retrievals/{name}": {
+      "patch": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Update Retrieval",
+        "operationId": "update_retrieval",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RetrievalUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogRetrieval"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Delete Retrieval",
+        "description": "409 while a pipeline or a result refers to it.",
+        "operationId": "delete_retrieval",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/config/profiles": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Create Profile",
+        "operationId": "create_profile",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogProfile"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/config/profiles/{name}": {
+      "patch": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Update Profile",
+        "operationId": "update_profile",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProfileUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogProfile"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Delete Profile",
+        "description": "409 while a pipeline uses it (LLM calls keep their model name, so past calls do not block it).",
+        "operationId": "delete_profile",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/config/decompositions": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Create Decomposition",
+        "description": "Create-only: decompositions are reused by config id, so a config never changes after it is made.",
+        "operationId": "create_decomposition",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DecompositionCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogDecomposition"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/config/decompositions/{name}": {
+      "delete": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Delete Decomposition",
+        "operationId": "delete_decomposition",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/config/indexes": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Create Index Config",
+        "description": "Create-only: vector indexes are reused by config id, so a config never changes after it is made.",
+        "operationId": "create_index_config",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/IndexCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogIndex"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/config/indexes/{name}": {
+      "delete": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Delete Index Config",
+        "operationId": "delete_index_config",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/config/prompts": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Create Prompt",
+        "description": "A new prompt name at version 1; 409 when the name exists (save a new version instead).",
+        "operationId": "create_prompt",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromptCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogPrompt"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/config/prompts/{name}/versions": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Create Prompt Version",
+        "description": "The next version becomes active. Pipelines keep the version they use until they are changed.",
+        "operationId": "create_prompt_version",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PromptVersionCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogPrompt"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/config/field-sets/{name}/{version}/fields": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Create Field",
+        "description": "Add a field after the last one of the field set.",
+        "operationId": "create_field",
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Name"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "integer",
+              "title": "Version"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FieldCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogField"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/config/fields/{field_id}": {
+      "patch": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Update Field",
+        "description": "``queries`` replaces the expansion queries in the given order. Disable a field instead of deleting it.",
+        "operationId": "update_field",
+        "parameters": [
+          {
+            "name": "field_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Field Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FieldUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogField"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/config/providers/{key}": {
+      "patch": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Update Provider",
+        "description": "Point a provider at another server or enable/disable it (pipelines using it then show an error).",
+        "operationId": "update_provider",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProviderUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogProvider"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/config/providers/{key}/models": {
+      "post": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Create Model",
+        "operationId": "create_model",
+        "parameters": [
+          {
+            "name": "key",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "title": "Key"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelCreate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogModel"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/config/models/{model_id}": {
+      "patch": {
+        "tags": [
+          "config"
+        ],
+        "summary": "Update Model",
+        "description": "Enabled flag, context window and prices. Name, kind and embedding dimension never change.",
+        "operationId": "update_model",
+        "parameters": [
+          {
+            "name": "model_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Model Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ModelUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CatalogModel"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
                 }
               }
             }
@@ -1103,6 +2073,733 @@
         ],
         "title": "Body_upload_document"
       },
+      "Catalog": {
+        "properties": {
+          "providers": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogProvider"
+            },
+            "type": "array",
+            "title": "Providers"
+          },
+          "profiles": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogProfile"
+            },
+            "type": "array",
+            "title": "Profiles"
+          },
+          "prompts": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogPrompt"
+            },
+            "type": "array",
+            "title": "Prompts"
+          },
+          "decompositions": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogDecomposition"
+            },
+            "type": "array",
+            "title": "Decompositions"
+          },
+          "indexes": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogIndex"
+            },
+            "type": "array",
+            "title": "Indexes"
+          },
+          "retrievals": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogRetrieval"
+            },
+            "type": "array",
+            "title": "Retrievals"
+          },
+          "field_sets": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogFieldSet"
+            },
+            "type": "array",
+            "title": "Field Sets"
+          },
+          "pipelines": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogPipeline"
+            },
+            "type": "array",
+            "title": "Pipelines"
+          }
+        },
+        "type": "object",
+        "required": [
+          "providers",
+          "profiles",
+          "prompts",
+          "decompositions",
+          "indexes",
+          "retrievals",
+          "field_sets",
+          "pipelines"
+        ],
+        "title": "Catalog"
+      },
+      "CatalogDecomposition": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "method": {
+            "type": "string",
+            "title": "Method"
+          },
+          "text_format": {
+            "type": "string",
+            "title": "Text Format"
+          },
+          "keep_invisible_text": {
+            "type": "boolean",
+            "title": "Keep Invisible Text"
+          },
+          "remove_headers_footers": {
+            "type": "boolean",
+            "title": "Remove Headers Footers"
+          },
+          "ocr_language": {
+            "type": "string",
+            "title": "Ocr Language"
+          },
+          "dpi": {
+            "type": "integer",
+            "title": "Dpi"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "description",
+          "method",
+          "text_format",
+          "keep_invisible_text",
+          "remove_headers_footers",
+          "ocr_language",
+          "dpi"
+        ],
+        "title": "CatalogDecomposition"
+      },
+      "CatalogField": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "value_type": {
+            "type": "string",
+            "title": "Value Type"
+          },
+          "user_prompt": {
+            "type": "string",
+            "title": "User Prompt"
+          },
+          "position": {
+            "type": "integer",
+            "title": "Position"
+          },
+          "is_enabled": {
+            "type": "boolean",
+            "title": "Is Enabled"
+          },
+          "queries": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Queries"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "key",
+          "label",
+          "description",
+          "value_type",
+          "user_prompt",
+          "position",
+          "is_enabled",
+          "queries"
+        ],
+        "title": "CatalogField"
+      },
+      "CatalogFieldSet": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogField"
+            },
+            "type": "array",
+            "title": "Fields"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "version",
+          "description",
+          "fields"
+        ],
+        "title": "CatalogFieldSet"
+      },
+      "CatalogIndex": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "embedding_model_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Embedding Model Id"
+          },
+          "embedding_model": {
+            "type": "string",
+            "title": "Embedding Model"
+          },
+          "chunk_size": {
+            "type": "integer",
+            "title": "Chunk Size"
+          },
+          "chunk_overlap": {
+            "type": "integer",
+            "title": "Chunk Overlap"
+          },
+          "vector_store": {
+            "type": "string",
+            "title": "Vector Store"
+          },
+          "distance": {
+            "type": "string",
+            "title": "Distance"
+          },
+          "batch_size": {
+            "type": "integer",
+            "title": "Batch Size"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "description",
+          "embedding_model_id",
+          "embedding_model",
+          "chunk_size",
+          "chunk_overlap",
+          "vector_store",
+          "distance",
+          "batch_size"
+        ],
+        "title": "CatalogIndex"
+      },
+      "CatalogModel": {
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Id"
+          },
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "context_window": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Window"
+          },
+          "embedding_dimension": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding Dimension"
+          },
+          "input_cost_per_mtok": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Cost Per Mtok"
+          },
+          "output_cost_per_mtok": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Cost Per Mtok"
+          },
+          "is_enabled": {
+            "type": "boolean",
+            "title": "Is Enabled"
+          }
+        },
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "kind",
+          "context_window",
+          "embedding_dimension",
+          "input_cost_per_mtok",
+          "output_cost_per_mtok",
+          "is_enabled"
+        ],
+        "title": "CatalogModel"
+      },
+      "CatalogPipeline": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "is_default": {
+            "type": "boolean",
+            "title": "Is Default"
+          },
+          "decomposition": {
+            "type": "string",
+            "title": "Decomposition"
+          },
+          "index": {
+            "type": "string",
+            "title": "Index"
+          },
+          "field_set": {
+            "$ref": "#/components/schemas/VersionRef"
+          },
+          "extraction_profile": {
+            "type": "string",
+            "title": "Extraction Profile"
+          },
+          "extraction_prompt": {
+            "$ref": "#/components/schemas/VersionRef"
+          },
+          "judge_enabled": {
+            "type": "boolean",
+            "title": "Judge Enabled"
+          },
+          "judge_profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Judge Profile"
+          },
+          "judge_prompt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VersionRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "judge_parallel": {
+            "type": "boolean",
+            "title": "Judge Parallel"
+          },
+          "retrievals": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Retrievals",
+            "description": "RAG config names in priority order"
+          },
+          "error": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Error",
+            "description": "Why the pipeline cannot run right now, if it cannot"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "description",
+          "is_default",
+          "decomposition",
+          "index",
+          "field_set",
+          "extraction_profile",
+          "extraction_prompt",
+          "judge_enabled",
+          "judge_profile",
+          "judge_prompt",
+          "judge_parallel",
+          "retrievals"
+        ],
+        "title": "CatalogPipeline"
+      },
+      "CatalogProfile": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "model_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Model Id"
+          },
+          "model": {
+            "type": "string",
+            "title": "Model"
+          },
+          "provider": {
+            "type": "string",
+            "title": "Provider"
+          },
+          "temperature": {
+            "type": "string",
+            "title": "Temperature"
+          },
+          "top_p": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Top P"
+          },
+          "top_k": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Top K"
+          },
+          "max_tokens": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Tokens"
+          },
+          "num_ctx": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Num Ctx"
+          },
+          "json_mode": {
+            "type": "boolean",
+            "title": "Json Mode"
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "title": "Timeout Seconds"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "description",
+          "model_id",
+          "model",
+          "provider",
+          "temperature",
+          "top_p",
+          "top_k",
+          "max_tokens",
+          "num_ctx",
+          "json_mode",
+          "timeout_seconds"
+        ],
+        "title": "CatalogProfile"
+      },
+      "CatalogPrompt": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          },
+          "role": {
+            "type": "string",
+            "title": "Role"
+          },
+          "body": {
+            "type": "string",
+            "title": "Body"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "is_active": {
+            "type": "boolean",
+            "title": "Is Active"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time",
+            "title": "Created At"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "version",
+          "role",
+          "body",
+          "notes",
+          "is_active",
+          "created_at"
+        ],
+        "title": "CatalogPrompt"
+      },
+      "CatalogProvider": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "kind": {
+            "type": "string",
+            "title": "Kind"
+          },
+          "base_url": {
+            "type": "string",
+            "title": "Base Url"
+          },
+          "api_key_env": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Api Key Env"
+          },
+          "is_enabled": {
+            "type": "boolean",
+            "title": "Is Enabled"
+          },
+          "models": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogModel"
+            },
+            "type": "array",
+            "title": "Models"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "kind",
+          "base_url",
+          "api_key_env",
+          "is_enabled",
+          "models"
+        ],
+        "title": "CatalogProvider"
+      },
+      "CatalogRetrieval": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "top_k": {
+            "type": "integer",
+            "title": "Top K"
+          },
+          "score_threshold": {
+            "type": "string",
+            "title": "Score Threshold"
+          },
+          "query_expansion": {
+            "type": "boolean",
+            "title": "Query Expansion"
+          },
+          "per_query_top": {
+            "type": "integer",
+            "title": "Per Query Top"
+          },
+          "min_score": {
+            "type": "string",
+            "title": "Min Score"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "description",
+          "top_k",
+          "score_threshold",
+          "query_expansion",
+          "per_query_top",
+          "min_score"
+        ],
+        "title": "CatalogRetrieval"
+      },
       "ComponentOut": {
         "properties": {
           "name": {
@@ -1125,6 +2822,75 @@
           "detail"
         ],
         "title": "ComponentOut"
+      },
+      "DecompositionCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+            "title": "Name",
+            "description": "Letters, digits, '.', '_' and '-'; cannot be changed later"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "method": {
+            "$ref": "#/components/schemas/DecompositionMethod",
+            "default": "pymupdf"
+          },
+          "text_format": {
+            "$ref": "#/components/schemas/TextFormat",
+            "default": "md"
+          },
+          "keep_invisible_text": {
+            "type": "boolean",
+            "title": "Keep Invisible Text",
+            "default": true
+          },
+          "remove_headers_footers": {
+            "type": "boolean",
+            "title": "Remove Headers Footers",
+            "default": true
+          },
+          "ocr_language": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Ocr Language",
+            "default": "eng"
+          },
+          "dpi": {
+            "type": "integer",
+            "maximum": 1200.0,
+            "minimum": 72.0,
+            "title": "Dpi",
+            "default": 200
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "title": "DecompositionCreate"
+      },
+      "DecompositionMethod": {
+        "type": "string",
+        "enum": [
+          "pymupdf",
+          "ocr",
+          "hybrid"
+        ],
+        "title": "DecompositionMethod"
       },
       "DecompositionOut": {
         "properties": {
@@ -1191,6 +2957,15 @@
           "created_at"
         ],
         "title": "DecompositionOut"
+      },
+      "Distance": {
+        "type": "string",
+        "enum": [
+          "cosine",
+          "dot",
+          "euclid"
+        ],
+        "title": "Distance"
       },
       "DocumentDetail": {
         "properties": {
@@ -1452,6 +3227,64 @@
           "data"
         ],
         "title": "EventOut"
+      },
+      "FieldCreate": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "maxLength": 100,
+            "pattern": "^[a-z][a-z0-9_]*$",
+            "title": "Key",
+            "description": "Cannot be changed later"
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Label"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "value_type": {
+            "$ref": "#/components/schemas/ValueType",
+            "default": "text"
+          },
+          "user_prompt": {
+            "type": "string",
+            "minLength": 1,
+            "title": "User Prompt"
+          },
+          "is_enabled": {
+            "type": "boolean",
+            "title": "Is Enabled",
+            "default": true
+          },
+          "queries": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Queries",
+            "description": "Expansion queries in order; blank ones are dropped",
+            "default": []
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "key",
+          "label",
+          "user_prompt"
+        ],
+        "title": "FieldCreate"
       },
       "FieldOut": {
         "properties": {
@@ -1750,6 +3583,48 @@
         ],
         "title": "FieldSetRef"
       },
+      "FieldUpdate": {
+        "properties": {
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Label"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "value_type": {
+            "$ref": "#/components/schemas/ValueType"
+          },
+          "user_prompt": {
+            "type": "string",
+            "minLength": 1,
+            "title": "User Prompt"
+          },
+          "is_enabled": {
+            "type": "boolean",
+            "title": "Is Enabled"
+          },
+          "queries": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Queries"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "FieldUpdate"
+      },
       "GroundTruthItem": {
         "properties": {
           "field_id": {
@@ -1979,6 +3854,67 @@
         ],
         "title": "ImageOut"
       },
+      "IndexCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+            "title": "Name",
+            "description": "Letters, digits, '.', '_' and '-'; cannot be changed later"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "embedding_model_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Embedding Model Id"
+          },
+          "chunk_size": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Chunk Size",
+            "default": 2000
+          },
+          "chunk_overlap": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Chunk Overlap",
+            "default": 300
+          },
+          "vector_store": {
+            "$ref": "#/components/schemas/VectorStore",
+            "default": "qdrant"
+          },
+          "distance": {
+            "$ref": "#/components/schemas/Distance",
+            "default": "cosine"
+          },
+          "batch_size": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Batch Size",
+            "default": 32
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "embedding_model_id"
+        ],
+        "title": "IndexCreate"
+      },
       "JudgementOut": {
         "properties": {
           "verdict": {
@@ -2177,6 +4113,89 @@
         ],
         "title": "LlmCallOut"
       },
+      "ModelCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Name"
+          },
+          "kind": {
+            "$ref": "#/components/schemas/ModelKind"
+          },
+          "context_window": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Window"
+          },
+          "embedding_dimension": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Embedding Dimension"
+          },
+          "input_cost_per_mtok": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Cost Per Mtok"
+          },
+          "output_cost_per_mtok": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Cost Per Mtok"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "kind"
+        ],
+        "title": "ModelCreate"
+      },
+      "ModelKind": {
+        "type": "string",
+        "enum": [
+          "chat",
+          "embedding",
+          "vision"
+        ],
+        "title": "ModelKind"
+      },
       "ModelOut": {
         "properties": {
           "name": {
@@ -2216,6 +4235,59 @@
           "kind"
         ],
         "title": "ModelOut"
+      },
+      "ModelUpdate": {
+        "properties": {
+          "is_enabled": {
+            "type": "boolean",
+            "title": "Is Enabled"
+          },
+          "context_window": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Context Window"
+          },
+          "input_cost_per_mtok": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Input Cost Per Mtok"
+          },
+          "output_cost_per_mtok": {
+            "anyOf": [
+              {
+                "type": "number",
+                "minimum": 0.0
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Output Cost Per Mtok"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ModelUpdate"
       },
       "PageOut": {
         "properties": {
@@ -2380,6 +4452,99 @@
         ],
         "title": "PagesOut"
       },
+      "PipelineCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+            "title": "Name",
+            "description": "Letters, digits, '.', '_' and '-'; cannot be changed later"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "decomposition": {
+            "type": "string",
+            "title": "Decomposition"
+          },
+          "index": {
+            "type": "string",
+            "title": "Index"
+          },
+          "field_set": {
+            "$ref": "#/components/schemas/VersionRef"
+          },
+          "extraction_profile": {
+            "type": "string",
+            "title": "Extraction Profile"
+          },
+          "extraction_prompt": {
+            "$ref": "#/components/schemas/VersionRef"
+          },
+          "judge_enabled": {
+            "type": "boolean",
+            "title": "Judge Enabled",
+            "default": true
+          },
+          "judge_profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Judge Profile"
+          },
+          "judge_prompt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VersionRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "judge_parallel": {
+            "type": "boolean",
+            "title": "Judge Parallel",
+            "default": false
+          },
+          "retrievals": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Retrievals",
+            "description": "RAG config names in priority order"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "decomposition",
+          "index",
+          "field_set",
+          "extraction_profile",
+          "extraction_prompt",
+          "retrievals"
+        ],
+        "title": "PipelineCreate"
+      },
       "PipelineOut": {
         "properties": {
           "name": {
@@ -2489,6 +4654,191 @@
         ],
         "title": "PipelineOut"
       },
+      "PipelineUpdate": {
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "decomposition": {
+            "type": "string",
+            "title": "Decomposition"
+          },
+          "index": {
+            "type": "string",
+            "title": "Index"
+          },
+          "field_set": {
+            "$ref": "#/components/schemas/VersionRef"
+          },
+          "extraction_profile": {
+            "type": "string",
+            "title": "Extraction Profile"
+          },
+          "extraction_prompt": {
+            "$ref": "#/components/schemas/VersionRef"
+          },
+          "judge_enabled": {
+            "type": "boolean",
+            "title": "Judge Enabled"
+          },
+          "judge_profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Judge Profile"
+          },
+          "judge_prompt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VersionRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "judge_parallel": {
+            "type": "boolean",
+            "title": "Judge Parallel"
+          },
+          "retrievals": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "minItems": 1,
+            "title": "Retrievals"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "PipelineUpdate"
+      },
+      "ProfileCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+            "title": "Name",
+            "description": "Letters, digits, '.', '_' and '-'; cannot be changed later"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "model_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Model Id"
+          },
+          "temperature": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 2.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Temperature",
+            "default": "0.2"
+          },
+          "top_p": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Top P"
+          },
+          "top_k": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Top K"
+          },
+          "max_tokens": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Tokens"
+          },
+          "num_ctx": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Num Ctx"
+          },
+          "json_mode": {
+            "type": "boolean",
+            "title": "Json Mode",
+            "default": true
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Timeout Seconds",
+            "default": 600
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "model_id"
+        ],
+        "title": "ProfileCreate"
+      },
       "ProfileOut": {
         "properties": {
           "name": {
@@ -2516,6 +4866,177 @@
           "temperature"
         ],
         "title": "ProfileOut"
+      },
+      "ProfileUpdate": {
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "model_id": {
+            "type": "string",
+            "format": "uuid",
+            "title": "Model Id"
+          },
+          "temperature": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 2.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Temperature"
+          },
+          "top_p": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Top P"
+          },
+          "top_k": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Top K"
+          },
+          "max_tokens": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Max Tokens"
+          },
+          "num_ctx": {
+            "anyOf": [
+              {
+                "type": "integer",
+                "exclusiveMinimum": 0.0
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Num Ctx"
+          },
+          "json_mode": {
+            "type": "boolean",
+            "title": "Json Mode"
+          },
+          "timeout_seconds": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Timeout Seconds"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ProfileUpdate"
+      },
+      "PromptCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+            "title": "Name",
+            "description": "Letters, digits, '.', '_' and '-'; cannot be changed later"
+          },
+          "role": {
+            "$ref": "#/components/schemas/PromptRole"
+          },
+          "body": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Body"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "role",
+          "body"
+        ],
+        "title": "PromptCreate"
+      },
+      "PromptRole": {
+        "type": "string",
+        "enum": [
+          "extraction_system",
+          "judge_system",
+          "caption"
+        ],
+        "title": "PromptRole"
+      },
+      "PromptVersionCreate": {
+        "properties": {
+          "body": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Body"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "body"
+        ],
+        "title": "PromptVersionCreate"
       },
       "ProviderOut": {
         "properties": {
@@ -2565,6 +5086,96 @@
         ],
         "title": "ProviderOut"
       },
+      "ProviderUpdate": {
+        "properties": {
+          "base_url": {
+            "type": "string",
+            "minLength": 1,
+            "title": "Base Url"
+          },
+          "is_enabled": {
+            "type": "boolean",
+            "title": "Is Enabled"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "ProviderUpdate"
+      },
+      "RetrievalCreate": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]*$",
+            "title": "Name",
+            "description": "Letters, digits, '.', '_' and '-'; cannot be changed later"
+          },
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "top_k": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Top K"
+          },
+          "score_threshold": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Score Threshold"
+          },
+          "query_expansion": {
+            "type": "boolean",
+            "title": "Query Expansion",
+            "default": true
+          },
+          "per_query_top": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Per Query Top",
+            "default": 3
+          },
+          "min_score": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Min Score",
+            "default": "0.30"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "name",
+          "top_k",
+          "score_threshold"
+        ],
+        "title": "RetrievalCreate"
+      },
       "RetrievalOut": {
         "properties": {
           "name": {
@@ -2602,6 +5213,64 @@
           "min_score"
         ],
         "title": "RetrievalOut"
+      },
+      "RetrievalUpdate": {
+        "properties": {
+          "description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Description"
+          },
+          "top_k": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Top K"
+          },
+          "score_threshold": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Score Threshold"
+          },
+          "query_expansion": {
+            "type": "boolean",
+            "title": "Query Expansion"
+          },
+          "per_query_top": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Per Query Top"
+          },
+          "min_score": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Min Score"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "title": "RetrievalUpdate"
       },
       "RunCreate": {
         "properties": {
@@ -3002,6 +5671,14 @@
         ],
         "title": "RunSummary"
       },
+      "TextFormat": {
+        "type": "string",
+        "enum": [
+          "md",
+          "html"
+        ],
+        "title": "TextFormat"
+      },
       "ValidationError": {
         "properties": {
           "loc": {
@@ -3041,6 +5718,45 @@
           "type"
         ],
         "title": "ValidationError"
+      },
+      "ValueType": {
+        "type": "string",
+        "enum": [
+          "text",
+          "date",
+          "number",
+          "money",
+          "list",
+          "boolean",
+          "json"
+        ],
+        "title": "ValueType"
+      },
+      "VectorStore": {
+        "type": "string",
+        "enum": [
+          "qdrant",
+          "memory"
+        ],
+        "title": "VectorStore"
+      },
+      "VersionRef": {
+        "properties": {
+          "name": {
+            "type": "string",
+            "title": "Name"
+          },
+          "version": {
+            "type": "integer",
+            "title": "Version"
+          }
+        },
+        "type": "object",
+        "required": [
+          "name",
+          "version"
+        ],
+        "title": "VersionRef"
       }
     }
   }
