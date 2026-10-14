@@ -2,25 +2,29 @@
 
     contract-extraction check                 settings, database, schema, default pipeline, Qdrant and LLM providers
     contract-extraction ingest <pdf>          register, decompose and index a PDF with a pipeline config
+    contract-extraction run <pdf> [options]   ingest + extract every field under every RAG config (inline)
 """
 
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
 import httpx
-from sqlalchemy import inspect
+from sqlalchemy import func, inspect, select
 
 from .core.errors import AppError
 from .core.logging import setup_logging
 from .core.settings import Settings, load_settings
 from .domain.config import PipelineConfig
-from .domain.enums import ProviderKind
+from .domain.enums import ProviderKind, RunKind, RunState
 from .persistence import models as m
 from .persistence.db import Database
-from .persistence.repositories import ConfigRepo
+from .persistence.repositories import ConfigRepo, RunRepo
+from .persistence.repositories.results import ResultRepo
+from .pipeline.options import RunOptions
 from .providers.base import ProviderError
 from .providers.qdrant import QdrantStore
 from .storage import FileStorage
@@ -120,6 +124,58 @@ def ingest(pdf: Path, pipeline_name: str | None, redecompose: bool) -> int:
     return 0
 
 
+def _short(value: object, width: int = 70) -> str:
+    text = "" if value is None else value if isinstance(value, str) else json.dumps(value, ensure_ascii=False)
+    text = " ".join(text.split())
+    return text if len(text) <= width else text[:width - 1] + "…"
+
+
+def run(pdf: Path, pipeline_name: str | None, kind: str, options: RunOptions) -> int:
+    from .ingestion import register_file
+    from .pipeline.executor import RunExecutor
+    from .pipeline.options import narrow
+
+    settings = load_settings()
+    setup_logging(settings.log_level)
+    db = Database(settings.database)
+    storage = FileStorage(settings.storage_root)
+    run_id = None
+    try:
+        with db.session() as s:
+            pipeline = narrow(ConfigRepo(s).resolve_pipeline(pipeline_name), options)
+        document_id, code, _ = register_file(db, storage, settings, pdf)
+        with db.session() as s:
+            run_id = RunRepo(s).enqueue(document_id, pipeline, RunKind(kind), options.model_dump(exclude_defaults=True)).id
+        calls = len(pipeline.field_set.fields) * len(pipeline.retrievals) * (2 if pipeline.judge_enabled else 1)
+        print(f"run {run_id}: {code}, {len(pipeline.field_set.fields)} fields x {len(pipeline.retrievals)} RAG configs "
+              f"(up to {calls} LLM calls)", flush=True)
+        state = RunExecutor(db, storage, settings, worker_id="cli").execute(run_id)
+    except KeyboardInterrupt:
+        if run_id is not None:
+            with db.session() as s:
+                RunRepo(s).finish(run_id, RunState.CANCELLED, "Interrupted from the command line")
+        print("cancelled", file=sys.stderr)
+        return 130
+    except (AppError, ProviderError) as exc:
+        print(f"FAIL: {exc}", file=sys.stderr)
+        return 1
+
+    try:
+        with db.session() as s:
+            r = RunRepo(s).get(run_id)
+            best = ResultRepo(s).best_values(run_id)
+            n_calls = s.scalar(select(func.count()).select_from(m.LlmCall).where(m.LlmCall.run_id == run_id))
+            print(f"state: {r.state}  progress: {r.progress_done}/{r.progress_total}  LLM calls: {n_calls}"
+                  + (f"  error: {r.error}" if r.error else ""))
+            if best:
+                print(f"\n{'field':30} {'value':70} {'config':7} verdict")
+                for b in best:
+                    print(f"{b['field_label'][:30]:30} {_short(b['value']):70} {b['retrieval_config']:7} {b['verdict'] or '-'}")
+    finally:
+        db.dispose()
+    return 0 if state == RunState.SUCCEEDED else 1
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="contract-extraction")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -128,11 +184,28 @@ def main(argv: list[str] | None = None) -> int:
     p_ingest.add_argument("pdf", type=Path)
     p_ingest.add_argument("--pipeline", help="pipeline config name (default: the default pipeline)")
     p_ingest.add_argument("--redecompose", action="store_true", help="decompose again even if a decomposition exists")
+
+    p_run = sub.add_parser("run", help="ingest a PDF and extract its fields (runs inline)")
+    p_run.add_argument("pdf", type=Path)
+    p_run.add_argument("--pipeline", help="pipeline config name (default: the default pipeline)")
+    p_run.add_argument("--kind", choices=[k.value for k in RunKind], default=RunKind.FULL.value)
+    p_run.add_argument("--fields", help="comma-separated field keys (default: all)")
+    p_run.add_argument("--retrievals", help="comma-separated RAG config names (default: all of the pipeline)")
+    p_run.add_argument("--no-judge", action="store_true", help="skip the judge for this run")
+    p_run.add_argument("--no-reuse", action="store_true", help="call the models even when evidence repeats")
+    p_run.add_argument("--redecompose", action="store_true", help="decompose again even if a decomposition exists")
+
     args = parser.parse_args(argv)
     if args.command == "check":
         return check()
     if args.command == "ingest":
         return ingest(args.pdf, args.pipeline, args.redecompose)
+    if args.command == "run":
+        split = lambda v: [x.strip() for x in v.split(",") if x.strip()] if v else None  # noqa: E731
+        options = RunOptions(fields=split(args.fields), retrievals=split(args.retrievals),
+                             judge=False if args.no_judge else None, reuse_calls=not args.no_reuse,
+                             redecompose=args.redecompose)
+        return run(args.pdf, args.pipeline, args.kind, options)
     return 2
 
 

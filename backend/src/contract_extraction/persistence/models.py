@@ -430,6 +430,7 @@ class Run(Base):
 
     document: Mapped[Document] = relationship()
     pipeline_config: Mapped[PipelineConfig] = relationship()
+    vector_index: Mapped[VectorIndex | None] = relationship()
 
 
 class RunEvent(Base):

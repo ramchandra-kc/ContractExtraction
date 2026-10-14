@@ -21,6 +21,22 @@ Use `--pipeline NAME` for a non-default pipeline config.
 
 OCR and hybrid decomposition (`decomposition_configs` rows `ocr` and `hybrid`) need Tesseract (`brew install tesseract`).
 
+### Extraction runs
+
+```bash
+uv run contract-extraction run contract.pdf                                    # every field x every RAG config
+uv run contract-extraction run contract.pdf --fields customer_name,payment_terms --retrievals RAG02
+uv run contract-extraction run contract.pdf --no-judge --no-reuse --pipeline my-pipeline
+```
+
+`run` registers the file and queues a run. The run's snapshot holds the pipeline narrowed by your options. `run` then executes it
+inline and prints the best value per field. Ctrl-C marks the run cancelled. Every call, its evidence and the verdicts are in the
+database (`field_results`, `retrieval_hits`, `llm_calls`, `judgements`, `run_events`, view `v_best_values`).
+
+**Speed:** Ollama in Docker on macOS runs on the CPU. A full default run is up to 12 fields × 7 RAG configs × 2 calls. Reuse of
+repeated evidence cuts that a lot on short documents, but narrow runs with `--fields` / `--retrievals` while experimenting.
+Native Ollama (with GPU) or a hosted provider is much faster.
+
 ## Configuration
 
 - **Pipeline configuration** (providers, models, prompts, RAG configs, fields) lives in **the database**. It is read through

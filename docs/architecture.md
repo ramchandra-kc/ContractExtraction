@@ -127,6 +127,21 @@ LLM providers and models, generation settings, system prompts, decomposition and
 RAG configurations (`RAG01…RAG07`: top-k, threshold, expansion on or off), and fields with their prompts and expansion
 queries. A **pipeline config** bundles them into a recipe. Every run stores the fully resolved recipe as a snapshot.
 
+**Retrieval** (per field and RAG config):
+1. Use the field's expansion queries when `query_expansion` is on, otherwise the field label.
+2. Fetch `per_query_top` hits per query and keep those scoring at least `score_threshold`.
+3. De-duplicate by chunk, keeping the best score and the query that found it.
+4. Drop hits below `min_score` and keep the best `top_k`.
+
+Query embeddings are computed once per run.
+
+**Execution** goes through the RAG configs in priority order, and through each config's fields: retrieve → extraction LLM →
+judge LLM. Each field result is committed on its own.
+- **Reuse:** when a field gets exactly the same chunks again in the same run, it reuses the earlier answer and verdict
+  instead of calling the models again (`reuse_calls`, on by default). Duplicate or nested RAG configs make this common on short documents.
+- **Parallel judge:** `judge_parallel` (off by default) runs judge calls on a thread pool.
+- **Self-grading:** the seeded judge uses the same model as extraction, so it grades its own answers. Use a different judge profile for an independent check.
+
 ## 6. Run lifecycle
 
 ```mermaid
@@ -143,7 +158,11 @@ stateDiagram-v2
 
 - While `running`, the run reports a **stage** (`decomposing` → `indexing` → `extracting`) and **progress** (done/total).
 - At most one active (queued or running) run per document.
-- Each run stores the **options** chosen by the caller and a **snapshot of the effective non-secret settings**.
+- Each run stores the **options** chosen by the caller and a **snapshot of the resolved pipeline config**, narrowed by those options.
+  The executor runs **from the snapshot**, so later config edits never change what a queued or past run does.
+- Failures are contained:
+  - a provider error on one field becomes an `error` result, and the run continues
+  - a failed stage (decompose or index) fails the run, with the reason in `runs.error` and `run_events`
 - The frontend polls the run (default every 2 s). Push updates (SSE) can come later through the gateway.
 
 ## 7. Data model

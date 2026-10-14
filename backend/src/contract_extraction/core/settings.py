@@ -48,6 +48,11 @@ class QdrantSettings(BaseModel):
     api_key: str = ""
 
 
+class ExecutorSettings(BaseModel):
+    # Threads for judge calls when a pipeline enables judge_parallel (machine capacity, not research config).
+    judge_workers: int = Field(4, gt=0)
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_nested_delimiter="__", env_file_encoding="utf-8", extra="ignore")
 
@@ -56,6 +61,7 @@ class Settings(BaseSettings):
     database: DatabaseSettings = Field(default_factory=DatabaseSettings)
     storage: StorageSettings = Field(default_factory=StorageSettings)
     qdrant: QdrantSettings = Field(default_factory=QdrantSettings)
+    executor: ExecutorSettings = Field(default_factory=ExecutorSettings)
 
     # Raw values from the env files, for variables that are not settings (API keys named in the database).
     _file_values: dict[str, str] = PrivateAttr(default_factory=dict)
