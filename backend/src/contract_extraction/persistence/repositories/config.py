@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
+from urllib.parse import urlparse
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from ...core.errors import InvalidConfig, NotFound
+from ...core.errors import InvalidConfig, InvalidInput, NotFound
 from ...domain import config as d
 from ...domain.enums import ModelKind, PromptRole
 from .. import models as m
@@ -39,6 +40,26 @@ class ConfigRepo:
 
     def pipelines(self) -> Sequence[m.PipelineConfig]:
         return self.session.scalars(select(m.PipelineConfig).order_by(m.PipelineConfig.name)).all()
+
+    # ---- changes ----------------------------------------------------------------------------------
+
+    def update_provider(self, key: str, base_url: str | None = None, enabled: bool | None = None) -> m.LlmProvider:
+        """Point a provider at another server (e.g. native vs Docker Ollama) or enable/disable it.
+
+        Queued and past runs are unaffected: they use the provider URL in their snapshot.
+        """
+        row = self.session.scalars(select(m.LlmProvider).where(m.LlmProvider.key == key)).one_or_none()
+        if row is None:
+            raise NotFound(f"LLM provider {key!r} not found; known: {[p.key for p in self.providers()]}")
+        if base_url is not None:
+            url = urlparse(base_url)
+            if url.scheme not in ("http", "https") or not url.netloc:
+                raise InvalidInput(f"Not an http(s) URL: {base_url!r}")
+            row.base_url = base_url.rstrip("/")
+        if enabled is not None:
+            row.is_enabled = enabled
+        self.session.flush()
+        return row
 
     # ---- resolution -----------------------------------------------------------------------------
 

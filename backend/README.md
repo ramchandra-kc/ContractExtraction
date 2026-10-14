@@ -21,6 +21,15 @@ Use `--pipeline NAME` for a non-default pipeline config.
 
 OCR and hybrid decomposition (`decomposition_configs` rows `ocr` and `hybrid`) need Tesseract (`brew install tesseract`).
 
+### LLM providers
+
+```bash
+uv run contract-extraction providers                                                    # list providers, URLs, models
+uv run contract-extraction providers set ollama-local --base-url http://localhost:11435   # Docker Ollama
+uv run contract-extraction providers set ollama-local --base-url http://localhost:11434   # native Ollama (default)
+uv run contract-extraction providers set openrouter --enable                              # needs OPENROUTER_API_KEY
+```
+
 ### Extraction runs
 
 ```bash

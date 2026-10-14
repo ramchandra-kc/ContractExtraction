@@ -296,13 +296,15 @@ See [ADR 0002](adr/0002-custom-gateway.md).
 | backend API | 8000 | 127.0.0.1 (reached only through the gateway) |
 | Postgres | 5432 (`POSTGRES_PORT`) | Docker, published to 127.0.0.1 |
 | Qdrant | 6333 (`QDRANT_PORT`) | Docker, published to 127.0.0.1 |
-| Ollama | 11434 (`OLLAMA_PORT`) | Docker profile `ollama`, published to 127.0.0.1 (or a native Ollama, or a hosted provider instead) |
+| Ollama (native) | 11434 | `Ollama.app` (default on macOS) |
+| Ollama (Docker) | 11435 (`OLLAMA_PORT`) | Docker profile `ollama`, published to 127.0.0.1 |
 
 ## 11. Runtime (local)
 
 - **LLMs:** native Ollama (`Ollama.app`, Apple GPU) on port 11434 is the default on macOS. In a measured run it was about 8× faster
-  than Ollama in Docker, which is CPU-only on macOS. The Docker `ollama` profile is the fallback and serves the same port, so the
-  database config doesn't change.
+  than Ollama in Docker, which is CPU-only on macOS. The Docker `ollama` profile runs on port 11435, so both can run at once.
+  The `ollama-local` provider's `base_url` picks one: `contract-extraction providers set ollama-local --base-url …`.
+  Runs record the URL they used in their snapshot.
 - **Docker:** `docker/docker-compose.yml` starts Postgres and Qdrant, plus Ollama with `--profile ollama`.
   The Postgres image is built from `docker/Dockerfile` with `schema.sql` and `seed.sql` baked in. They run on an empty volume,
   so `down -v`, then `up --build`, gives a clean database.

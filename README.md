@@ -28,9 +28,21 @@ docker compose -f docker/docker-compose.yml up -d --build --wait                
 docker compose -f docker/docker-compose.yml down -v                                 # wipe everything (clean database)
 ```
 
-**LLMs:** on macOS use native Ollama (`Ollama.app`, uses the GPU) on port 11434, with `ollama pull nomic-embed-text` and
-`ollama pull llama3.1:8b`. Without native Ollama, add `--profile ollama` to the `up` command to run it in Docker instead.
-That works too, but it's CPU-only and about 8× slower. Don't run both, because they share the port.
+**LLMs:** choose either Ollama, or both. The `ollama-local` provider in the database decides which one is used.
+
+| Ollama | Port | Start | Notes |
+|---|---|---|---|
+| native (`Ollama.app`) | 11434 | open the app, then `ollama pull nomic-embed-text` and `ollama pull llama3.1:8b` | uses the Apple GPU, about 8× faster on macOS (default) |
+| Docker | 11435 | add `--profile ollama` to the `up` command | CPU-only on macOS; runs next to the native one |
+
+```bash
+cd backend
+uv run contract-extraction providers                                                   # which URL is in use
+uv run contract-extraction providers set ollama-local --base-url http://localhost:11435  # use Docker Ollama
+uv run contract-extraction providers set ollama-local --base-url http://localhost:11434  # back to native
+```
+
+Each run records the provider URL it used in its config snapshot.
 
 Ports can be changed with `POSTGRES_PORT`, `QDRANT_PORT` and `OLLAMA_PORT`. Postgres credentials default to
 `contract` / `contract`, database `contract_extraction`.

@@ -3,6 +3,8 @@
     contract-extraction check                 settings, database, schema, default pipeline, Qdrant and LLM providers
     contract-extraction ingest <pdf>          register, decompose and index a PDF with a pipeline config
     contract-extraction run <pdf> [options]   ingest + extract every field under every RAG config (inline)
+    contract-extraction providers [set KEY --base-url URL | --enable | --disable]
+                                              list LLM providers / switch e.g. native ↔ Docker Ollama
 """
 
 from __future__ import annotations
@@ -176,6 +178,31 @@ def run(pdf: Path, pipeline_name: str | None, kind: str, options: RunOptions) ->
     return 0 if state == RunState.SUCCEEDED else 1
 
 
+def providers(key: str | None, base_url: str | None, enabled: bool | None) -> int:
+    """List LLM providers, or change one (``key`` given)."""
+    settings = load_settings()
+    db = Database(settings.database)
+    try:
+        with db.session() as s:
+            repo = ConfigRepo(s)
+            if key is not None:
+                if base_url is None and enabled is None:
+                    print("Nothing to change: pass --base-url, --enable or --disable", file=sys.stderr)
+                    return 2
+                row = repo.update_provider(key, base_url, enabled)
+                print(f"updated {row.key}: {row.base_url} ({'enabled' if row.is_enabled else 'disabled'})")
+                return 0
+            for p in repo.providers():
+                models = ", ".join(f"{mo.name} ({mo.kind})" for mo in p.models) or "-"
+                print(f"{p.key:14} {p.kind:18} {p.base_url:32} {'enabled ' if p.is_enabled else 'disabled'}  {models}")
+            return 0
+    except AppError as exc:
+        print(f"FAIL: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        db.dispose()
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="contract-extraction")
     sub = parser.add_subparsers(dest="command", required=True)
@@ -195,7 +222,20 @@ def main(argv: list[str] | None = None) -> int:
     p_run.add_argument("--no-reuse", action="store_true", help="call the models even when evidence repeats")
     p_run.add_argument("--redecompose", action="store_true", help="decompose again even if a decomposition exists")
 
+    p_prov = sub.add_parser("providers", help="list LLM providers, or change one with 'providers set'")
+    prov_sub = p_prov.add_subparsers(dest="action")
+    p_set = prov_sub.add_parser("set", help="change a provider's URL or enable/disable it")
+    p_set.add_argument("key", help="provider key, e.g. ollama-local")
+    p_set.add_argument("--base-url", help="e.g. http://localhost:11434 (native Ollama) or http://localhost:11435 (Docker)")
+    toggle = p_set.add_mutually_exclusive_group()
+    toggle.add_argument("--enable", dest="enabled", action="store_true", default=None)
+    toggle.add_argument("--disable", dest="enabled", action="store_false")
+
     args = parser.parse_args(argv)
+    if args.command == "providers":
+        if args.action == "set":
+            return providers(args.key, args.base_url, args.enabled)
+        return providers(None, None, None)
     if args.command == "check":
         return check()
     if args.command == "ingest":

@@ -36,8 +36,9 @@ services:
       - qdrant-data:/qdrant/storage
     restart: unless-stopped
 
-  # Optional. On macOS prefer native Ollama (Ollama.app, GPU, ~8x faster): it serves the same port, so the
-  # database config does not change. Use this container where native Ollama is not available; do not run both.
+  # Optional. Runs on port 11435 so it can sit next to native Ollama (Ollama.app, 11434, GPU, ~8x faster on macOS).
+  # Point the provider at it with:
+  #   contract-extraction providers set ollama-local --base-url http://localhost:11435
   # Pull models with: docker compose -f docker/docker-compose.yml exec ollama ollama pull llama3.1:8b
   ollama:
     image: ollama/ollama:0.5.4
@@ -49,7 +50,7 @@ services:
       OLLAMA_NUM_PARALLEL: ${OLLAMA_NUM_PARALLEL:-1}
       OLLAMA_KEEP_ALIVE: ${OLLAMA_KEEP_ALIVE:-30m}
     ports:
-      - "127.0.0.1:${OLLAMA_PORT:-11434}:11434"
+      - "127.0.0.1:${OLLAMA_PORT:-11435}:11434"
     volumes:
       - ollama-data:/root/.ollama
     healthcheck:
