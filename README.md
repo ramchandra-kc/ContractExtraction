@@ -23,7 +23,7 @@ LLMs are pluggable: a local Ollama (Docker or native) or a hosted provider such 
 
 ## Quick start
 
-Needs Docker, [uv](https://docs.astral.sh/uv/), Node.js with npm, and an LLM (see below).
+Needs bash, curl, Docker, [uv](https://docs.astral.sh/uv/), Node.js with npm, and an LLM (see below).
 
 ```bash
 scripts/dev.sh                 # Docker services, dependencies, check, then API + worker + gateway + frontend
@@ -34,6 +34,16 @@ scripts/dev.sh test            # every offline test suite
 scripts/dev.sh down            # stop the Docker services (data is kept)
 scripts/dev.sh reset           # wipe the database, vectors and stored files (asks first; --yes skips that)
 ```
+
+**Platforms:** `scripts/dev.sh` is a bash script for macOS, Linux and Windows. On Windows, run it in **Git Bash** (from
+Git for Windows) or WSL2, not in PowerShell or cmd.
+
+| Platform | Status | Ctrl-C |
+|---|---|---|
+| macOS (bash 3.2+) | tested end to end | graceful: the worker cancels its current run at the next field |
+| Linux | the script's logic tested on Debian (bash 5, no `lsof` / `pgrep`); the full stack not yet | graceful |
+| Windows, WSL2 | behaves as Linux | graceful |
+| Windows, Git Bash | not tested yet | processes are terminated (`taskkill`); a run in progress is marked failed by the next worker after 120 s |
 
 `up` takes `--workers N` (default 1) and `--ollama docker`. Each process's output is shown with a `[name]` prefix and
 kept in `.dev/logs/`. If a process exits, the script stops the others and shows the end of its log. On Ctrl-C the worker

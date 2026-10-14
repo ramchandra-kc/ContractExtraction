@@ -97,3 +97,12 @@ One phase is one commit or PR. A phase isn't started before the previous one is 
     `test` (backend 163, gateway 18, frontend 38, typecheck and lint). Shellcheck is clean.
   - Not verified: `reset --yes` (the destructive path was not run during the phase; declining the prompt changes nothing) and
     a browser walkthrough of the UI.
+- 2026-10-14: `scripts/dev.sh` made portable to Linux and Git Bash on Windows (WSL2 counts as Linux):
+  - Ports are probed with curl instead of `lsof`, which only names the owner when it's installed.
+  - `status` counts workers from `.dev/pids` when there is no `pgrep`.
+  - The Windows virtualenv layout (`.venv/Scripts/*.exe`) is detected.
+  - Vite runs as `node node_modules/vite/bin/vite.js`.
+  - On Windows, processes are stopped with `taskkill /T /F`, because Windows programs get no SIGTERM, so a run in progress
+    ends failed (stale heartbeat) instead of cancelled.
+  - Verified on macOS end to end again. On Debian (bash 5, no `lsof` or `pgrep`) only the script's own logic was checked.
+    Git Bash on Windows is not tested.

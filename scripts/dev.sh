@@ -10,7 +10,8 @@
 #
 # Ports follow each part's own settings. To move one, export the variable the part reads (real environment variables
 # override every config file), so this script and the services agree: API__PORT, GATEWAY__PORT.
-# Written for the bash 3.2 that ships with macOS.
+# Runs in bash 3.2+ on macOS, Linux, and Windows in Git Bash or WSL. Git Bash has no POSIX signals for Windows programs,
+# so there the processes are stopped with taskkill (see stop_all).
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
@@ -25,11 +26,18 @@ API_URL="http://127.0.0.1:$API_PORT"
 GATEWAY_URL="http://127.0.0.1:$GATEWAY_PORT"
 FRONTEND_URL="http://localhost:$FRONTEND_PORT"   # Vite may listen on ::1 only
 
+case "$(uname -s)" in
+  MINGW*|MSYS*|CYGWIN*) WINDOWS=1; VENV_BIN=Scripts; EXE=.exe ;;   # Git Bash: Windows virtualenv layout
+  *) WINDOWS=0; VENV_BIN=bin; EXE="" ;;
+esac
+
 # The installed entry points, not `uv run` / `npm run`: those wrappers forward signals to their child, and the worker
 # treats a second signal as "exit now" instead of "cancel the current run at its next field".
-CE="$ROOT/backend/.venv/bin/contract-extraction"
-GW="$ROOT/gateway/.venv/bin/contract-gateway"
-VITE="$ROOT/frontend/node_modules/.bin/vite"
+CE="$ROOT/backend/.venv/$VENV_BIN/contract-extraction$EXE"
+GW="$ROOT/gateway/.venv/$VENV_BIN/contract-gateway$EXE"
+BACKEND_PY="$ROOT/backend/.venv/$VENV_BIN/python$EXE"
+VITE_JS="$ROOT/frontend/node_modules/vite/bin/vite.js"   # run with node: the same on every OS
+PID_FILE="$DEV_DIR/pids"
 
 READY_TIMEOUT=60   # seconds for every process to answer
 STOP_TIMEOUT=15    # seconds before a process that ignores SIGTERM is killed
@@ -57,7 +65,7 @@ need() {
 
 require_docker() {
   need docker
-  docker info >/dev/null 2>&1 || die "Docker isn't running (start Docker Desktop and try again)"
+  docker info >/dev/null 2>&1 || die "Docker isn't running, or this user can't reach it (start Docker Desktop; on Linux, check the docker group)"
 }
 
 require_venvs() {
@@ -69,6 +77,7 @@ export_hops() {
   if [ -n "${API__PORT:-}" ]; then export UPSTREAM__URL="$API_URL"; fi
   if [ -n "${GATEWAY__PORT:-}" ]; then export VITE_GATEWAY_URL="$GATEWAY_URL"; fi
   export PYTHONUNBUFFERED=1
+  export PYTHONUTF8=1   # Windows: UTF-8 output through the pipe instead of the console code page
 }
 
 install_deps() {
@@ -84,12 +93,28 @@ install_deps() {
   fi
 }
 
+# A port is taken when something accepts a connection on it (curl exit 7 = nothing listening). Works without lsof,
+# which Git Bash and minimal Linux installs lack; lsof only adds the owner's name when it's there.
+port_in_use() {
+  local code=0
+  curl -s -o /dev/null --max-time 2 "http://localhost:$1/" || code=$?
+  [ "$code" != 7 ] || return 1
+  [ "$code" != 0 ] || return 0
+  # localhost may have resolved to one address family only: try IPv4 explicitly before calling the port free.
+  code=0
+  curl -s -o /dev/null --max-time 2 "http://127.0.0.1:$1/" || code=$?
+  [ "$code" != 7 ]
+}
+
 check_ports_free() {
   local port owner busy=0
   for port in "$API_PORT" "$GATEWAY_PORT" "$FRONTEND_PORT"; do
-    owner="$(lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | awk 'NR > 1 {print $1 " (pid " $2 ")"; exit}' || true)"
-    if [ -n "$owner" ]; then
-      printf '%serror:%s port %s is already in use by %s\n' "$RED" "$RESET" "$port" "$owner" >&2
+    if port_in_use "$port"; then
+      owner=""
+      if command -v lsof >/dev/null 2>&1; then
+        owner="$(lsof -nP -iTCP:"$port" -sTCP:LISTEN 2>/dev/null | awk 'NR > 1 {print " by " $1 " (pid " $2 ")"; exit}' || true)"
+      fi
+      printf '%serror:%s port %s is already in use%s\n' "$RED" "$RESET" "$port" "$owner" >&2
       busy=1
     fi
   done
@@ -118,6 +143,18 @@ start() {
   set +m
   NAMES+=("$name")
   PIDS+=("$!")
+  echo "$name $!" >>"$PID_FILE"
+}
+
+# Terminate a process and its children for good: the process group on Unix, the process tree on Windows.
+kill_hard() {
+  if [ "$WINDOWS" = 1 ]; then
+    local winpid
+    winpid="$(cat "/proc/$1/winpid" 2>/dev/null || echo "$1")"
+    MSYS_NO_PATHCONV=1 taskkill /PID "$winpid" /T /F >/dev/null 2>&1 || true
+  else
+    kill -KILL -- "-$1" 2>/dev/null || true
+  fi
 }
 
 stop_all() {
@@ -126,6 +163,14 @@ stop_all() {
   [ "${#PIDS[@]}" -gt 0 ] || return 0
   local i pid waited=0 alive
   info "Stopping app processes (Docker services keep running; 'scripts/dev.sh down' stops them)"
+  rm -f "$PID_FILE"
+  if [ "$WINDOWS" = 1 ]; then
+    # No SIGTERM for Windows programs: `kill` would end the process at once and leave its children running.
+    # A run the worker was executing is marked failed by the next worker after WORKER__STALE_AFTER_SECONDS (120 s).
+    for pid in "${PIDS[@]}"; do kill_hard "$pid"; done
+    wait 2>/dev/null || true
+    return 0
+  fi
   for pid in "${PIDS[@]}"; do kill -TERM "$pid" 2>/dev/null || true; done
   while [ "$waited" -lt $((STOP_TIMEOUT * 10)) ]; do
     alive=0
@@ -137,7 +182,7 @@ stop_all() {
   for i in "${!PIDS[@]}"; do
     pid="${PIDS[$i]}"
     if kill -0 "$pid" 2>/dev/null; then warn "${NAMES[$i]} ignored SIGTERM for ${STOP_TIMEOUT}s; killing it"; fi
-    kill -KILL -- "-$pid" 2>/dev/null || true   # the whole group, so helpers such as esbuild never outlive their parent
+    kill_hard "$pid"   # the whole group, so helpers such as esbuild never outlive their parent
   done
   wait 2>/dev/null || true
 }
@@ -187,7 +232,7 @@ cmd_up() {
   case "$workers" in ''|*[!0-9]*|0) die "--workers takes a number of at least 1" ;; esac
 
   require_docker
-  need curl lsof awk
+  need curl awk node
   check_ports_free
   install_deps
   export_hops
@@ -210,6 +255,7 @@ cmd_up() {
   fi
 
   mkdir -p "$LOG_DIR"
+  : >"$PID_FILE"
   trap 'exit 130' INT
   trap 'exit 143' TERM
   trap stop_all EXIT
@@ -222,7 +268,7 @@ cmd_up() {
     n=$((n + 1))
   done
   start gateway 33 "$ROOT/gateway" "$GW"
-  start frontend 32 "$ROOT/frontend" "$VITE" --clearScreen false
+  start frontend 32 "$ROOT/frontend" node "$VITE_JS" --clearScreen false
 
   wait_ready api "$API_URL/api/v1/health"
   wait_ready gateway "$GATEWAY_URL/health"
@@ -245,6 +291,21 @@ cmd_up() {
 
 # ------------------------------------------------------------------------------------------------------------ status
 
+# Workers on this machine: every one (also those started by hand) where pgrep exists, otherwise those started by up.
+count_workers() {
+  if command -v pgrep >/dev/null 2>&1; then
+    (pgrep -f "$VENV_BIN/contract-extraction$EXE worker" || true) | wc -l | tr -d ' '
+    return
+  fi
+  local name pid n=0
+  if [ -f "$PID_FILE" ]; then
+    while read -r name pid; do
+      case "$name" in worker*) if kill -0 "$pid" 2>/dev/null; then n=$((n + 1)); fi ;; esac
+    done <"$PID_FILE"
+  fi
+  echo "$n"
+}
+
 cmd_status() {
   need curl
   require_venvs
@@ -255,7 +316,7 @@ cmd_status() {
   info "App processes"
   if http_ok "$API_URL/api/v1/health"; then line ok "api: $API_URL"; else line fail "api: $API_URL/api/v1/health"; failed=1; fi
   if http_ok "$GATEWAY_URL/health"; then line ok "gateway: $GATEWAY_URL"; else line fail "gateway: $GATEWAY_URL/health"; failed=1; fi
-  count="$( (pgrep -f 'bin/contract-extraction worker' || true) | wc -l | tr -d ' ')"
+  count="$(count_workers)"
   if [ "$count" -gt 0 ]; then line ok "worker: $count running"; else line fail "worker: none running"; failed=1; fi
   if http_ok "$FRONTEND_URL/"; then line ok "frontend: $FRONTEND_URL"; else line fail "frontend: $FRONTEND_URL"; failed=1; fi
   if http_ok "$FRONTEND_URL/api/v1/health"; then
@@ -302,7 +363,8 @@ cmd_reset() {
   require_docker
   require_venvs
   # The storage root from the backend's settings (STORAGE__ROOT): document codes restart at DOC001 with a new database.
-  storage="$(cd "$ROOT/backend" && .venv/bin/python -c 'from contract_extraction.core.settings import load_settings; print(load_settings().storage_root)')"
+  storage="$(cd "$ROOT/backend" && "$BACKEND_PY" -c 'from contract_extraction.core.settings import load_settings; print(load_settings().storage_root)')"
+  if [ "$WINDOWS" = 1 ]; then storage="$(cygpath -u "$storage")"; fi   # C:\... → /c/...
   if [ "$yes" = 0 ]; then
     printf 'This deletes the Postgres and Qdrant volumes (every document, run, label and config edit)\n'
     printf 'and empties the storage folder %s.\n' "$storage"
