@@ -25,9 +25,12 @@ LLMs are pluggable: a local Ollama (Docker or native) or a hosted provider such 
 
 ```bash
 docker compose -f docker/docker-compose.yml up -d --build --wait                    # Postgres + Qdrant
-docker compose -f docker/docker-compose.yml --profile ollama up -d --build --wait   # + local Ollama
 docker compose -f docker/docker-compose.yml down -v                                 # wipe everything (clean database)
 ```
+
+**LLMs:** on macOS use native Ollama (`Ollama.app`, uses the GPU) on port 11434, with `ollama pull nomic-embed-text` and
+`ollama pull llama3.1:8b`. Without native Ollama, add `--profile ollama` to the `up` command to run it in Docker instead.
+That works too, but it's CPU-only and about 8× slower. Don't run both, because they share the port.
 
 Ports can be changed with `POSTGRES_PORT`, `QDRANT_PORT` and `OLLAMA_PORT`. Postgres credentials default to
 `contract` / `contract`, database `contract_extraction`.

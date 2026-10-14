@@ -33,9 +33,9 @@ uv run contract-extraction run contract.pdf --no-judge --no-reuse --pipeline my-
 inline and prints the best value per field. Ctrl-C marks the run cancelled. Every call, its evidence and the verdicts are in the
 database (`field_results`, `retrieval_hits`, `llm_calls`, `judgements`, `run_events`, view `v_best_values`).
 
-**Speed:** Ollama in Docker on macOS runs on the CPU. A full default run is up to 12 fields × 7 RAG configs × 2 calls. Reuse of
-repeated evidence cuts that a lot on short documents, but narrow runs with `--fields` / `--retrievals` while experimenting.
-Native Ollama (with GPU) or a hosted provider is much faster.
+**Speed:** a full default run is up to 12 fields × 7 RAG configs × 2 calls. With native Ollama on the Apple GPU, a call takes
+about 7–15 s. Ollama in Docker on macOS is CPU-only and takes about 90–150 s per call. Reuse of repeated evidence cuts the number
+of calls a lot on short documents. Narrow runs with `--fields` / `--retrievals` while experimenting.
 
 ## Configuration
 

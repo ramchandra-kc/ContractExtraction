@@ -300,6 +300,9 @@ See [ADR 0002](adr/0002-custom-gateway.md).
 
 ## 11. Runtime (local)
 
+- **LLMs:** native Ollama (`Ollama.app`, Apple GPU) on port 11434 is the default on macOS. In a measured run it was about 8× faster
+  than Ollama in Docker, which is CPU-only on macOS. The Docker `ollama` profile is the fallback and serves the same port, so the
+  database config doesn't change.
 - **Docker:** `docker/docker-compose.yml` starts Postgres and Qdrant, plus Ollama with `--profile ollama`.
   The Postgres image is built from `docker/Dockerfile` with `schema.sql` and `seed.sql` baked in. They run on an empty volume,
   so `down -v`, then `up --build`, gives a clean database.

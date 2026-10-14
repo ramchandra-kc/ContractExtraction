@@ -36,7 +36,8 @@ services:
       - qdrant-data:/qdrant/storage
     restart: unless-stopped
 
-  # Only needed when an LLM provider in the database points at a local Ollama.
+  # Optional. On macOS prefer native Ollama (Ollama.app, GPU, ~8x faster): it serves the same port, so the
+  # database config does not change. Use this container where native Ollama is not available; do not run both.
   # Pull models with: docker compose -f docker/docker-compose.yml exec ollama ollama pull llama3.1:8b
   ollama:
     image: ollama/ollama:0.5.4
