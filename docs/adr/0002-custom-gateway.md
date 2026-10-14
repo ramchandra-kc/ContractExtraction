@@ -26,3 +26,8 @@ Write a **custom gateway** in Python (FastAPI + httpx, managed with uv), listeni
 - We fully control the behavior, and it uses the same language and toolchain as the backend.
 - It's more code to maintain than an Nginx config, so it must stay thin: **no business logic, no database access**.
 - One extra hop locally. That's negligible next to LLM latency.
+
+## Note (Phase 6)
+
+Built with **Starlette** rather than FastAPI. FastAPI is built on Starlette, and the gateway needs no request models or OpenAPI of its own.
+The decision stands: it's a custom Python gateway, using the same ASGI stack and httpx.

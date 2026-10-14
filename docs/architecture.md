@@ -280,14 +280,20 @@ All routes are under `/api/v1`. The OpenAPI document (`/api/v1/openapi.json`, do
 
 ## 9. Gateway
 
-- Streams requests and responses with httpx, so large PDF uploads are never fully buffered.
-- Adds or propagates `X-Request-ID` on every request and logs it in gateway and backend logs.
-- Enforces the upload size limit and upstream timeouts. Returns `502`/`504` with the same `{"detail"}` error shape.
-- Owns CORS. The backend doesn't configure CORS at all.
-- `GET /health` reports the gateway itself plus the backend's health. The backend in turn reports Postgres, Qdrant and Ollama.
-- **Later:** authentication (last phase), rate limiting, optionally serving the built frontend (`frontend/dist`).
+`gateway/` (Starlette + httpx, port 8080) is the only entry point. It forwards `/api/v1/*` to the backend and returns 404 for anything else.
 
-See [ADR 0002](adr/0002-custom-gateway.md).
+- **Streaming:** request and response bodies are streamed, never buffered. The original path bytes and query are forwarded unchanged.
+  The upstream connection is closed even when the client disconnects.
+- **Headers:** hop-by-hop headers (and those listed in `Connection`) are dropped both ways. Client-sent forwarding headers are replaced by the gateway's own
+  `X-Forwarded-For/-Proto/-Host`. The backend's `Server` header is not passed on. `nosniff` is set on every response.
+- **Request ids:** a safe client `X-Request-ID` is kept, otherwise a new one is created. It's sent upstream, returned and logged by both services.
+- **Upload limit:** 413 before contacting the backend (from `Content-Length`, or counted while streaming chunked bodies).
+- **Errors:** 502 when the backend is unreachable, 504 on timeouts, no retries. Errors use the same RFC 9457 format as the backend.
+- **CORS:** an explicit origin list.
+- **Health:** `GET /health` aggregates the gateway and the backend's liveness.
+- **Later:** authentication (last phase); rate limiting and serving the built frontend if needed.
+
+See [ADR 0002](adr/0002-custom-gateway.md) and [`gateway/README.md`](../gateway/README.md).
 
 ## 10. Configuration conventions
 

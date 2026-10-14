@@ -15,8 +15,8 @@ The project is a monorepo with separate parts. Each part has its own folder, con
 | Folder | Part | Runs as | Port |
 |---|---|---|---|
 | [`frontend/`](frontend/) | React single-page app | local process (Vite) | 5173 |
-| [`gateway/`](gateway/) | API gateway: the single entry point for the frontend | local process | 8080 |
-| [`backend/`](backend/) | REST API and pipeline worker | local processes | 8000 (API) |
+| [`gateway/`](gateway/) | API gateway: the single entry point for the frontend (`uv run contract-gateway`) | local process | 8080 |
+| [`backend/`](backend/) | REST API (`contract-extraction api`) and pipeline worker (`contract-extraction worker`) | local processes | 8000 (API) |
 | [`docker/`](docker/) | Postgres (with the schema and default config), Qdrant, and optionally Ollama | Docker | 5432 / 6333 / 11434 |
 
 LLMs are pluggable: a local Ollama (Docker or native) or a hosted provider such as OpenRouter, configured in the database.

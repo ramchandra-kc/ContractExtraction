@@ -19,7 +19,7 @@ One phase is one commit or PR. A phase isn't started before the previous one is 
 | 3b | **Extraction** | Retrieval (query expansion, thresholds, merge), extraction LLM, judge (optionally parallel), LLM-call logging, field results and evidence, run orchestration with events and progress, `run` CLI | Offline end-to-end test with fakes passes; `sample.pdf` runs end to end against real services | ✅ done |
 | 4 | **Backend worker** | Claim loop (`SKIP LOCKED`), heartbeats, cancellation, stale-run cleanup (no automatic retries), `worker` / `status` / `cancel` / `run --queue` CLI | Concurrency and recovery tests pass; two workers never take the same run; a killed worker's run ends as failed | ✅ done |
 | 5 | **Backend API** | FastAPI over the existing repositories: health (liveness/readiness), config (read-only), documents (upload, file, pages, images), runs (queue, cancel, events, results, evidence); RFC 9457 errors; request ids; stable operationIds | API tests pass; upload → run → results works over HTTP with a worker | ✅ done |
-| 6 | **Gateway** | uv project, streaming proxy, request IDs, access log, timeouts, upload limit, CORS, aggregated health | Gateway tests with a fake upstream pass; frontend-style requests reach the backend through :8080 | ⬜ planned |
+| 6 | **Gateway** | Starlette + httpx streaming proxy for `/api/v1/*`: request ids, edge-set forwarding headers, upload limit (413), 502/504 problems, CORS, aggregated health, nosniff | Gateway tests pass; upload → run → results works through :8080; 413 never reaches the API; API down → 503/502 | ✅ done |
 | 7 | **Frontend** | Vite + React + TS app, types generated from OpenAPI, upload, document list, run progress, results (best values, all outcomes, evidence, verdicts), page viewer | Vitest and `tsc` pass; a PDF uploaded in the UI reaches `succeeded` and results show up | ⬜ planned |
 | 8 | **Dev experience** | `scripts/dev.sh` to start everything, checks for each service, end-to-end smoke test, docs refresh | One command brings up the full stack; the smoke test passes | ⬜ planned |
 | 9 | **Authentication** | Auth in the gateway, frontend login, backend trusts the gateway | Unauthenticated requests are rejected at the gateway | ⬜ planned |
@@ -50,3 +50,5 @@ One phase is one commit or PR. A phase isn't started before the previous one is 
   and stale runs marked failed (no retries, so no resume logic). Cancel and a graceful worker stop, plus status/cancel/queue CLI.
 - 2026-10-14: Phase 5 completed. One resource per call (upload, then queue a run), problem details, health split into liveness and readiness.
   Deferred to the frontend phase: config editing and ground-truth labeling over HTTP.
+- 2026-10-14: Phase 6 completed. Review fixes: edge-set forwarding headers, validated request ids, closed streams, raw path forwarding,
+  full timeouts, Starlette instead of FastAPI.
