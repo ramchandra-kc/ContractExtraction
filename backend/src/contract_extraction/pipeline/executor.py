@@ -12,9 +12,11 @@ its own, so progress and partial results are visible while the run is going.
   The profile is fixed per run, so (field, chunks) fully determines the prompt. Failed answers
   are not reused, so a transient provider error gets another chance.
 * With ``judge_parallel`` the judge calls run on a small thread pool; the run waits for them.
-* Cancellation (``runs.cancel_requested``) is checked before each field.
+* Cancellation (``runs.cancel_requested``, or the worker shutting down) is checked before each field.
+* A heartbeat thread updates ``runs.heartbeat_at`` while the run executes. If the run stops being
+  ours (a worker marked it failed as stale), the executor stops at the next field and leaves it as is.
 
-The Phase 4 worker calls this same executor; the CLI runs it inline.
+The worker claims runs and calls ``run_claimed``; the CLI's inline path calls ``execute``.
 """
 
 from __future__ import annotations
@@ -66,7 +68,39 @@ class Providers:
 
 
 class RunCancelled(Exception):
-    """Cancellation was requested; raised between fields."""
+    """Cancellation was requested (or the worker is shutting down); raised between fields."""
+
+
+class RunLost(Exception):
+    """The run is no longer running under this worker (e.g. marked failed as stale); stop without touching it."""
+
+
+class _Heartbeat:
+    """Background thread proving the run is alive while long model calls block the main thread."""
+
+    def __init__(self, db: Database, run_id: uuid.UUID, worker_id: str, interval: float):
+        self.db, self.run_id, self.worker_id, self.interval = db, run_id, worker_id, interval
+        self.lost = False
+        self._stop = threading.Event()
+        self._thread = threading.Thread(target=self._loop, name=f"heartbeat-{run_id}", daemon=True)
+
+    def _loop(self) -> None:
+        while not self._stop.wait(self.interval):
+            try:
+                with self.db.session() as s:
+                    if not RunRepo(s).heartbeat(self.run_id, self.worker_id):
+                        self.lost = True
+                        return
+            except Exception:  # noqa: BLE001 - a missed beat is retried; a long outage ends in stale detection
+                log.warning("Heartbeat for run %s failed", self.run_id, exc_info=True)
+
+    def __enter__(self) -> _Heartbeat:
+        self._thread.start()
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        self._stop.set()
+        self._thread.join(timeout=5)
 
 
 class RunExecutor:
@@ -77,6 +111,19 @@ class RunExecutor:
         self.settings = settings
         self.providers = providers or Providers.from_settings(settings)
         self.worker_id = worker_id
+        # Set by the worker on shutdown: the current run is cancelled at the next field.
+        self.stop_event = threading.Event()
+        self._heartbeat: _Heartbeat | None = None
+
+    def check_continue(self, run_id: uuid.UUID) -> None:
+        """Called between fields and stages: raise if the run must stop."""
+        if self._heartbeat is not None and self._heartbeat.lost:
+            raise RunLost
+        if self.stop_event.is_set():
+            raise RunCancelled("Worker is shutting down")
+        with self.db.session() as s:
+            if RunRepo(s).cancel_requested(run_id):
+                raise RunCancelled("Cancellation requested")
 
     def event(self, run_id: uuid.UUID, message: str, level: EventLevel = EventLevel.INFO,
               stage: RunStage | None = None, **data: Any) -> None:
@@ -90,17 +137,33 @@ class RunExecutor:
 
     def _finish(self, run_id: uuid.UUID, state: RunState, error: str | None = None) -> RunState:
         with self.db.session() as s:
-            RunRepo(s).finish(run_id, state, error)
-        return state
+            repo = RunRepo(s)
+            if repo.finish(run_id, state, error):
+                return state
+            return RunState(repo.get(run_id).state)  # already finished elsewhere (e.g. failed as stale)
 
     def execute(self, run_id: uuid.UUID) -> RunState:
-        """Run ``run_id`` (which must be queued) to completion; returns the final state."""
+        """Start ``run_id`` (which must be queued) and run it to completion; returns the final state."""
         with self.db.session() as s:
-            run = RunRepo(s).start(run_id, self.worker_id)
+            RunRepo(s).start(run_id, self.worker_id)
+        return self.run_claimed(run_id)
+
+    def run_claimed(self, run_id: uuid.UUID) -> RunState:
+        """Run a run that this executor's worker already marked running; returns the final state."""
+        with self.db.session() as s:
+            run = RunRepo(s).get(run_id)
             pipeline = PipelineConfig.model_validate(run.config_snapshot)
             options = RunOptions.model_validate(run.options)
             kind, document_id = RunKind(run.kind), run.document_id
+        with _Heartbeat(self.db, run_id, self.worker_id, self.settings.worker.heartbeat_seconds) as hb:
+            self._heartbeat = hb
+            try:
+                return self._run(run_id, pipeline, options, kind, document_id)
+            finally:
+                self._heartbeat = None
 
+    def _run(self, run_id: uuid.UUID, pipeline: PipelineConfig, options: RunOptions, kind: RunKind,
+             document_id: uuid.UUID) -> RunState:
         try:
             self.event(run_id, f"Run started: {kind}, pipeline {pipeline.name}, "
                                f"{len(pipeline.field_set.fields)} fields x {len(pipeline.retrievals)} RAG configs")
@@ -109,6 +172,7 @@ class RunExecutor:
             self.event(run_id, f"Decomposition {'reused' if dec.reused else 'created'}: {dec.page_count} pages",
                        stage=RunStage.DECOMPOSING, decomposition_id=str(dec.decomposition_id))
 
+            self.check_continue(run_id)
             self._stage(run_id, RunStage.INDEXING)
             store = self.providers.store(pipeline.index.vector_store)
             idx = build_index(self.db, dec.decomposition_id, dec.document_code, pipeline.index,
@@ -119,12 +183,17 @@ class RunExecutor:
                        stage=RunStage.INDEXING, collection=idx.collection_name)
 
             if kind != RunKind.DECOMPOSE:
+                self.check_continue(run_id)
                 self._stage(run_id, RunStage.EXTRACTING)
                 summary = _Extraction(self, run_id, pipeline, options, store, idx.collection_name).run()
                 self.event(run_id, "Extraction finished", stage=RunStage.EXTRACTING, **summary)
             return self._finish(run_id, RunState.SUCCEEDED)
-        except RunCancelled:
-            self.event(run_id, "Run cancelled", EventLevel.WARNING)
+        except RunLost:
+            log.warning("Run %s is no longer ours (marked stale?); stopping without changing it", run_id)
+            with self.db.session() as s:
+                return RunState(RunRepo(s).get(run_id).state)
+        except RunCancelled as exc:
+            self.event(run_id, f"Run cancelled: {exc}" if str(exc) else "Run cancelled", EventLevel.WARNING)
             return self._finish(run_id, RunState.CANCELLED)
         except Exception as exc:  # noqa: BLE001 - any failure ends the run as failed, with the reason recorded
             log.exception("Run %s failed", run_id)
@@ -191,9 +260,7 @@ class _Extraction:
         try:
             for rc in self.p.retrievals:
                 for f in self.p.field_set.fields:
-                    with self.db.session() as s:
-                        if RunRepo(s).cancel_requested(self.run_id):
-                            raise RunCancelled
+                    self.ex.check_continue(self.run_id)
                     hits = self.retriever.retrieve(f, rc)
                     key = (f.id, tuple(h.chunk_id for h in hits))
                     if self.options.reuse_calls and key in answers:

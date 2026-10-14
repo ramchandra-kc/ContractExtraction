@@ -168,7 +168,7 @@ def test_cancellation_between_fields(db, storage, tmp_path):
     run, _, results, _, _, _, events = _summary(db, run_id)
     assert run.state == "cancelled" and run.finished_at
     assert results == 1 and run.progress_done == 1
-    assert "Run cancelled" in events
+    assert any(e.startswith("Run cancelled") for e in events)
 
 
 def test_decompose_only_run(db, storage, tmp_path):

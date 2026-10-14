@@ -17,7 +17,7 @@ One phase is one commit or PR. A phase isn't started before the previous one is 
 | 2 | **Backend core** | uv project, layered settings, logging, domain models, SQLAlchemy models matching `schema.sql`, repositories (including reading config from the DB), file storage | Unit and repository tests pass against a test database | ✅ done |
 | 3a | **Ingestion** | Provider interfaces with Ollama, OpenAI-compatible (OpenRouter), Qdrant and in-memory versions; decomposition through pdf-converter (pymupdf, OCR, hybrid); header/footer removal; chunking with exact offsets; indexing with chunk rows as the record; `ingest` CLI | Unit, DB and OCR tests pass; `sample.pdf` ingests against real Ollama and Qdrant, and a second run reuses everything | ✅ done |
 | 3b | **Extraction** | Retrieval (query expansion, thresholds, merge), extraction LLM, judge (optionally parallel), LLM-call logging, field results and evidence, run orchestration with events and progress, `run` CLI | Offline end-to-end test with fakes passes; `sample.pdf` runs end to end against real services | ✅ done |
-| 4 | **Backend worker** | Claim loop (`SKIP LOCKED`), heartbeats, cancellation, stale-run recovery, retry limit, per-run log file, settings snapshot | Concurrency and recovery tests pass; two workers never take the same run | ⬜ planned |
+| 4 | **Backend worker** | Claim loop (`SKIP LOCKED`), heartbeats, cancellation, stale-run cleanup (no automatic retries), `worker` / `status` / `cancel` / `run --queue` CLI | Concurrency and recovery tests pass; two workers never take the same run; a killed worker's run ends as failed | ✅ done |
 | 5 | **Backend API** | FastAPI app, routes from architecture §8, error mapping, upload limit, OpenAPI | API integration tests pass; OpenAPI published | ⬜ planned |
 | 6 | **Gateway** | uv project, streaming proxy, request IDs, access log, timeouts, upload limit, CORS, aggregated health | Gateway tests with a fake upstream pass; frontend-style requests reach the backend through :8080 | ⬜ planned |
 | 7 | **Frontend** | Vite + React + TS app, types generated from OpenAPI, upload, document list, run progress, results (best values, all outcomes, evidence, verdicts), page viewer | Vitest and `tsc` pass; a PDF uploaded in the UI reaches `succeeded` and results show up | ⬜ planned |
@@ -45,3 +45,6 @@ One phase is one commit or PR. A phase isn't started before the previous one is 
 - 2026-10-14: Phase 3b completed. Retrieval, extraction and judge; runs execute from their snapshot; answers are reused when
   the evidence repeats; the parallel judge is optional (off by default); `run` CLI. Ollama in Docker now runs with
   `OLLAMA_NUM_PARALLEL=1` (otherwise llama3.1:8b needs ~11 GiB). Deferred: `results` / experiment CLI (comes with the API).
+- 2026-10-14: Ollama is switchable (native :11434 or Docker :11435, via `providers set`). The judge temperature was lowered to 0.1.
+- 2026-10-14: Phase 4 completed, kept simple on purpose. Polling worker with SKIP LOCKED claims, a heartbeat thread in the executor,
+  and stale runs marked failed (no retries, so no resume logic). Cancel and a graceful worker stop, plus status/cancel/queue CLI.

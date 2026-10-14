@@ -152,9 +152,15 @@ stateDiagram-v2
     running --> succeeded
     running --> failed
     running --> cancelled: cancel (checked between fields)
-    running --> queued: no heartbeat → retry (if attempts left)
-    running --> failed: no heartbeat, attempts used up
+    running --> failed: no heartbeat for 120 s (worker died)
 ```
+
+- Workers claim the oldest queued run with `FOR UPDATE SKIP LOCKED`. The CLI's inline `run` queues and starts in one transaction,
+  so a worker never takes it.
+- A running run sends a **heartbeat** every 15 s from a background thread, because single LLM calls can take minutes.
+  Each worker loop marks runs with a stale heartbeat as failed (one atomic `UPDATE`, using the database clock).
+  If the original process was only slow, its heartbeat notices it lost the run and stops at the next field without overwriting the outcome.
+- There are **no automatic retries** (`max_attempts` = 1). A failed run is simply run again.
 
 - While `running`, the run reports a **stage** (`decomposing` → `indexing` → `extracting`) and **progress** (done/total).
 - At most one active (queued or running) run per document.

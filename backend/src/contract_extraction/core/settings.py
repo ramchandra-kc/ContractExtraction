@@ -53,6 +53,15 @@ class ExecutorSettings(BaseModel):
     judge_workers: int = Field(4, gt=0)
 
 
+class WorkerSettings(BaseModel):
+    # Idle wait between queue checks.
+    poll_seconds: float = Field(2, gt=0)
+    # How often a running run proves it is alive (LLM calls can take minutes, so progress alone is not enough).
+    heartbeat_seconds: float = Field(15, gt=0)
+    # A running run without a heartbeat for this long is marked failed ("worker stopped responding").
+    stale_after_seconds: float = Field(120, gt=0)
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(env_nested_delimiter="__", env_file_encoding="utf-8", extra="ignore")
 
@@ -62,6 +71,7 @@ class Settings(BaseSettings):
     storage: StorageSettings = Field(default_factory=StorageSettings)
     qdrant: QdrantSettings = Field(default_factory=QdrantSettings)
     executor: ExecutorSettings = Field(default_factory=ExecutorSettings)
+    worker: WorkerSettings = Field(default_factory=WorkerSettings)
 
     # Raw values from the env files, for variables that are not settings (API keys named in the database).
     _file_values: dict[str, str] = PrivateAttr(default_factory=dict)

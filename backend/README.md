@@ -21,6 +21,21 @@ Use `--pipeline NAME` for a non-default pipeline config.
 
 OCR and hybrid decomposition (`decomposition_configs` rows `ocr` and `hybrid`) need Tesseract (`brew install tesseract`).
 
+### Worker, status and cancel
+
+```bash
+uv run contract-extraction worker                       # executes queued runs (start more processes to scale)
+uv run contract-extraction run contract.pdf --queue     # only queue; prints the run id
+uv run contract-extraction status                       # recent runs: state, stage, progress, duration, error
+uv run contract-extraction status RUN_ID                # one run: timeline (run_events) and best values
+uv run contract-extraction cancel RUN_ID                # queued → cancelled now; running → stops before its next field
+```
+
+- **Heartbeat:** while a run executes (in a worker or inline), its `heartbeat_at` is updated every `WORKER__HEARTBEAT_SECONDS` (15 s).
+- **Dead runs:** workers mark a running run without a heartbeat for `WORKER__STALE_AFTER_SECONDS` (120 s) as failed
+  ("worker stopped responding"). There are no automatic retries; run it again.
+- **Stopping a worker:** Ctrl-C (or SIGTERM) once cancels the current run at its next field and exits. Twice exits at once.
+
 ### LLM providers
 
 ```bash
