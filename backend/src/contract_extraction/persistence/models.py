@@ -299,6 +299,8 @@ class PipelineConfig(Base):
     classification_pages: Mapped[int] = mapped_column(server_default=_db())
     classification_min_confidence: Mapped[Decimal] = mapped_column(Numeric(4, 3), server_default=_db())
     min_priority: Mapped[str] = mapped_column(server_default=_db())
+    extraction_granularity: Mapped[str] = mapped_column(server_default=_db())
+    group_max_fields: Mapped[int] = mapped_column(server_default=_db())
     is_default: Mapped[bool] = mapped_column(server_default=_db())
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = _updated()
@@ -549,6 +551,13 @@ class Judgement(Base):
     explanation: Mapped[str | None]
     llm_call_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("llm_calls.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = _created()
+
+
+class LlmCallFieldResult(Base):
+    __tablename__ = "llm_call_field_results"
+
+    llm_call_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("llm_calls.id", ondelete="CASCADE"), primary_key=True)
+    field_result_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("field_results.id", ondelete="CASCADE"), primary_key=True)
 
 
 class RunClassification(Base):

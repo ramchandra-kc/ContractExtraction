@@ -175,6 +175,38 @@ def test_fields_for_types(session):
         fs.fields_for_types(["lease"])
 
 
+def test_batches_follow_the_document_groups(session):
+    fs = ConfigRepo(session).resolve_pipeline().field_set
+    fields = fs.fields_for_types(["msa", "sow"])
+    batches = fs.batches(fields, ["msa", "sow"], max_fields=8)
+    assert sorted(f.key for _, b in batches for f in b) == sorted(f.key for f in fields), "every field exactly once"
+    names = [n for n, _ in batches]
+    assert names[:3] == ["core 1/3", "core 2/3", "core 3/3"], "22 core fields split at 8"
+    assert {"commercial 1/2", "msa 1/2", "sow 1/2"} <= set(names), "a type's own fields are named after it"
+    assert all(len(b) <= 8 for _, b in batches)
+    assert [n for n, _ in fs.batches(fields[:2], [], max_fields=8)] == ["core"]
+
+
+def test_group_prompt():
+    from contract_extraction.extraction.prompts import group_prompt
+
+    prompt = group_prompt((FIELD, CATALOGUE_FIELD), "ctx")
+    assert prompt.startswith("Task: From the given contract text chunks, extract the following fields:\n"
+                             "payment_terms\nlate_payment_interest\n\nDefinitions:\n")
+    assert "late_payment_interest (Late payment interest): Interest or fees on overdue amounts" in prompt
+    assert 'JSON Format:\n{"payment_terms": "", "late_payment_interest": {"rate": null, "basis": null}}\nInput Chunks:<<<\nctx\n>>>' in prompt
+    assert "Extract payment_terms as JSON." not in prompt, "hand-written prompts are not used in group mode"
+
+
+def test_group_values():
+    from contract_extraction.extraction.parsing import group_values
+
+    got = group_values('```json\n{"a": "x", "b": null, "c": {"k": null}}\n```', ["a", "b", "c", "d"])
+    assert got == {"a": (FieldResultStatus.EXTRACTED, "x"), "b": (FieldResultStatus.NOT_FOUND, None),
+                   "c": (FieldResultStatus.NOT_FOUND, None), "d": (FieldResultStatus.NOT_FOUND, None)}
+    assert group_values('["x"]', ["a"]) is None and group_values("nope", ["a"]) is None
+
+
 def test_narrow_checks_contract_types(session):
     p = ConfigRepo(session).resolve_pipeline()
     assert narrow(p, RunOptions(contract_types=["msa", "sow"])).field_set == p.field_set, "types are chosen at run time"

@@ -114,6 +114,28 @@ def extraction_prompt(field: Field, context: str) -> str:
     return f"{field.user_prompt or generic_prompt(field)}<<<\n{context}\n>>>"
 
 
+def group_prompt(fields: tuple[Field, ...], context: str) -> str:
+    """One prompt for several fields (group extraction). Built from the fields' descriptions and types;
+    hand-written field prompts are not used here."""
+    example = {f.key: skeleton(f.value_schema) if f.value_schema else "" for f in fields}
+    lines = ["Task: From the given contract text chunks, extract the following fields:", *(f.key for f in fields), "",
+             "Definitions:"]
+    for f in fields:
+        lines += [f"{f.key} ({f.label}): {f.description or f.label}", f"  Value: {value_help(f)}"]
+    lines += [
+        "",
+        "Extraction rules:",
+        "- Use only what the chunks state; do not infer, guess or invent values.",
+        FORMAT_RULES,
+        "- Return every field listed; use null for a field the chunks do not address.",
+        "",
+        "JSON Format:",
+        json.dumps(example, ensure_ascii=False),
+        "Input Chunks:",
+    ]
+    return "\n".join(lines) + f"<<<\n{context}\n>>>"
+
+
 def judge_prompt(field: Field, context: str, answer: str) -> str:
     question = f"Extract {field.label}" + (f" ({field.description})" if field.description else "")
     return f"Question: {question}\nContext: {context}\nAnswer: {answer}"

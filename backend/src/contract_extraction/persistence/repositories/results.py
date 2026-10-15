@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import and_, select
+from sqlalchemy import and_, or_, select
 from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.orm import Session, selectinload
@@ -146,13 +146,20 @@ class ResultRepo:
         return self.session.scalars(select(m.Judgement).where(m.Judgement.field_result_id == field_result_id)
                                     .order_by(m.Judgement.created_at)).all()
 
+    def link_call(self, llm_call_id: uuid.UUID, field_result_ids: list[uuid.UUID]) -> None:
+        """Record that one call (group extraction) produced several field results."""
+        self.session.add_all(m.LlmCallFieldResult(llm_call_id=llm_call_id, field_result_id=fr) for fr in field_result_ids)
+        self.session.flush()
+
     def llm_calls(self, field_result_id: uuid.UUID) -> list[m.LlmCall]:
-        """Calls that produced this result. A reused result made no calls of its own: the calls of the
-        result it was reused from are returned instead (found through the reuse event)."""
+        """Calls that produced this result: its own, and a group call it shares with other fields.
+        A reused result made no calls of its own: the calls of the result it was reused from are
+        returned instead (found through the reuse event)."""
         source = self.reused_from(field_result_id) or field_result_id
-        calls = list(self.session.scalars(select(m.LlmCall).where(m.LlmCall.field_result_id == source)
-                                          .order_by(m.LlmCall.created_at)))
-        return calls
+        shared = select(m.LlmCallFieldResult.llm_call_id).where(m.LlmCallFieldResult.field_result_id == source)
+        return list(self.session.scalars(
+            select(m.LlmCall).where(or_(m.LlmCall.field_result_id == source, m.LlmCall.id.in_(shared)))
+            .order_by(m.LlmCall.created_at)))
 
     def reused_from(self, field_result_id: uuid.UUID) -> uuid.UUID | None:
         value = self.session.scalar(

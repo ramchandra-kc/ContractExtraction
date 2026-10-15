@@ -63,6 +63,13 @@ class Priority(StrEnum):
     P3 = "P3"
 
 
+class Granularity(StrEnum):
+    """How many fields one extraction call answers."""
+
+    FIELD = "field"
+    GROUP = "group"
+
+
 class IndexStatus(StrEnum):
     BUILDING = "building"
     READY = "ready"

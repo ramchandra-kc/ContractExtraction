@@ -91,6 +91,12 @@ The pipeline's `min_priority` (P3 = all) can limit runs to P1 or P1–P2 fields.
 and the run's events. Answers that do not fit the field's type (wrong JSON type, value outside an enum) are recorded as
 `error` results; enum spellings such as "One Way" are normalised to `one_way` first.
 
+**Calls per field or per group:** a pipeline's `extraction_granularity` is `field` (one retrieval and call per field) or
+`group`: one call per field group (Core, Commercial, …, or the type's own fields, split at `group_max_fields`), with
+evidence retrieved by all the group's queries. Each field still gets its own result and verdict, so the two modes compare
+directly in experiments. Group calls use the generic prompt built from descriptions (hand-written field prompts apply only
+in `field` mode); the call is linked to its results through `llm_call_field_results`.
+
 **Speed:** a default run is one classification call plus up to 70 fields × 7 RAG configs × 2 calls (an MSA has 66 fields).
 With native Ollama on the Apple GPU, a call takes
 about 7–15 s. Ollama in Docker on macOS is CPU-only and takes about 90–150 s per call. Reuse of repeated evidence cuts the number

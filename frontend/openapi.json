@@ -2576,6 +2576,13 @@
           "min_priority": {
             "$ref": "#/components/schemas/Priority"
           },
+          "extraction_granularity": {
+            "$ref": "#/components/schemas/Granularity"
+          },
+          "group_max_fields": {
+            "type": "integer",
+            "title": "Group Max Fields"
+          },
           "retrievals": {
             "items": {
               "type": "string"
@@ -2617,6 +2624,8 @@
           "classification_pages",
           "classification_min_confidence",
           "min_priority",
+          "extraction_granularity",
+          "group_max_fields",
           "retrievals"
         ],
         "title": "CatalogPipeline"
@@ -3721,6 +3730,15 @@
         "type": "object",
         "title": "FieldUpdate"
       },
+      "Granularity": {
+        "type": "string",
+        "enum": [
+          "field",
+          "group"
+        ],
+        "title": "Granularity",
+        "description": "How many fields one extraction call answers."
+      },
       "GroundTruthItem": {
         "properties": {
           "field_id": {
@@ -4668,6 +4686,16 @@
             "$ref": "#/components/schemas/Priority",
             "default": "P3"
           },
+          "extraction_granularity": {
+            "$ref": "#/components/schemas/Granularity",
+            "default": "field"
+          },
+          "group_max_fields": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Group Max Fields",
+            "default": 8
+          },
           "retrievals": {
             "items": {
               "type": "string"
@@ -4905,6 +4933,14 @@
           },
           "min_priority": {
             "$ref": "#/components/schemas/Priority"
+          },
+          "extraction_granularity": {
+            "$ref": "#/components/schemas/Granularity"
+          },
+          "group_max_fields": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Group Max Fields"
           },
           "retrievals": {
             "items": {

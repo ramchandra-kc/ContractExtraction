@@ -106,7 +106,7 @@ class ConfigWriter:
             ref = values["classification_prompt"]
             out["classification_prompt_id"] = self._versioned(m.PromptTemplate, ref, "Prompt").id if ref else None
         for key in ("description", "judge_enabled", "judge_parallel", "classification_enabled", "classification_pages",
-                    "classification_min_confidence", "min_priority"):
+                    "classification_min_confidence", "min_priority", "extraction_granularity", "group_max_fields"):
             if key in values:
                 out[key] = values[key]
         return out

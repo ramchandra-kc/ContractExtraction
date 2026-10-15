@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from ..domain.enums import (
     DecompositionMethod,
     Distance,
+    Granularity,
     ModelKind,
     Priority,
     PromptRole,
@@ -163,6 +164,8 @@ class CatalogPipeline(BaseModel):
     classification_pages: int
     classification_min_confidence: Decimal
     min_priority: Priority
+    extraction_granularity: Granularity
+    group_max_fields: int
     retrievals: list[str] = Field(description="RAG config names in priority order")
     error: str | None = Field(None, description="Why the pipeline cannot run right now, if it cannot")
 
@@ -199,6 +202,8 @@ class PipelineCreate(_In):
     classification_pages: Positive = 3
     classification_min_confidence: Score = Decimal("0.5")
     min_priority: Priority = Priority.P3
+    extraction_granularity: Granularity = Granularity.FIELD
+    group_max_fields: Positive = 8
     retrievals: list[str] = Field(min_length=1, description="RAG config names in priority order")
 
     @model_validator(mode="after")
@@ -227,6 +232,8 @@ class PipelineUpdate(_In):
     classification_pages: Positive = None  # type: ignore[assignment]
     classification_min_confidence: Score = None  # type: ignore[assignment]
     min_priority: Priority = None  # type: ignore[assignment]
+    extraction_granularity: Granularity = None  # type: ignore[assignment]
+    group_max_fields: Positive = None  # type: ignore[assignment]
     retrievals: list[str] = Field(None, min_length=1)  # type: ignore[assignment]
 
 

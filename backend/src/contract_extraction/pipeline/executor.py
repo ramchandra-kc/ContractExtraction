@@ -1,15 +1,19 @@
 """Run executor: carries out one queued run from its stored configuration snapshot.
 
-    queued → running → ensure decomposition → ensure index → extract → succeeded | failed | cancelled
+    queued → running → ensure decomposition → ensure index → classify → extract → succeeded | failed | cancelled
 
+Classification picks the contract type(s) whose fields the run extracts (see ``_contract_types``).
 Extraction goes through the run's RAG configs in priority order and, for each, through its
-fields: retrieve evidence → extraction LLM → judge LLM. Every field result is committed on
+fields: retrieve evidence → extraction LLM → judge LLM. With group granularity one call answers a
+batch of fields (a field group such as Core, split at ``group_max_fields``) from the evidence of all
+their queries; each field still gets its own result and verdict. Every field result is committed on
 its own, so progress and partial results are visible while the run is going.
 
-* A provider error on one field records an ``error`` result (judged SKIPPED); the run goes on.
-* A field that receives exactly the same evidence (same chunks, same order) again in this run
-  reuses the earlier answer and verdict instead of calling the models again (``reuse_calls``).
-  The profile is fixed per run, so (field, chunks) fully determines the prompt. Failed answers
+* A provider error on one field records an ``error`` result (judged SKIPPED); the run goes on. So
+  does an answer that does not fit the field's JSON Schema.
+* A field (or batch) that receives exactly the same evidence (same chunks, same order) again in this
+  run reuses the earlier answers and verdicts instead of calling the models again (``reuse_calls``).
+  The profile is fixed per run, so (fields, chunks) fully determines the prompt. Failed answers
   are not reused, so a transient provider error gets another chance.
 * With ``judge_parallel`` the judge calls run on a small thread pool; the run waits for them.
 * Cancellation (``runs.cancel_requested``, or the worker shutting down) is checked before each field.
@@ -21,6 +25,7 @@ The worker claims runs and calls ``run_claimed``; the CLI's inline path calls ``
 
 from __future__ import annotations
 
+import json
 import logging
 import threading
 import uuid
@@ -35,6 +40,7 @@ from ..domain.enums import (
     ClassificationSource,
     EventLevel,
     FieldResultStatus,
+    Granularity,
     LlmCallPurpose,
     RunKind,
     RunStage,
@@ -43,8 +49,8 @@ from ..domain.enums import (
 )
 from ..extraction import classify
 from ..extraction.judge import JudgeOutcome, parse_verdict
-from ..extraction.parsing import field_value
-from ..extraction.prompts import build_context, extraction_prompt, judge_prompt
+from ..extraction.parsing import field_value, group_values
+from ..extraction.prompts import build_context, extraction_prompt, group_prompt, judge_prompt
 from ..extraction.retrieval import Hit, Retriever
 from ..extraction.validation import conform
 from ..indexing.indexer import build_index
@@ -197,11 +203,16 @@ class RunExecutor:
                 self.check_continue(run_id)
                 type_keys = self._contract_types(run_id, pipeline, options, idx.vector_index_id)
                 fields = select_fields(pipeline, options, type_keys)
+                batches = None
+                if pipeline.extraction_granularity == Granularity.GROUP:
+                    batches = pipeline.field_set.batches(fields, type_keys, pipeline.group_max_fields)
                 self.check_continue(run_id)
                 self._stage(run_id, RunStage.EXTRACTING)
-                self.event(run_id, f"Extracting {len(fields)} fields x {len(pipeline.retrievals)} RAG configs",
-                           stage=RunStage.EXTRACTING, fields=[f.key for f in fields])
-                summary = _Extraction(self, run_id, pipeline, options, fields, store, idx.collection_name).run()
+                grouped = f" in {len(batches)} groups" if batches is not None else ""
+                self.event(run_id, f"Extracting {len(fields)} fields{grouped} x {len(pipeline.retrievals)} RAG configs",
+                           stage=RunStage.EXTRACTING, fields=[f.key for f in fields],
+                           **({"groups": {n: [f.key for f in b] for n, b in batches}} if batches is not None else {}))
+                summary = _Extraction(self, run_id, pipeline, options, fields, batches, store, idx.collection_name).run()
                 self.event(run_id, "Extraction finished", stage=RunStage.EXTRACTING, **summary)
             return self._finish(run_id, RunState.SUCCEEDED)
         except RunLost:
@@ -311,6 +322,16 @@ class _Answer:
         return self.judgement.result() if isinstance(self.judgement, Future) else self.judgement
 
 
+def _checked(f: Field, status: FieldResultStatus, value: Any) -> tuple[FieldResultStatus, Any, str | None]:
+    """An extracted value checked against the field's schema: a misfit becomes an error result."""
+    if status != FieldResultStatus.EXTRACTED:
+        return status, value, None
+    value, problems = conform(value, f.value_schema)
+    if problems:
+        return FieldResultStatus.ERROR, None, "Answer does not fit the field's type: " + "; ".join(problems[:3])
+    return status, value, None
+
+
 def select_fields(pipeline: PipelineConfig, options: RunOptions, type_keys: tuple[str, ...]) -> tuple[Field, ...]:
     """Fields a run extracts: exactly the ones chosen in the run options, else those of the given contract
     types (the fallback type when none are given) down to the pipeline's minimum priority."""
@@ -321,15 +342,19 @@ def select_fields(pipeline: PipelineConfig, options: RunOptions, type_keys: tupl
 
 class _Extraction:
     def __init__(self, ex: RunExecutor, run_id: uuid.UUID, pipeline: PipelineConfig, options: RunOptions,
-                 fields: tuple[Field, ...], store: VectorStore, collection: str):
+                 fields: tuple[Field, ...], batches: list[tuple[str, tuple[Field, ...]]] | None,
+                 store: VectorStore, collection: str):
         self.ex, self.db, self.run_id, self.p, self.options = ex, ex.db, run_id, pipeline, options
-        self.fields = fields
+        # batches: group extraction (one call per batch); None: one call per field.
+        self.fields, self.batches = fields, batches
         self.retriever = Retriever(store, collection, ex.providers.embedder(pipeline.index.embedding_model))
         self.chat = ex.providers.chat(pipeline.extraction_profile)
         self.judge_chat = ex.providers.chat(pipeline.judge_profile) if pipeline.judge_enabled and pipeline.judge_profile else None
         self.total = len(fields) * len(pipeline.retrievals)
         self._lock = threading.Lock()
         self.done = self.calls = self.reused = 0
+        self.pool: ThreadPoolExecutor | None = None
+        self.pending: list[Future[JudgeOutcome]] = []
 
     # ---- bookkeeping ---------------------------------------------------------------------------
 
@@ -355,54 +380,55 @@ class _Extraction:
     def run(self) -> dict[str, Any]:
         with self.db.session() as s:
             RunRepo(s).set_progress(self.run_id, 0, self.total)
-        pool = None
         if self.judge_chat and self.p.judge_parallel:
-            pool = ThreadPoolExecutor(self.ex.settings.executor.judge_workers, thread_name_prefix="judge")
-        pending: list[Future[JudgeOutcome]] = []
-        answers: dict[tuple, _Answer] = {}
+            self.pool = ThreadPoolExecutor(self.ex.settings.executor.judge_workers, thread_name_prefix="judge")
+        # Earlier answers by evidence, reused when the same fields get exactly the same chunks again.
+        answers: dict[tuple, list[_Answer]] = {}
         try:
             for rc in self.p.retrievals:
-                for f in self.fields:
+                for name, batch in self.batches or [(f.key, (f,)) for f in self.fields]:
                     self.ex.check_continue(self.run_id)
-                    hits = self.retriever.retrieve(f, rc)
-                    key = (f.id, tuple(h.chunk_id for h in hits))
+                    hits = self.retriever.retrieve(batch[0], rc) if self.batches is None else self.retriever.retrieve_group(batch, rc)
+                    key = (tuple(f.id for f in batch), tuple(h.chunk_id for h in hits))
                     if self.options.reuse_calls and key in answers:
-                        self._reuse(answers[key], f, rc, hits)
+                        for f, prior in zip(batch, answers[key], strict=True):
+                            self._reuse(prior, f, rc, hits)
                         continue
-                    answer = self._extract(f, rc, hits)
-                    if answer.status != FieldResultStatus.ERROR:  # failed calls are retried, not reused
-                        answers[key] = answer
-                    if self.judge_chat is None:
-                        self._advance()
-                    elif answer.status == FieldResultStatus.ERROR:
-                        answer.judgement = self._skip_judge(answer)
-                        self._advance()
-                    elif pool is not None:
-                        answer.judgement = pool.submit(self._judge, answer, f, build_context(hits))
-                        pending.append(answer.judgement)
-                    else:
-                        answer.judgement = self._judge(answer, f, build_context(hits))
-            for future in pending:
+                    got = [self._extract(batch[0], rc, hits)] if self.batches is None else self._extract_group(name, batch, rc, hits)
+                    if all(a.status != FieldResultStatus.ERROR for a in got):  # failed answers are retried, not reused
+                        answers[key] = got
+                    for f, answer in zip(batch, got, strict=True):
+                        self._judge_or_skip(answer, f, hits)
+            for future in self.pending:
                 future.result()
         finally:
-            if pool is not None:
-                pool.shutdown(wait=True, cancel_futures=True)
+            if self.pool is not None:
+                self.pool.shutdown(wait=True, cancel_futures=True)
         return {"field_results": self.total, "llm_calls": self.calls, "reused": self.reused,
-                "judge_parallel": pool is not None}
+                "judge_parallel": self.pool is not None}
+
+    def _judge_or_skip(self, answer: _Answer, f: Field, hits: list[Hit]) -> None:
+        if self.judge_chat is None:
+            self._advance()
+        elif answer.status == FieldResultStatus.ERROR:
+            answer.judgement = self._skip_judge(answer)
+            self._advance()
+        elif self.pool is not None:
+            answer.judgement = self.pool.submit(self._judge, answer, f, build_context(hits))
+            self.pending.append(answer.judgement)
+        else:
+            answer.judgement = self._judge(answer, f, build_context(hits))
 
     def _extract(self, f: Field, rc: RetrievalConfig, hits: list[Hit]) -> _Answer:
         profile, system = self.p.extraction_profile, self.p.extraction_prompt.body
         user = extraction_prompt(f, build_context(hits))
-        result, error, timeout = None, None, False
+        result, call_error, timeout = None, None, False
         try:
             result = self.chat.complete(system, user, profile)
-            status, value = field_value(result.text, f.key)
-            if status == FieldResultStatus.EXTRACTED:
-                value, problems = conform(value, f.value_schema)
-                if problems:
-                    status, value, error = FieldResultStatus.ERROR, None, "Answer does not fit the field's type: " + "; ".join(problems[:3])
+            status, value, error = _checked(f, *field_value(result.text, f.key))
         except ProviderError as exc:
-            status, value, error, timeout = FieldResultStatus.ERROR, None, str(exc), exc.timeout
+            status, value, error = FieldResultStatus.ERROR, None, str(exc)
+            call_error, timeout = error, exc.timeout
         self._count_call()
         with self.db.session() as s:
             repo = ResultRepo(s)
@@ -410,10 +436,42 @@ class _Extraction:
                                           error, result.latency_ms if result else None, hits)
             call_id = repo.add_llm_call(run_id=self.run_id, field_result_id=fr_id, purpose=LlmCallPurpose.EXTRACTION,
                                         profile=profile, system_prompt=system, user_prompt=user, result=result,
-                                        error=error, timeout=timeout)
+                                        error=call_error, timeout=timeout)
         self._check_truncation(profile, result, f"Extraction of {f.key} ({rc.name})", call_id)
         log.info("[%s] %-28s %s %r", rc.name, f.key, status, value if error is None else error[:120])
         return _Answer(fr_id, status, value, result.text if result else None, error)
+
+    def _extract_group(self, name: str, batch: tuple[Field, ...], rc: RetrievalConfig, hits: list[Hit]) -> list[_Answer]:
+        """One call answering every field of the batch; one field result per field, all linked to the call."""
+        profile, system = self.p.extraction_profile, self.p.extraction_prompt.body
+        user = group_prompt(batch, build_context(hits))
+        result, call_error, timeout, values = None, None, False, None
+        try:
+            result = self.chat.complete(system, user, profile)
+            values = group_values(result.text, [f.key for f in batch])
+        except ProviderError as exc:
+            call_error, timeout = str(exc), exc.timeout
+        outcomes = []  # (status, value, error, raw answer for this field)
+        for f in batch:
+            if values is None:
+                error = call_error or f"Answer is not a JSON object: {(result.text if result else '')[:200]}"
+                outcomes.append((FieldResultStatus.ERROR, None, error, result.text if result else None))
+            else:
+                status, value = values[f.key]
+                outcomes.append((*_checked(f, status, value), json.dumps({f.key: value}, ensure_ascii=False)))
+        self._count_call()
+        with self.db.session() as s:
+            repo = ResultRepo(s)
+            call_id = repo.add_llm_call(run_id=self.run_id, field_result_id=None, purpose=LlmCallPurpose.EXTRACTION,
+                                        profile=profile, system_prompt=system, user_prompt=user, result=result,
+                                        error=call_error, timeout=timeout)
+            ids = [repo.add_field_result(self.run_id, f.id, rc.id, status, value, raw, error,
+                                         result.latency_ms if result else None, hits)
+                   for f, (status, value, error, raw) in zip(batch, outcomes, strict=True)]
+            repo.link_call(call_id, ids)
+        self._check_truncation(profile, result, f"Extraction of group {name} ({rc.name})", call_id)
+        log.info("[%s] group %-22s %s", rc.name, name, ", ".join(f"{f.key}={o[0]}" for f, o in zip(batch, outcomes, strict=True)))
+        return [_Answer(fr_id, status, value, raw, error) for fr_id, (status, value, error, raw) in zip(ids, outcomes, strict=True)]
 
     def _judge(self, answer: _Answer, f: Field, context: str) -> JudgeOutcome:
         profile, system = self.p.judge_profile, self.p.judge_prompt.body

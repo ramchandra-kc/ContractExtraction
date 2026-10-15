@@ -140,6 +140,8 @@ function PipelineForm({
   const [classifyPages, setClassifyPages] = useState(String(initial.classification_pages))
   const [minConfidence, setMinConfidence] = useState(String(initial.classification_min_confidence))
   const [minPriority, setMinPriority] = useState<CatalogPipeline['min_priority']>(initial.min_priority)
+  const [granularity, setGranularity] = useState<CatalogPipeline['extraction_granularity']>(initial.extraction_granularity)
+  const [groupMax, setGroupMax] = useState(String(initial.group_max_fields))
   const [retrievals, setRetrievals] = useState<string[]>(initial.retrievals)
 
   const prompts = (role: string) =>
@@ -172,6 +174,8 @@ function PipelineForm({
     classification_pages: Number(classifyPages),
     classification_min_confidence: minConfidence.trim(),
     min_priority: minPriority,
+    extraction_granularity: granularity,
+    group_max_fields: Number(groupMax),
     retrievals,
   }
   const submit = () => {
@@ -234,6 +238,20 @@ function PipelineForm({
             { value: 'P1', label: 'P1 only (financial, time or exit exposure)' },
           ]}
         />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <SelectInput
+            label="Extraction calls"
+            value={granularity}
+            onChange={(v) => setGranularity(v as CatalogPipeline['extraction_granularity'])}
+            options={[
+              { value: 'field', label: 'One per field (most precise)' },
+              { value: 'group', label: 'One per field group (fewer calls)' },
+            ]}
+          />
+          {granularity === 'group' && (
+            <TextInput label="Fields per group call" value={groupMax} onChange={setGroupMax} hint="Larger groups are split." />
+          )}
+        </div>
       </div>
 
       <div className="space-y-3 rounded-md border p-3">

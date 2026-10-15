@@ -16,7 +16,7 @@ import pytest
 from sqlalchemy import func, select, update
 
 from contract_extraction.core.settings import load_settings
-from contract_extraction.domain.enums import Priority, RunKind, RunState
+from contract_extraction.domain.enums import Granularity, Priority, RunKind, RunState
 from contract_extraction.ingestion import register_file
 from contract_extraction.persistence import models as m
 from contract_extraction.persistence.repositories import ConfigRepo, RunRepo
@@ -39,10 +39,10 @@ class ScriptedChat:
     answer names Acme. Classifier: answers ``classification`` (an MSA by default)."""
 
     def __init__(self, judge: bool, fail_on: str | None = None, on_call=None, answers: dict | None = None,
-                 classification: str | Exception = MSA):
+                 classification: str | Exception = MSA, group_text: str | None = None):
         self.judge, self.fail_on, self.on_call = judge, fail_on, on_call
         self.answers = {"title": "Acme Pty Ltd", **(answers or {})}
-        self.classification = classification
+        self.classification, self.group_text = classification, group_text
         self.calls: list[str] = []
 
     def complete(self, system, user, profile):
@@ -57,6 +57,11 @@ class ScriptedChat:
             ok = "Acme" in user.split("Answer:", 1)[1]
             text = ('{"status": "PASS", "issue": "NONE", "explanation": "Stated in the preamble."}' if ok
                     else '{"status": "FAIL", "issue": "NO_CONTEXT", "explanation": "Not in the context."}')
+        elif "\nDefinitions:\n" in user:  # group extraction: every listed key in one object
+            keys = user.split("fields:\n", 1)[1].split("\n\n", 1)[0].splitlines()
+            if self.fail_on in keys:
+                raise ProviderError("model crashed")
+            text = self.group_text or json.dumps({k: self.answers.get(k) for k in keys})
         else:
             key = _KEY.search(user).group(1)
             if key == self.fail_on:
@@ -211,6 +216,43 @@ def test_min_priority_drops_less_important_fields(db, storage, tmp_path):
     expected = {mb["key"] for mb in msa["fields"] if mb["priority"] == "P1"}
     _, best, *_ = _summary(db, run_id)
     assert set(best) == expected and "title" not in best and len(expected) < 66 and set(best) <= set(snapshot_fields)
+
+
+GROUPED = {"extraction_granularity": Granularity.GROUP, "group_max_fields": 8}
+
+
+def test_group_extraction_answers_a_batch_per_call(db, storage, tmp_path):
+    h = Harness(db, storage, tmp_path, "grouped", answers={"payment_terms": {"due_period": "P30D"}})
+    run_id = h.enqueue(RunOptions(retrievals=["RAG01", "RAG07"], judge=False), **GROUPED)
+    assert h.execute(run_id) == RunState.SUCCEEDED
+    run, best, results, calls, _, _, events = _summary(db, run_id)
+    with db.session() as s:
+        snap = RunRepo(s).get(run_id).config_snapshot
+    batches = next(e for e in events if e.startswith("Extracting 66 fields in "))
+    n = int(batches.split(" in ")[1].split()[0])
+    assert 66 / 8 <= n < 66, "MSA: core, commercial, risk, covenants, IP & data and its own fields, split at 8"
+    assert results == 2 * 66 and run.progress_total == 132
+    assert calls == 1 + n, "one classification call, one call per batch; RAG07 reuses RAG01's answers"
+    assert best["title"][0] == "Acme Pty Ltd" and best["payment_terms"][0] == {"due_period": "P30D"}
+    assert best["liability_cap"][0] is None, "a key the answer leaves out is not found"
+    with db.session() as s:
+        repo = ResultRepo(s)
+        title = next(fr for fr in repo.field_results(run_id) if fr.raw_answer == '{"title": "Acme Pty Ltd"}')
+        call = repo.llm_calls(title.id)
+        assert len(call) == 1 and call[0].field_result_id is None and "\nDefinitions:\n" in call[0].user_prompt
+        assert s.scalar(select(func.count()).select_from(m.LlmCallFieldResult).where(m.LlmCallFieldResult.llm_call_id == call[0].id)) <= 8
+    assert snap["extraction_granularity"] == "group"
+
+
+def test_group_answer_that_is_not_json_fails_the_batch(db, storage, tmp_path):
+    h = Harness(db, storage, tmp_path, "grouped-bad", group_text="Sorry, I cannot help with that.")
+    run_id = h.enqueue(RunOptions(fields=["title", "payment_terms"], retrievals=["RAG01"]), **GROUPED)
+    assert h.execute(run_id) == RunState.SUCCEEDED
+    with db.session() as s:
+        rows = s.execute(select(m.FieldResult.status, m.FieldResult.error, m.Judgement.verdict).join(m.Judgement)
+                         .where(m.FieldResult.run_id == run_id)).all()
+    assert [(st, v) for st, _, v in rows] == [("error", "SKIPPED")] * 2
+    assert all(e.startswith("Answer is not a JSON object") for _, e, _ in rows)
 
 
 def test_answers_must_fit_the_field_type(db, storage, tmp_path):

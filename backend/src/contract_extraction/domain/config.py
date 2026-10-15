@@ -17,6 +17,7 @@ from pydantic import BaseModel, ConfigDict
 from .enums import (
     DecompositionMethod,
     Distance,
+    Granularity,
     ModelKind,
     Priority,
     PromptRole,
@@ -173,6 +174,28 @@ class FieldSet(_Frozen):
         selected = [f for f in self.fields if f.key in priority and priority[f.key] <= min_priority]
         return tuple(sorted(selected, key=lambda f: (priority[f.key], f.position)))
 
+    def batches(self, fields: tuple[Field, ...], type_keys: list[str] | tuple[str, ...],
+                max_fields: int) -> list[tuple[str, tuple[Field, ...]]]:
+        """``fields`` split into named batches for group extraction, at most ``max_fields`` each.
+
+        A field's group is the one it is listed under in the first of ``type_keys`` (then the fallback
+        type, then any type) that has it: a shared group such as ``core``, or ``<type>`` for the type's
+        own fields. Groups come in the order of their first field; fields keep their order.
+        """
+        types = {t.key: t for t in self.contract_types}
+        order = [types[k] for k in type_keys if k in types]
+        order += [t for t in ([self.fallback_type] if self.fallback_type else []) + list(self.contract_types) if t not in order]
+        groups: dict[str, list[Field]] = {}
+        for f in fields:
+            member = next(((t, mb) for t in order for mb in t.fields if mb.key == f.key), None)
+            name = "fields" if member is None else (member[0].key if member[1].group == "specific" else member[1].group)
+            groups.setdefault(name, []).append(f)
+        out: list[tuple[str, tuple[Field, ...]]] = []
+        for name, members in groups.items():
+            parts = [tuple(members[i:i + max_fields]) for i in range(0, len(members), max_fields)]
+            out += [(name if len(parts) == 1 else f"{name} {n}/{len(parts)}", part) for n, part in enumerate(parts, start=1)]
+        return out
+
 
 class PipelineConfig(_Frozen):
     id: uuid.UUID
@@ -194,6 +217,9 @@ class PipelineConfig(_Frozen):
     classification_min_confidence: Decimal = Decimal("0.5")
     # Lowest field priority extracted (P3 = all fields).
     min_priority: Priority = Priority.P3
+    # One extraction call per field, or per field group of at most group_max_fields fields.
+    extraction_granularity: Granularity = Granularity.FIELD
+    group_max_fields: int = 8
     # In priority order: the first entry's answer is preferred.
     retrievals: tuple[RetrievalConfig, ...]
 

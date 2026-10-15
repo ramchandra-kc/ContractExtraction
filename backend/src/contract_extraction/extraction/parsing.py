@@ -40,6 +40,21 @@ def is_empty(value: Any) -> bool:
     return False
 
 
+def group_values(answer: str, keys: list[str]) -> dict[str, tuple[FieldResultStatus, Any | None]] | None:
+    """Status and value per key of an answer covering several fields; None when it is not a JSON object.
+
+    Unlike ``field_value`` there is no guessing: a key missing from the object was not found.
+    """
+    parsed = parse_json_lenient(answer)
+    if not isinstance(parsed, dict):
+        return None
+    out = {}
+    for key in keys:
+        value = parsed.get(key)
+        out[key] = (FieldResultStatus.NOT_FOUND, None) if is_empty(value) else (FieldResultStatus.EXTRACTED, value)
+    return out
+
+
 def field_value(answer: str, key: str) -> tuple[FieldResultStatus, Any | None]:
     """Status and value for ``key`` in an extraction answer.
 

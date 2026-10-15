@@ -1,6 +1,7 @@
 """Retrieval of evidence chunks for one field under one RAG configuration.
 
 1. Queries: the field's expansion queries when the config enables query expansion, else the field label.
+   Group extraction searches with the queries of all the group's fields.
 2. Each query fetches ``per_query_top`` hits; hits below ``score_threshold`` are dropped.
 3. Hits are de-duplicated by chunk, keeping the best score and the query that produced it.
 4. Hits below ``min_score`` are dropped; the best ``top_k`` remain, highest score first.
@@ -43,7 +44,16 @@ class Retriever:
 
     def retrieve(self, field: Field, rc: RetrievalConfig) -> list[Hit]:
         expanded = rc.query_expansion and bool(field.queries)
-        queries = list(field.queries) if expanded else [field.label]
+        return self._search(list(field.queries) if expanded else [field.label], expanded, rc)
+
+    def retrieve_group(self, fields: tuple[Field, ...], rc: RetrievalConfig) -> list[Hit]:
+        """Evidence for several fields answered by one call: every field's queries, merged the same way."""
+        queries: list[str] = []
+        for f in fields:
+            queries += list(f.queries) if rc.query_expansion and f.queries else [f.label]
+        return self._search(list(dict.fromkeys(queries)), rc.query_expansion, rc)
+
+    def _search(self, queries: list[str], expanded: bool, rc: RetrievalConfig) -> list[Hit]:
         threshold, floor = float(rc.score_threshold), float(rc.min_score)
         best: dict[uuid.UUID, Hit] = {}
         for query, vector in zip(queries, self._embed(queries), strict=True):

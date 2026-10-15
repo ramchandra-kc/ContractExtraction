@@ -933,6 +933,9 @@ export interface components {
             /** Classification Min Confidence */
             classification_min_confidence: string;
             min_priority: components["schemas"]["Priority"];
+            extraction_granularity: components["schemas"]["Granularity"];
+            /** Group Max Fields */
+            group_max_fields: number;
             /**
              * Retrievals
              * @description RAG config names in priority order
@@ -1345,6 +1348,12 @@ export interface components {
             /** Queries */
             queries?: string[];
         };
+        /**
+         * Granularity
+         * @description How many fields one extraction call answers.
+         * @enum {string}
+         */
+        Granularity: "field" | "group";
         /** GroundTruthItem */
         GroundTruthItem: {
             /**
@@ -1663,6 +1672,13 @@ export interface components {
             classification_min_confidence: number | string;
             /** @default P3 */
             min_priority: components["schemas"]["Priority"];
+            /** @default field */
+            extraction_granularity: components["schemas"]["Granularity"];
+            /**
+             * Group Max Fields
+             * @default 8
+             */
+            group_max_fields: number;
             /**
              * Retrievals
              * @description RAG config names in priority order
@@ -1727,6 +1743,9 @@ export interface components {
             /** Classification Min Confidence */
             classification_min_confidence?: number | string;
             min_priority?: components["schemas"]["Priority"];
+            extraction_granularity?: components["schemas"]["Granularity"];
+            /** Group Max Fields */
+            group_max_fields?: number;
             /** Retrievals */
             retrievals?: string[];
         };

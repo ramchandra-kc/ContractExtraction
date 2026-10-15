@@ -129,6 +129,7 @@ def _pipeline(row: m.PipelineConfig, repo: ConfigRepo) -> CatalogPipeline:
         classification_profile=row.classification_profile.name if row.classification_profile else None,
         classification_prompt=_ref(row.classification_prompt), classification_pages=row.classification_pages,
         classification_min_confidence=row.classification_min_confidence, min_priority=row.min_priority,
+        extraction_granularity=row.extraction_granularity, group_max_fields=row.group_max_fields,
         retrievals=[r.retrieval_config.name for r in row.retrievals], error=error,
     )
 

@@ -117,6 +117,8 @@ class ConfigRepo:
             classification_pages=row.classification_pages,
             classification_min_confidence=row.classification_min_confidence,
             min_priority=row.min_priority,
+            extraction_granularity=row.extraction_granularity,
+            group_max_fields=row.group_max_fields,
             retrievals=tuple(_retrieval(r.retrieval_config) for r in row.retrievals),
         )
 

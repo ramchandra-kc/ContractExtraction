@@ -328,6 +328,10 @@ CREATE TABLE pipeline_configs (
     classification_min_confidence numeric(4, 3) NOT NULL DEFAULT 0.5,
     -- Lowest field priority extracted: P3 = every field, P1 = only direct financial, time or exit exposure.
     min_priority                  text         NOT NULL DEFAULT 'P3',
+    -- field: one retrieval and LLM call per field. group: one per field group (Core, Commercial, ...), with
+    -- evidence from all the group's queries; groups larger than group_max_fields are split.
+    extraction_granularity        text         NOT NULL DEFAULT 'field',
+    group_max_fields              integer      NOT NULL DEFAULT 8,
     is_default              boolean     NOT NULL DEFAULT false,
     created_at              timestamptz NOT NULL DEFAULT now(),
     updated_at              timestamptz NOT NULL DEFAULT now(),
@@ -347,7 +351,9 @@ CREATE TABLE pipeline_configs (
         NOT classification_enabled OR (classification_profile_id IS NOT NULL AND classification_prompt_id IS NOT NULL)),
     CONSTRAINT ck_pipeline_configs_classification_pages CHECK (classification_pages > 0),
     CONSTRAINT ck_pipeline_configs_classification_min_confidence CHECK (classification_min_confidence BETWEEN 0 AND 1),
-    CONSTRAINT ck_pipeline_configs_min_priority CHECK (min_priority IN ('P1', 'P2', 'P3'))
+    CONSTRAINT ck_pipeline_configs_min_priority CHECK (min_priority IN ('P1', 'P2', 'P3')),
+    CONSTRAINT ck_pipeline_configs_extraction_granularity CHECK (extraction_granularity IN ('field', 'group')),
+    CONSTRAINT ck_pipeline_configs_group_max_fields CHECK (group_max_fields > 0)
 );
 CREATE UNIQUE INDEX uq_pipeline_configs_default ON pipeline_configs (is_default) WHERE is_default;
 
@@ -649,6 +655,17 @@ CREATE TABLE llm_calls (
 );
 CREATE INDEX ix_llm_calls_run_id ON llm_calls (run_id, created_at);
 CREATE INDEX ix_llm_calls_field_result_id ON llm_calls (field_result_id);
+
+-- Field results produced by one LLM call that answered several fields (group extraction). Such a call
+-- has no llm_calls.field_result_id.
+CREATE TABLE llm_call_field_results (
+    llm_call_id     uuid NOT NULL,
+    field_result_id uuid NOT NULL,
+    CONSTRAINT pk_llm_call_field_results PRIMARY KEY (llm_call_id, field_result_id),
+    CONSTRAINT fk_llm_call_field_results_llm_call_id FOREIGN KEY (llm_call_id) REFERENCES llm_calls (id) ON DELETE CASCADE,
+    CONSTRAINT fk_llm_call_field_results_field_result_id FOREIGN KEY (field_result_id) REFERENCES field_results (id) ON DELETE CASCADE
+);
+CREATE INDEX ix_llm_call_field_results_field_result_id ON llm_call_field_results (field_result_id);
 
 -- LLM-judge verdicts; a field result can be judged again (e.g. by another model), the latest counts.
 CREATE TABLE judgements (

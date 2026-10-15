@@ -196,7 +196,7 @@ stateDiagram-v2
 
 ## 7. Data model
 
-The full definition is in [`docker/schema.sql`](../docker/schema.sql): 29 tables and 2 views in four groups. The default
+The full definition is in [`docker/schema.sql`](../docker/schema.sql): 30 tables and 2 views in four groups. The default
 configuration is in [`docker/seed.sql`](../docker/seed.sql); the fields and contract types in the generated
 [`docker/seed_catalogue.sql`](../docker/seed_catalogue.sql).
 
