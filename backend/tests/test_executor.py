@@ -21,6 +21,7 @@ from contract_extraction.ingestion import register_file
 from contract_extraction.persistence import models as m
 from contract_extraction.persistence.repositories import ConfigRepo, RunRepo
 from contract_extraction.persistence.repositories.results import ResultRepo
+from contract_extraction.pipeline import executor
 from contract_extraction.pipeline.executor import Providers, RunExecutor
 from contract_extraction.pipeline.options import RunOptions, narrow
 from contract_extraction.providers.base import ChatResult, ProviderError
@@ -39,16 +40,19 @@ class ScriptedChat:
     answer names Acme. Classifier: answers ``classification`` (an MSA by default)."""
 
     def __init__(self, judge: bool, fail_on: str | None = None, on_call=None, answers: dict | None = None,
-                 classification: str | Exception = MSA, group_text: str | None = None):
+                 classification: str | Exception = MSA, group_text: str | None = None, streams: bool = False):
         self.judge, self.fail_on, self.on_call = judge, fail_on, on_call
         self.answers = {"title": "Acme Pty Ltd", **(answers or {})}
         self.classification, self.group_text = classification, group_text
+        self.streams = streams  # call the checkpoint after on_call, as a streaming provider would between chunks
         self.calls: list[str] = []
 
-    def complete(self, system, user, profile):
+    def complete(self, system, user, profile, checkpoint=None):
         self.calls.append(user)
         if self.on_call:
             self.on_call(len(self.calls))
+        if self.streams and checkpoint is not None:
+            checkpoint()
         if user.startswith("Contract types:"):
             if isinstance(self.classification, Exception):
                 raise self.classification
@@ -324,6 +328,24 @@ def test_cancellation_between_fields(db, storage, tmp_path):
     assert run.state == "cancelled" and run.finished_at
     assert results == 1 and run.progress_done == 1
     assert any(e.startswith("Run cancelled") for e in events)
+
+
+def test_cancellation_aborts_a_model_call(db, storage, tmp_path, monkeypatch):
+    monkeypatch.setattr(executor, "STOP_CHECK_SECONDS", 0)
+    holder = {}
+
+    def cancel_during_first(n):
+        if n == 1:
+            with db.session() as s:
+                RunRepo(s).request_cancel(holder["run_id"])
+
+    h = Harness(db, storage, tmp_path, "abort", on_call=cancel_during_first, streams=True)
+    holder["run_id"] = run_id = h.enqueue()
+    assert h.execute(run_id) == RunState.CANCELLED
+    run, _, results, calls, _, _, events = _summary(db, run_id)
+    assert len(h.extractor.calls) == 1, "the first call was aborted; no other was made"
+    assert (results, calls, run.progress_done) == (0, 0, 0), "an aborted call leaves no result behind"
+    assert "Run cancelled: Cancellation requested" in events
 
 
 def test_decompose_only_run(db, storage, tmp_path):

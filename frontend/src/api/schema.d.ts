@@ -665,7 +665,7 @@ export interface paths {
         put?: never;
         /**
          * Cancel Run
-         * @description Queued: cancelled at once. Running: stops before its next field. Finished: 409.
+         * @description Queued: cancelled at once. Running: stops within seconds, aborting a model call in progress. Finished: 409.
          */
         post: operations["cancel_run"];
         delete?: never;

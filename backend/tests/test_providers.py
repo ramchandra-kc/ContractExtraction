@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import time
 import uuid
 
 import httpx
@@ -30,19 +31,84 @@ def _client(handler, base="http://llm") -> tuple[httpx.Client, list[httpx.Reques
     return httpx.Client(base_url=base, transport=httpx.MockTransport(wrapped)), seen
 
 
-def test_ollama_chat_request_and_usage():
-    client, seen = _client(lambda r: httpx.Response(200, json={
-        "message": {"content": '{"customer_name": "Acme"}'}, "prompt_eval_count": 120, "eval_count": 9}))
+class _Chunks(httpx.SyncByteStream):
+    """A streamed response body, one line per chunk (optionally slow); remembers whether it was closed."""
+
+    def __init__(self, lines: list[str], delay: float = 0):
+        self.lines, self.delay, self.sent, self.closed = lines, delay, 0, False
+
+    def __iter__(self):
+        for line in self.lines:
+            time.sleep(self.delay)
+            self.sent += 1
+            yield (line + "\n").encode()
+
+    def close(self) -> None:
+        self.closed = True
+
+
+def _ollama_lines(*parts: str, done_reason="stop") -> list[str]:
+    lines = [json.dumps({"message": {"content": p}, "done": False}) for p in parts]
+    return lines + [json.dumps({"message": {"content": ""}, "done": True, "done_reason": done_reason,
+                                "prompt_eval_count": 120, "eval_count": 9})]
+
+
+def test_ollama_chat_streams_request_and_usage():
+    client, seen = _client(lambda r: httpx.Response(200, stream=_Chunks(_ollama_lines('{"customer_name"', ': "Acme"}'))))
     result = OllamaChat("http://llm", client).complete("sys", "user", PROFILE)
 
-    body = json.loads(seen[0].content)
+    body = json.loads(seen[0].read())
     assert seen[0].url.path == "/api/chat"
-    assert body["format"] == "json" and body["stream"] is False
+    assert body["format"] == "json" and body["stream"] is True
     assert body["options"] == {"temperature": 0.2, "top_p": 0.2, "top_k": 20, "num_ctx": 8192}
     assert [m["role"] for m in body["messages"]] == ["system", "user"]
     assert result.text == '{"customer_name": "Acme"}'
     assert (result.prompt_tokens, result.completion_tokens) == (120, 9)
-    assert result.params["model"] == "llama3.1:8b"
+    assert result.params["model"] == "llama3.1:8b" and "stream" not in result.params
+
+
+def test_ollama_max_tokens_and_cut_off_answers():
+    client, seen = _client(lambda r: httpx.Response(200, stream=_Chunks(_ollama_lines("{  ", "   ", done_reason="length"))))
+    profile = PROFILE.model_copy(update={"max_tokens": 512})
+    with pytest.raises(ProviderError, match=r"cut off at max_tokens \(512\)"):
+        OllamaChat("http://llm", client).complete("s", "u", profile)
+    assert json.loads(seen[0].read())["options"]["num_predict"] == 512
+
+
+def test_ollama_stream_errors():
+    client, _ = _client(lambda r: httpx.Response(200, stream=_Chunks(['{"error": "model crashed"}'])))
+    with pytest.raises(ProviderError, match="model crashed"):
+        OllamaChat("http://llm", client).complete("s", "u", PROFILE)
+
+    client, _ = _client(lambda r: httpx.Response(200, stream=_Chunks(_ollama_lines("{")[:-1])))
+    with pytest.raises(ProviderError, match="ended before it was done"):
+        OllamaChat("http://llm", client).complete("s", "u", PROFILE)
+
+
+def test_checkpoint_aborts_the_call_and_closes_the_stream():
+    class Stop(Exception):
+        pass
+
+    checks = []
+
+    def checkpoint():
+        checks.append(1)
+        if len(checks) == 3:
+            raise Stop
+
+    body = _Chunks(_ollama_lines(*[" "] * 100))
+    client, _ = _client(lambda r: httpx.Response(200, stream=body))
+    with pytest.raises(Stop):
+        OllamaChat("http://llm", client).complete("s", "u", PROFILE, checkpoint)
+    assert body.sent == 3 and body.closed
+
+
+def test_slow_answers_time_out_as_a_whole():
+    client, _ = _client(lambda r: httpx.Response(200, stream=_Chunks(_ollama_lines(*[" "] * 20), delay=0.02)))
+    profile = PROFILE.model_copy(update={"timeout_seconds": 0.1})
+    with pytest.raises(ProviderError, match="no complete answer") as info:
+        OllamaChat("http://llm", client).complete("s", "u", profile)
+    assert info.value.timeout
 
 
 def test_ollama_errors_and_timeouts():
@@ -70,21 +136,40 @@ def test_ollama_embed_batch():
         OllamaEmbedder("http://llm", "nomic", client).embed(["a", "b"])
 
 
+def _sse(*chunks: dict, done=True) -> list[str]:
+    return [": OPENROUTER PROCESSING"] + [f"data: {json.dumps(c)}" for c in chunks] + (["data: [DONE]"] if done else [])
+
+
 def test_openai_compatible_chat_and_embeddings():
     def handler(request: httpx.Request) -> httpx.Response:
         if request.url.path.endswith("/chat/completions"):
-            return httpx.Response(200, json={"choices": [{"message": {"content": "{}"}}],
-                                             "usage": {"prompt_tokens": 50, "completion_tokens": 2}})
+            return httpx.Response(200, stream=_Chunks(_sse(
+                {"choices": [{"delta": {"content": "{"}, "finish_reason": None}]},
+                {"choices": [{"delta": {"content": "}"}, "finish_reason": "stop"}]},
+                {"choices": [], "usage": {"prompt_tokens": 50, "completion_tokens": 2}})))
         return httpx.Response(200, json={"data": [{"index": 1, "embedding": [2.0]}, {"index": 0, "embedding": [1.0]}]})
 
     client, seen = _client(handler, "https://openrouter.ai/api/v1")
     result = OpenAICompatChat("https://openrouter.ai/api/v1", "key", client).complete("s", "u", PROFILE)
-    body = json.loads(seen[0].content)
+    body = json.loads(seen[0].read())
     assert body["response_format"] == {"type": "json_object"} and body["model"] == "llama3.1:8b"
-    assert (result.prompt_tokens, result.completion_tokens) == (50, 2)
+    assert body["stream"] is True and body["stream_options"] == {"include_usage": True}
+    assert result.text == "{}" and (result.prompt_tokens, result.completion_tokens) == (50, 2)
+    assert "stream" not in result.params
 
     vectors = OpenAICompatEmbedder("https://openrouter.ai/api/v1", "key", "emb", client).embed(["a", "b"])
     assert vectors == [[1.0], [2.0]]
+
+
+def test_openai_compatible_stream_errors():
+    client, _ = _client(lambda r: httpx.Response(200, stream=_Chunks(_sse(
+        {"choices": [{"delta": {"content": "{ "}, "finish_reason": "length"}]}))))
+    with pytest.raises(ProviderError, match="cut off at the model's output limit"):
+        OpenAICompatChat("https://openrouter.ai/api/v1", "key", client).complete("s", "u", PROFILE)
+
+    client, _ = _client(lambda r: httpx.Response(200, stream=_Chunks(_sse({"error": {"message": "rate limited"}}))))
+    with pytest.raises(ProviderError, match="rate limited"):
+        OpenAICompatChat("https://openrouter.ai/api/v1", "key", client).complete("s", "u", PROFILE)
 
 
 def test_qdrant_rest_calls():

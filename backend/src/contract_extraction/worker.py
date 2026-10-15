@@ -6,7 +6,7 @@ Each loop: mark runs whose process died as failed → claim the oldest queued ru
 (``FOR UPDATE SKIP LOCKED``, so concurrent workers never share a run) → execute it.
 Start more worker processes to process runs in parallel.
 
-Stopping: the first Ctrl-C / SIGTERM cancels the current run at its next field and exits;
+Stopping: the first Ctrl-C / SIGTERM cancels the current run (within seconds, see the executor) and exits;
 a second one exits immediately (the run is then marked failed once its heartbeat is stale).
 """
 
@@ -74,7 +74,7 @@ class Worker:
         log.info("Worker %s stopped", self.worker_id)
 
     def stop(self) -> None:
-        """Stop after cancelling the current run at its next field."""
+        """Stop after cancelling the current run."""
         self.stopping.set()
         self.executor.stop_event.set()
 
@@ -82,7 +82,7 @@ class Worker:
         def handle(signum: int, frame: FrameType | None) -> None:
             if self.stopping.is_set():
                 raise KeyboardInterrupt
-            log.warning("Stopping: the current run is cancelled at its next field (repeat to exit now)")
+            log.warning("Stopping: cancelling the current run (repeat to exit now)")
             self.stop()
 
         signal.signal(signal.SIGINT, handle)

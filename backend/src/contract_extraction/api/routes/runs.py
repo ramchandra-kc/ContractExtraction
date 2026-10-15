@@ -66,7 +66,7 @@ def get_run(run_id: uuid.UUID, session: SessionDep):
 
 @router.post("/{run_id}/cancel", response_model=RunOut)
 def cancel_run(run_id: uuid.UUID, session: SessionDep):
-    """Queued: cancelled at once. Running: stops before its next field. Finished: 409."""
+    """Queued: cancelled at once. Running: stops within seconds, aborting a model call in progress. Finished: 409."""
     return run_out(RunRepo(session).cancel(run_id))
 
 

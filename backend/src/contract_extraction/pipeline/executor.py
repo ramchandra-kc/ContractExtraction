@@ -16,9 +16,12 @@ its own, so progress and partial results are visible while the run is going.
   The profile is fixed per run, so (fields, chunks) fully determines the prompt. Failed answers
   are not reused, so a transient provider error gets another chance.
 * With ``judge_parallel`` the judge calls run on a small thread pool; the run waits for them.
-* Cancellation (``runs.cancel_requested``, or the worker shutting down) is checked before each field.
+* Cancellation (``runs.cancel_requested``, or the worker shutting down) is checked before each field,
+  and every few seconds while a model answer streams in: the call is aborted, so a model that
+  generates without end cannot hold a cancelled run (it can't be checked while the model is still
+  reading the prompt, before its first token).
 * A heartbeat thread updates ``runs.heartbeat_at`` while the run executes. If the run stops being
-  ours (a worker marked it failed as stale), the executor stops at the next field and leaves it as is.
+  ours (a worker marked it failed as stale), the executor stops the same way and leaves it as is.
 
 The worker claims runs and calls ``run_claimed``; the CLI's inline path calls ``execute``.
 """
@@ -28,6 +31,7 @@ from __future__ import annotations
 import json
 import logging
 import threading
+import time
 import uuid
 from collections.abc import Callable
 from concurrent.futures import Future, ThreadPoolExecutor
@@ -68,6 +72,8 @@ log = logging.getLogger(__name__)
 
 # A prompt using this share of the context window was most likely cut by the provider.
 TRUNCATION_RATIO = 0.95
+# How often a streaming model call checks whether the run must stop (each check reads the database).
+STOP_CHECK_SECONDS = 2.0
 
 
 @dataclass
@@ -86,7 +92,7 @@ class Providers:
 
 
 class RunCancelled(Exception):
-    """Cancellation was requested (or the worker is shutting down); raised between fields."""
+    """Cancellation was requested (or the worker is shutting down); raised between fields or during a model call."""
 
 
 class RunLost(Exception):
@@ -129,7 +135,7 @@ class RunExecutor:
         self.settings = settings
         self.providers = providers or Providers.from_settings(settings)
         self.worker_id = worker_id
-        # Set by the worker on shutdown: the current run is cancelled at the next field.
+        # Set by the worker on shutdown: the current run is cancelled (see check_continue).
         self.stop_event = threading.Event()
         self._heartbeat: _Heartbeat | None = None
 
@@ -142,6 +148,20 @@ class RunExecutor:
         with self.db.session() as s:
             if RunRepo(s).cancel_requested(run_id):
                 raise RunCancelled("Cancellation requested")
+
+    def checkpoint(self, run_id: uuid.UUID) -> Callable[[], None]:
+        """``check_continue`` for model calls to run while their answer streams in, at most every
+        STOP_CHECK_SECONDS; what it raises aborts the call and then ends the run as usual."""
+        last = time.monotonic()  # checked just before the call
+
+        def check() -> None:
+            nonlocal last
+            now = time.monotonic()
+            if now - last >= STOP_CHECK_SECONDS:
+                last = now
+                self.check_continue(run_id)
+
+        return check
 
     def event(self, run_id: uuid.UUID, message: str, level: EventLevel = EventLevel.INFO,
               stage: RunStage | None = None, **data: Any) -> None:
@@ -290,7 +310,7 @@ class RunExecutor:
         user = classify.classification_prompt(pipeline.field_set.contract_types, text)
         result, error, timeout, candidates = None, None, False, []
         try:
-            result = self.providers.chat(profile).complete(system, user, profile)
+            result = self.providers.chat(profile).complete(system, user, profile, self.checkpoint(run_id))
             candidates = classify.parse_classification(result.text, {t.key for t in pipeline.field_set.contract_types})
         except ProviderError as exc:
             error, timeout = str(exc), exc.timeout
@@ -350,6 +370,7 @@ class _Extraction:
         self.retriever = Retriever(store, collection, ex.providers.embedder(pipeline.index.embedding_model))
         self.chat = ex.providers.chat(pipeline.extraction_profile)
         self.judge_chat = ex.providers.chat(pipeline.judge_profile) if pipeline.judge_enabled and pipeline.judge_profile else None
+        self.checkpoint = ex.checkpoint(run_id)  # shared by the judge threads: a late or extra check is harmless
         self.total = len(fields) * len(pipeline.retrievals)
         self._lock = threading.Lock()
         self.done = self.calls = self.reused = 0
@@ -424,7 +445,7 @@ class _Extraction:
         user = extraction_prompt(f, build_context(hits))
         result, call_error, timeout = None, None, False
         try:
-            result = self.chat.complete(system, user, profile)
+            result = self.chat.complete(system, user, profile, self.checkpoint)
             status, value, error = _checked(f, *field_value(result.text, f.key))
         except ProviderError as exc:
             status, value, error = FieldResultStatus.ERROR, None, str(exc)
@@ -447,7 +468,7 @@ class _Extraction:
         user = group_prompt(batch, build_context(hits))
         result, call_error, timeout, values = None, None, False, None
         try:
-            result = self.chat.complete(system, user, profile)
+            result = self.chat.complete(system, user, profile, self.checkpoint)
             values = group_values(result.text, [f.key for f in batch])
         except ProviderError as exc:
             call_error, timeout = str(exc), exc.timeout
@@ -478,7 +499,7 @@ class _Extraction:
         user = judge_prompt(f, context, answer.raw_answer or "")
         result, error, timeout = None, None, False
         try:
-            result = self.judge_chat.complete(system, user, profile)
+            result = self.judge_chat.complete(system, user, profile, self.checkpoint)
             outcome = parse_verdict(result.text)
         except ProviderError as exc:
             error, timeout = str(exc), exc.timeout

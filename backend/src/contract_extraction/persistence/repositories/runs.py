@@ -122,7 +122,8 @@ class RunRepo:
         return ids
 
     def cancel(self, run_id: uuid.UUID) -> m.Run:
-        """Queued → cancelled now; running → stop requested (before its next field); finished → Conflict."""
+        """Queued → cancelled now; running → stop requested (picked up between fields and during model calls);
+        finished → Conflict."""
         run = self.session.get(m.Run, run_id, with_for_update=True)
         if run is None:
             raise NotFound(f"Run {run_id} not found")

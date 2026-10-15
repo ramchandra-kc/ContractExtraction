@@ -7,6 +7,7 @@ only depends on these protocols, so tests can pass fakes.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -32,7 +33,11 @@ class ChatResult:
 
 
 class ChatClient(Protocol):
-    def complete(self, system: str, user: str, profile: ModelProfile) -> ChatResult: ...
+    def complete(self, system: str, user: str, profile: ModelProfile,
+                 checkpoint: Callable[[], None] | None = None) -> ChatResult:
+        """Answer ``user``. ``checkpoint`` is called while the answer streams in; an exception it raises
+        aborts the call (closing the connection, so the server stops generating) and propagates."""
+        ...
 
 
 class Embedder(Protocol):

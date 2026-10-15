@@ -104,7 +104,7 @@ CREATE TABLE model_profiles (
     -- Context window requested from the provider (Ollama silently truncates at its 4096 default).
     num_ctx         integer,
     json_mode       boolean      NOT NULL DEFAULT true,
-    timeout_seconds integer      NOT NULL DEFAULT 600,
+    timeout_seconds integer      NOT NULL DEFAULT 180,
     extra           jsonb        NOT NULL DEFAULT '{}',
     created_at      timestamptz  NOT NULL DEFAULT now(),
     updated_at      timestamptz  NOT NULL DEFAULT now(),

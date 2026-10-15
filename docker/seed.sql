@@ -22,13 +22,15 @@ JOIN (VALUES
 WHERE p.key = 'ollama-local';
 
 -- Model profiles (generation settings)
-INSERT INTO model_profiles (name, description, model_id, temperature, top_p, top_k, num_ctx, json_mode, timeout_seconds)
-SELECT v.name, v.description, m.id, v.temperature, v.top_p, v.top_k, 8192, true, 600
+-- max_tokens caps each answer: in JSON mode a local model can otherwise generate without end
+-- (Ollama shifts its context and carries on) until the timeout.
+INSERT INTO model_profiles (name, description, model_id, temperature, top_p, top_k, max_tokens, num_ctx, json_mode, timeout_seconds)
+SELECT v.name, v.description, m.id, v.temperature, v.top_p, v.top_k, v.max_tokens, 8192, true, 180
 FROM (VALUES
-    ('extraction-default',     'Field extraction with llama3.1:8b',       0.2, 0.2, 20),
-    ('judge-default',          'LLM judge with llama3.1:8b',              0.1, 0.8, 100),
-    ('classification-default', 'Contract type detection with llama3.1:8b', 0.0, 0.2, 20)
-) AS v (name, description, temperature, top_p, top_k)
+    ('extraction-default',     'Field extraction with llama3.1:8b',       0.2, 0.2, 20,  1024),
+    ('judge-default',          'LLM judge with llama3.1:8b',              0.1, 0.8, 100, 512),
+    ('classification-default', 'Contract type detection with llama3.1:8b', 0.0, 0.2, 20,  512)
+) AS v (name, description, temperature, top_p, top_k, max_tokens)
 JOIN llm_models m ON m.name = 'llama3.1:8b' AND m.kind = 'chat';
 
 -- System prompts

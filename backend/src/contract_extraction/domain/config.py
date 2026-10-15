@@ -63,7 +63,7 @@ class ModelProfile(_Frozen):
     max_tokens: int | None = None
     num_ctx: int | None = None
     json_mode: bool = True
-    timeout_seconds: int = 600
+    timeout_seconds: int = 180
     extra: dict[str, Any] = {}
 
 

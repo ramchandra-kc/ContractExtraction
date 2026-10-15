@@ -5,7 +5,7 @@
     contract-extraction run <pdf> [options]   ingest + extract every field under every RAG config (inline)
     contract-extraction run <pdf> --queue     only queue it; `contract-extraction worker` executes queued runs
     contract-extraction status [RUN_ID]       recent runs, or one run's timeline and best values
-    contract-extraction cancel RUN_ID         cancel a queued run / stop a running one before its next field
+    contract-extraction cancel RUN_ID         cancel a queued run / stop a running one
     contract-extraction api                   serve the HTTP API (127.0.0.1:8000, behind the gateway)
     contract-extraction openapi [-o PATH]     write the API's OpenAPI document (no database needed)
     contract-extraction gen-catalogue [--with-queries]
@@ -205,7 +205,7 @@ def cancel(run_id: str) -> int:
     try:
         with db.session() as s:
             r = RunRepo(s).cancel(uuid.UUID(run_id))
-            print("cancelled" if r.state == RunState.CANCELLED else "cancellation requested; it stops before its next field")
+            print("cancelled" if r.state == RunState.CANCELLED else "cancellation requested; it stops within seconds")
             return 0
     except (AppError, ValueError) as exc:
         print(f"FAIL: {exc}", file=sys.stderr)
@@ -356,7 +356,7 @@ def main(argv: list[str] | None = None) -> int:
     p_status.add_argument("run_id", nargs="?")
     p_status.add_argument("--limit", type=int, default=20)
 
-    p_cancel = sub.add_parser("cancel", help="cancel a queued run, or stop a running one before its next field")
+    p_cancel = sub.add_parser("cancel", help="cancel a queued run, or stop a running one")
     p_cancel.add_argument("run_id")
 
     sub.add_parser("api", help="serve the HTTP API on API__HOST:API__PORT (default 127.0.0.1:8000)")

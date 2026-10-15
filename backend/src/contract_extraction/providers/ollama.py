@@ -3,12 +3,14 @@
 from __future__ import annotations
 
 import time
+from collections.abc import Callable
+from contextlib import closing
 from typing import Any
 
 import httpx
 
 from ..domain.config import ModelProfile
-from ._http import post_json
+from ._http import cut_off, parse_chunk, post_json, stream_lines
 from .base import ChatResult, ProviderError
 
 
@@ -30,23 +32,35 @@ class OllamaChat:
             opts["num_predict"] = profile.max_tokens
         return opts | profile.extra.get("options", {})
 
-    def complete(self, system: str, user: str, profile: ModelProfile) -> ChatResult:
+    def complete(self, system: str, user: str, profile: ModelProfile,
+                 checkpoint: Callable[[], None] | None = None) -> ChatResult:
+        # Streamed, so the call can be aborted between chunks (see ChatClient.complete).
         body: dict[str, Any] = {
             "model": profile.model.name,
             "messages": [{"role": "system", "content": system}, {"role": "user", "content": user}],
-            "stream": False,
+            "stream": True,
             "options": self.options(profile),
         }
         if profile.json_mode:
             body["format"] = "json"
+        what = f"Ollama chat ({profile.model.name})"
         started = time.perf_counter()
-        data = post_json(self.client, "/api/chat", body, f"Ollama chat ({profile.model.name})", profile.timeout_seconds)
+        parts: list[str] = []
+        final: dict[str, Any] | None = None
+        with closing(stream_lines(self.client, "/api/chat", body, what, profile.timeout_seconds, checkpoint)) as lines:
+            for line in lines:
+                chunk = parse_chunk(line, what)
+                parts.append((chunk.get("message") or {}).get("content") or "")
+                if chunk.get("done"):
+                    final = chunk
+                    break
         latency = int((time.perf_counter() - started) * 1000)
-        text = (data.get("message") or {}).get("content")
-        if text is None:
-            raise ProviderError(f"Ollama chat ({profile.model.name}): no message in response")
-        return ChatResult(text=text, latency_ms=latency, prompt_tokens=data.get("prompt_eval_count"),
-                          completion_tokens=data.get("eval_count"),
+        if final is None:
+            raise ProviderError(f"{what}: the answer stream ended before it was done")
+        if final.get("done_reason") == "length":
+            raise cut_off(what, profile, "".join(parts))
+        return ChatResult(text="".join(parts), latency_ms=latency, prompt_tokens=final.get("prompt_eval_count"),
+                          completion_tokens=final.get("eval_count"),
                           params={k: v for k, v in body.items() if k not in ("messages", "stream")})
 
 

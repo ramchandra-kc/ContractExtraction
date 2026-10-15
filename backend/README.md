@@ -53,13 +53,19 @@ uv run contract-extraction worker                       # executes queued runs (
 uv run contract-extraction run contract.pdf --queue     # only queue; prints the run id
 uv run contract-extraction status                       # recent runs: state, stage, progress, duration, error
 uv run contract-extraction status RUN_ID                # one run: timeline (run_events) and best values
-uv run contract-extraction cancel RUN_ID                # queued → cancelled now; running → stops before its next field
+uv run contract-extraction cancel RUN_ID                # queued → cancelled now; running → stops within seconds
 ```
 
 - **Heartbeat:** while a run executes (in a worker or inline), its `heartbeat_at` is updated every `WORKER__HEARTBEAT_SECONDS` (15 s).
 - **Dead runs:** workers mark a running run without a heartbeat for `WORKER__STALE_AFTER_SECONDS` (120 s) as failed
   ("worker stopped responding"). There are no automatic retries; run it again.
-- **Stopping a worker:** Ctrl-C (or SIGTERM) once cancels the current run at its next field and exits. Twice exits at once.
+- **Stopping a worker:** Ctrl-C (or SIGTERM) once cancels the current run and exits. Twice exits at once.
+- **Cancelling:** a running run stops before its next field, or during a model call: answers are streamed and the call is
+  aborted (the connection closed, so the model stops generating) within about 2 s of the model's next token. A model
+  still reading a long prompt can't be interrupted until its first token.
+- **Model limits:** set `max_tokens` on every model profile. In JSON mode a local model sometimes generates without end,
+  and Ollama keeps going past its context window, so only `timeout_seconds` would stop it. An answer cut off at
+  `max_tokens` is recorded as an error for that field.
 
 ### LLM providers
 

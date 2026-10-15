@@ -32,7 +32,7 @@ case "$(uname -s)" in
 esac
 
 # The installed entry points, not `uv run` / `npm run`: those wrappers forward signals to their child, and the worker
-# treats a second signal as "exit now" instead of "cancel the current run at its next field".
+# treats a second signal as "exit now" instead of "cancel the current run".
 CE="$ROOT/backend/.venv/$VENV_BIN/contract-extraction$EXE"
 GW="$ROOT/gateway/.venv/$VENV_BIN/contract-gateway$EXE"
 BACKEND_PY="$ROOT/backend/.venv/$VENV_BIN/python$EXE"
