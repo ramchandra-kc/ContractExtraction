@@ -82,7 +82,7 @@ def test_delete_and_cascade(session, document):
 
 def test_best_values_rank_by_the_run_snapshot_not_the_live_pipeline(db, storage, tmp_path, session):
     h = Harness(db, storage, tmp_path, "ranking")
-    run_id = h.enqueue()  # RAG01, RAG02, RAG07: every config gets the same answers, so priority decides
+    run_id = h.enqueue()  # RAG01, RAG02, RAG03: every config gets the same answers, so priority decides
     assert h.execute(run_id) == RunState.SUCCEEDED
     before = _best(session, run_id)
     assert before["title"][0] == before["payment_terms"][0] == "RAG01"

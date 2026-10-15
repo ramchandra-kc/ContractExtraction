@@ -96,8 +96,7 @@ INSERT INTO retrieval_configs (name, description, top_k, score_threshold, query_
     ('RAG03', 'top 3, threshold 0.5, with query expansion', 3, 0.5, true),
     ('RAG04', 'top 10, threshold 0.7, without query expansion', 10, 0.7, false),
     ('RAG05', 'top 5, threshold 0.7, without query expansion', 5, 0.7, false),
-    ('RAG06', 'top 3, threshold 0.7, without query expansion', 3, 0.7, false),
-    ('RAG07', 'top 10, threshold 0.5, with query expansion', 10, 0.5, true);
+    ('RAG06', 'top 3, threshold 0.7, without query expansion', 3, 0.7, false);
 
 -- Contract fields: the set is created here and filled by seed_catalogue.sql.
 INSERT INTO field_sets (name, version, description)
@@ -107,7 +106,7 @@ VALUES ('contract_fields', 1, 'Contract types and their fields (docs/contract_ty
 INSERT INTO pipeline_configs (name, description, decomposition_config_id, index_config_id, field_set_id,
                               extraction_profile_id, extraction_prompt_id, judge_enabled, judge_profile_id, judge_prompt_id,
                               classification_enabled, classification_profile_id, classification_prompt_id, is_default)
-SELECT 'default', 'Contract type detection, then RAG01-RAG07, llama3.1:8b extraction and judge',
+SELECT 'default', 'Contract type detection, then RAG01-RAG06, llama3.1:8b extraction and judge',
        (SELECT id FROM decomposition_configs WHERE name = 'default'),
        (SELECT id FROM index_configs WHERE name = 'default'),
        (SELECT id FROM field_sets WHERE name = 'contract_fields' AND version = 1),

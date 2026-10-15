@@ -60,7 +60,7 @@ def new_pipeline(client, name="trial", **changes) -> dict:
 def test_catalog_lists_everything(client):
     cat = catalog(client)
     default = next(p for p in cat["pipelines"] if p["is_default"])
-    assert default["retrievals"] == [f"RAG0{i}" for i in range(1, 8)] and default["error"] is None
+    assert default["retrievals"] == [f"RAG0{i}" for i in range(1, 7)] and default["error"] is None
     assert default["extraction_prompt"] == {"name": "extraction_system", "version": 1}
     assert {"extraction_system", "judge_system"} <= {p["name"] for p in cat["prompts"] if p["is_active"]}
     fields = cat["field_sets"][0]["fields"]
@@ -72,7 +72,7 @@ def test_catalog_lists_everything(client):
     assert len(types) == 19 and types["other"]["is_fallback"] and types["nda"]["position"] == 1
     assert {"key": "service_levels", "group": "specific", "priority": "P2"} in types["saas"]["fields"]
     assert any(mm["kind"] == "embedding" and mm["embedding_dimension"] for p in cat["providers"] for mm in p["models"])
-    assert {r["name"] for r in cat["retrievals"]} >= {"RAG01", "RAG07"}
+    assert {r["name"] for r in cat["retrievals"]} >= {"RAG01", "RAG06"}
 
 
 def test_retrieval_configs(client):
@@ -98,8 +98,8 @@ def test_pipelines(client):
     assert r.json()["retrievals"] == ["RAG02", "RAG01"] and r.json()["error"] is None and not r.json()["is_default"]
     problem(new_pipeline(client), 409, "already exists")
 
-    r = client.patch(f"{C}/pipelines/trial", json={"retrievals": ["RAG07", "RAG02", "RAG01"], "judge_parallel": True})
-    assert r.status_code == 200 and r.json()["retrievals"] == ["RAG07", "RAG02", "RAG01"] and r.json()["judge_parallel"]
+    r = client.patch(f"{C}/pipelines/trial", json={"retrievals": ["RAG06", "RAG02", "RAG01"], "judge_parallel": True})
+    assert r.status_code == 200 and r.json()["retrievals"] == ["RAG06", "RAG02", "RAG01"] and r.json()["judge_parallel"]
     problem(client.patch(f"{C}/pipelines/trial", json={"retrievals": []}), 422)
     problem(client.patch(f"{C}/pipelines/trial", json={"retrievals": ["RAG01", "RAG01"]}), 422, "only once")
     judge_prompt = pipeline(client)["judge_prompt"]

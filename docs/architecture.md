@@ -131,7 +131,7 @@ Providers sit behind interfaces, so tests can run with fakes and no Docker.
 
 Everything that shapes a run is **configuration stored in the database** (see §7.1), not code:
 LLM providers and models, generation settings, system prompts, decomposition and chunking/embedding settings,
-RAG configurations (`RAG01…RAG07`: top-k, threshold, expansion on or off), and fields with their prompts and expansion
+RAG configurations (`RAG01…RAG06`: top-k, threshold, expansion on or off), and fields with their prompts and expansion
 queries. A **pipeline config** bundles them into a recipe. Every run stores the fully resolved recipe as a snapshot.
 
 **Fields and contract types** come from [`contract_types_and_fields.md`](contract_types_and_fields.md), the source of truth:

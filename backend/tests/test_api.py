@@ -39,7 +39,7 @@ def _upload(client, path, name="contract.pdf"):
 
 
 def _run_options(**extra):
-    return {"fields": ["title", "payment_terms"], "retrievals": ["RAG01", "RAG07"], **extra}
+    return {"fields": ["title", "payment_terms"], "retrievals": ["RAG01", "RAG03"], **extra}
 
 
 def _process(db, storage, harness):
@@ -110,14 +110,14 @@ def test_run_lifecycle_and_results(client, db, storage, harness):
     results = client.get(f"/api/v1/runs/{run['id']}/results").json()
     best = {b["field_key"]: b for b in results["best"]}
     assert best["title"]["value"] == "Acme Pty Ltd" and best["title"]["verdict"] == "PASS"
-    assert [r["retrieval_config"] for r in results["results"]] == ["RAG01", "RAG01", "RAG07", "RAG07"]
+    assert [r["retrieval_config"] for r in results["results"]] == ["RAG01", "RAG01", "RAG03", "RAG03"]
 
     original = client.get(f"/api/v1/runs/{run['id']}/results/{best['title']['field_result_id']}").json()
     assert original["hits"] and original["hits"][0]["text"] and original["reused_from"] is None
     assert [c["purpose"] for c in original["llm_calls"]] == ["extraction", "judge"]
     assert original["llm_calls"][0]["user_prompt"].endswith(">>>") and original["judgements"][0]["verdict"] == "PASS"
 
-    reused_id = next(r["id"] for r in results["results"] if r["retrieval_config"] == "RAG07" and r["field_key"] == "title")
+    reused_id = next(r["id"] for r in results["results"] if r["retrieval_config"] == "RAG03" and r["field_key"] == "title")
     reused = client.get(f"/api/v1/runs/{run['id']}/results/{reused_id}").json()
     assert reused["reused_from"] == original["id"] and len(reused["llm_calls"]) == 2
 
@@ -184,7 +184,7 @@ def test_health(client, harness, monkeypatch):
 def test_config_endpoints(client):
     pipelines = client.get("/api/v1/config/pipelines").json()
     default = next(p for p in pipelines if p["is_default"])
-    assert [r["name"] for r in default["retrievals"]] == [f"RAG0{i}" for i in range(1, 8)]
+    assert [r["name"] for r in default["retrievals"]] == [f"RAG0{i}" for i in range(1, 7)]
     assert len(default["fields"]) == 286 and default["judge"]["temperature"] == "0.100"
     types = {t["key"]: t for t in default["contract_types"]}
     assert default["classification_enabled"] and len(types) == 19 and types["other"]["is_fallback"]

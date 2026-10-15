@@ -13,7 +13,7 @@ def test_default_pipeline_resolves(session):
     p = ConfigRepo(session).resolve_pipeline()
 
     assert p.name == "default"
-    assert [r.name for r in p.retrievals] == [f"RAG0{i}" for i in range(1, 8)]
+    assert [r.name for r in p.retrievals] == [f"RAG0{i}" for i in range(1, 7)]
     assert len(p.field_set.fields) == 286
     assert p.field_set.fields[0].key == "title"
     assert all(f.queries and f.user_prompt is None and f.value_schema for f in p.field_set.fields)
@@ -83,4 +83,4 @@ def test_listings(session):
     repo = ConfigRepo(session)
     assert {p.key for p in repo.providers()} == {"ollama-local", "openrouter"}
     assert [mo.name for mo in repo.models(ModelKind.EMBEDDING)] == ["nomic-embed-text:latest"]
-    assert len(repo.retrieval_configs()) == 7
+    assert len(repo.retrieval_configs()) == 6

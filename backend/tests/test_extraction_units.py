@@ -247,9 +247,9 @@ def test_parse_verdict():
 
 def test_narrow_options(session):
     p = ConfigRepo(session).resolve_pipeline()
-    n = narrow(p, RunOptions(fields=["payment_terms", "title"], retrievals=["RAG07", "RAG02"], judge=False))
+    n = narrow(p, RunOptions(fields=["payment_terms", "title"], retrievals=["RAG06", "RAG02"], judge=False))
     assert [f.key for f in n.field_set.fields] == ["title", "payment_terms"], "pipeline order is kept"
-    assert [r.name for r in n.retrievals] == ["RAG02", "RAG07"], "priority order is kept"
+    assert [r.name for r in n.retrievals] == ["RAG02", "RAG06"], "priority order is kept"
     assert not n.judge_enabled and n.judge_profile is None
     assert n.snapshot()["judge_enabled"] is False
     with pytest.raises(InvalidInput, match="Unknown field"):

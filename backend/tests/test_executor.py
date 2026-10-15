@@ -1,9 +1,9 @@
 """Run execution against the test database with scripted models (fake chat, HashEmbedder, memory store).
 
 The pipeline is the seeded default, narrowed to two fields and three RAG configs whose
-thresholds are lowered so the small test PDF always yields evidence. RAG01 (top 10) and
-RAG02 (top 5) both retrieve all three chunks, and RAG07 is RAG01's twin, so every field gets
-identical evidence three times: with reuse only the first config calls the models.
+thresholds are lowered so the small test PDF always yields evidence. RAG01 (top 10), RAG02
+(top 5) and RAG03 (top 3) all retrieve its three chunks, so every field gets identical
+evidence three times: with reuse only the first config calls the models.
 """
 
 from __future__ import annotations
@@ -93,7 +93,7 @@ class Harness:
         return p.model_copy(update={"retrievals": loose, **changes})
 
     def enqueue(self, options: RunOptions | None = None, kind=RunKind.FULL, **changes):
-        options = options or RunOptions(fields=FIELDS, retrievals=["RAG01", "RAG02", "RAG07"])
+        options = options or RunOptions(fields=FIELDS, retrievals=["RAG01", "RAG02", "RAG03"])
         doc_id, _, _ = register_file(self.db, self.storage, self.settings, self.pdf)
         with self.db.session() as s:
             return RunRepo(s).enqueue(doc_id, self.pipeline(options, **changes), kind,
@@ -127,7 +127,7 @@ def test_full_run_records_everything(db, storage, tmp_path):
     assert (run.progress_done, run.progress_total) == (6, 6)
     assert run.started_at and run.finished_at and run.decomposition_id and run.vector_index_id
     assert results == 6 and judgements == 6 and hits == 18
-    assert calls == 4, "2 fields x (extraction + judge); RAG02 and RAG07 reuse RAG01's answers"
+    assert calls == 4, "2 fields x (extraction + judge); RAG02 and RAG03 reuse RAG01's answers"
     assert best["title"] == ("Acme Pty Ltd", "RAG01", "PASS")
     assert best["payment_terms"] == (None, "RAG01", "FAIL")
     assert any("Stage extracting" in e for e in events) and any("Extraction finished" in e for e in events)
@@ -227,7 +227,7 @@ GROUPED = {"extraction_granularity": Granularity.GROUP, "group_max_fields": 8}
 
 def test_group_extraction_answers_a_batch_per_call(db, storage, tmp_path):
     h = Harness(db, storage, tmp_path, "grouped", answers={"payment_terms": {"due_period": "P30D"}})
-    run_id = h.enqueue(RunOptions(retrievals=["RAG01", "RAG07"], judge=False), **GROUPED)
+    run_id = h.enqueue(RunOptions(retrievals=["RAG01", "RAG03"], judge=False), **GROUPED)
     assert h.execute(run_id) == RunState.SUCCEEDED
     run, best, results, calls, _, _, events = _summary(db, run_id)
     with db.session() as s:
@@ -236,7 +236,7 @@ def test_group_extraction_answers_a_batch_per_call(db, storage, tmp_path):
     n = int(batches.split(" in ")[1].split()[0])
     assert 66 / 8 <= n < 66, "MSA: core, commercial, risk, covenants, IP & data and its own fields, split at 8"
     assert results == 2 * 66 and run.progress_total == 132
-    assert calls == 1 + n, "one classification call, one call per batch; RAG07 reuses RAG01's answers"
+    assert calls == 1 + n, "one classification call, one call per batch; RAG03 reuses RAG01's answers"
     assert best["title"][0] == "Acme Pty Ltd" and best["payment_terms"][0] == {"due_period": "P30D"}
     assert best["liability_cap"][0] is None, "a key the answer leaves out is not found"
     with db.session() as s:
@@ -276,7 +276,7 @@ def test_answers_must_fit_the_field_type(db, storage, tmp_path):
 
 def test_reuse_can_be_turned_off(db, storage, tmp_path):
     h = Harness(db, storage, tmp_path, "noreuse")
-    run_id = h.enqueue(RunOptions(fields=FIELDS, retrievals=["RAG01", "RAG02", "RAG07"], reuse_calls=False))
+    run_id = h.enqueue(RunOptions(fields=FIELDS, retrievals=["RAG01", "RAG02", "RAG03"], reuse_calls=False))
     assert h.execute(run_id) == RunState.SUCCEEDED
     _, best, results, calls, judgements, _, _ = _summary(db, run_id)
     assert calls == 12 and results == 6 and judgements == 6
