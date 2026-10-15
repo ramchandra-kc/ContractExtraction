@@ -45,10 +45,19 @@ class Embedder(Protocol):
 
 
 @dataclass(frozen=True)
+class SparseVector:
+    """Keyword (BM25) vector: term ids and weights (``indexing.keywords``)."""
+    indices: list[int]
+    values: list[float]
+
+
+@dataclass(frozen=True)
 class Point:
     id: uuid.UUID
     vector: list[float]
     payload: dict[str, Any]
+    # Keyword vector; the store applies inverse document frequency when searching.
+    keywords: SparseVector | None = None
 
 
 @dataclass(frozen=True)
@@ -66,5 +75,9 @@ class VectorStore(Protocol):
     def upsert(self, collection: str, points: list[Point]) -> None: ...
 
     def search(self, collection: str, vector: list[float], limit: int) -> list[SearchHit]: ...
+
+    def keyword_search(self, collection: str, query: SparseVector, limit: int) -> list[SearchHit]:
+        """BM25: the sum over query terms of the chunk's term weight times the term's IDF in the collection."""
+        ...
 
     def delete_collection(self, collection: str) -> None: ...

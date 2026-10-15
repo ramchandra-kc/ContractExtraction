@@ -195,6 +195,7 @@ class RetrievalConfig(Base):
     query_expansion: Mapped[bool] = mapped_column(server_default=_db())
     per_query_top: Mapped[int] = mapped_column(server_default=_db())
     min_score: Mapped[Decimal] = mapped_column(Numeric(4, 3), server_default=_db())
+    keyword_search: Mapped[bool] = mapped_column(server_default=_db())
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = _updated()
 
@@ -517,8 +518,10 @@ class RetrievalHit(Base):
         ForeignKey("field_results.id", ondelete="CASCADE"), primary_key=True)
     rank: Mapped[int] = mapped_column(primary_key=True)
     chunk_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("chunks.id"))
-    score: Mapped[float] = mapped_column(Double)
+    score: Mapped[float | None] = mapped_column(Double)
     matched_query: Mapped[str | None]
+    keyword_score: Mapped[float | None] = mapped_column(Double)
+    source: Mapped[str] = mapped_column(server_default=_db())
 
 
 class LlmCall(Base):

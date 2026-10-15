@@ -70,6 +70,15 @@ class Granularity(StrEnum):
     GROUP = "group"
 
 
+class HitSource(StrEnum):
+    """How a retrieved chunk was found."""
+
+    DENSE = "dense"
+    KEYWORD = "keyword"
+    BOTH = "both"
+    ANCHOR = "anchor"
+
+
 class IndexStatus(StrEnum):
     BUILDING = "building"
     READY = "ready"

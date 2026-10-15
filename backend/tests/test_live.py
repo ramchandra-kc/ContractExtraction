@@ -11,6 +11,7 @@ import os
 import pytest
 
 from contract_extraction.core.settings import load_settings
+from contract_extraction.indexing import keywords
 from contract_extraction.ingestion import ingest
 from contract_extraction.persistence.repositories import ConfigRepo
 from contract_extraction.providers import factory
@@ -35,6 +36,8 @@ def test_ingest_with_real_services(db, storage, tmp_path):
         query = factory.embedder(pipeline.index.embedding_model, settings).embed(["When are invoices payable?"])[0]
         hits = store.search(result.index.collection_name, query, 3)
         assert hits and hits[0].payload["page"] == 2
+        found = store.keyword_search(result.index.collection_name, keywords.query_vector("force majeure floods"), 3)
+        assert found and found[0].payload["page"] == 3
     finally:
         store.delete_collection(result.index.collection_name)
 

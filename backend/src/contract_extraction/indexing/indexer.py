@@ -1,7 +1,7 @@
 """Indexing stage: pages → chunks → embeddings → vector collection, with chunk rows as the record.
 
-Chunks are embedded by their search text (``chunking.search_text``); the payload keeps the original
-text, which is what the extraction model reads.
+Chunks are embedded by their search text (``chunking.search_text``) and get a BM25 keyword vector
+from it (``keywords``); the payload keeps the original text, which is what the extraction model reads.
 
 ``chunks`` rows are the source of truth (``chunks.id`` is the point id in the store), so a
 ready index whose collection has disappeared (e.g. Qdrant volume wiped) is rebuilt from its
@@ -26,6 +26,7 @@ from ..persistence import models as m
 from ..persistence.db import Database
 from ..persistence.repositories.artifacts import DecompositionRepo, IndexRepo, NewChunk
 from ..providers.base import Embedder, Point, VectorStore
+from . import keywords
 from .chunking import TextChunk, chunk_page, page_section
 
 log = logging.getLogger(__name__)
@@ -104,8 +105,11 @@ def build_index(db: Database, decomposition_id: uuid.UUID, document_code: str, c
         vectors = _embed_all(embedder, [c.search_text for c in chunks], cfg.batch_size, dimension)
         if not from_rows and store.exists(name):
             store.delete_collection(name)  # leftover of an earlier failed attempt
+        lengths = [keywords.length(c.search_text, c.headings) for c in chunks]
+        avgdl = sum(lengths) / len(lengths) if lengths else 0.0
         store.ensure_collection(name, dimension, cfg.distance)
-        store.upsert(name, [Point(c.id, v, _payload(document_code, decomposition_id, c))
+        store.upsert(name, [Point(c.id, v, _payload(document_code, decomposition_id, c),
+                                  keywords.doc_vector(c.search_text, c.headings, avgdl))
                             for c, v in zip(chunks, vectors, strict=True)])
         with db.session() as s:
             repo = IndexRepo(s)

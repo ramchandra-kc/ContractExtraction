@@ -1,4 +1,8 @@
-"""Qdrant vector store over its REST API."""
+"""Qdrant vector store over its REST API.
+
+Collections hold an unnamed dense vector and a ``keywords`` sparse vector with ``modifier: idf``, so
+Qdrant computes the inverse document frequency of keyword (BM25) searches itself.
+"""
 
 from __future__ import annotations
 
@@ -7,10 +11,11 @@ import uuid
 import httpx
 
 from ._http import request_json
-from .base import Point, ProviderError, SearchHit
+from .base import Point, ProviderError, SearchHit, SparseVector
 
 _DISTANCE = {"cosine": "Cosine", "dot": "Dot", "euclid": "Euclid"}
 _UPSERT_BATCH = 256
+KEYWORDS = "keywords"
 
 
 class QdrantStore:
@@ -33,20 +38,43 @@ class QdrantStore:
                 raise ProviderError(f"Qdrant collection {collection} has dimension {size}, expected {dimension}")
             return
         request_json(self.client, "PUT", f"/collections/{collection}", f"Qdrant create {collection}",
-                     {"vectors": {"size": dimension, "distance": _DISTANCE[distance]}})
+                     {"vectors": {"size": dimension, "distance": _DISTANCE[distance]},
+                      "sparse_vectors": {KEYWORDS: {"modifier": "idf"}}})
 
     def upsert(self, collection: str, points: list[Point]) -> None:
         for i in range(0, len(points), _UPSERT_BATCH):
             batch = points[i:i + _UPSERT_BATCH]
             request_json(self.client, "PUT", f"/collections/{collection}/points", f"Qdrant upsert {collection}",
-                         {"points": [{"id": str(p.id), "vector": p.vector, "payload": p.payload} for p in batch]},
+                         {"points": [{"id": str(p.id), "vector": _vectors(p), "payload": p.payload} for p in batch]},
                          params={"wait": "true"})
 
     def search(self, collection: str, vector: list[float], limit: int) -> list[SearchHit]:
         data = request_json(self.client, "POST", f"/collections/{collection}/points/search", f"Qdrant search {collection}",
                             {"vector": vector, "limit": limit, "with_payload": True})
-        return [SearchHit(id=uuid.UUID(str(h["id"])), score=float(h["score"]), payload=h.get("payload") or {})
-                for h in data.get("result") or []]
+        return _hits(data.get("result") or [])
+
+    def keyword_search(self, collection: str, query: SparseVector, limit: int) -> list[SearchHit]:
+        if not query.indices:
+            return []
+        try:
+            data = request_json(self.client, "POST", f"/collections/{collection}/points/query", f"Qdrant keyword search {collection}",
+                                {"query": {"indices": query.indices, "values": query.values}, "using": KEYWORDS,
+                                 "limit": limit, "with_payload": True})
+        except ProviderError as exc:
+            if "Not existing vector name" in str(exc):
+                raise ProviderError(f"Qdrant collection {collection} has no keyword vectors; rebuild its index") from exc
+            raise
+        return _hits((data.get("result") or {}).get("points") or [])
 
     def delete_collection(self, collection: str) -> None:
         request_json(self.client, "DELETE", f"/collections/{collection}", f"Qdrant delete {collection}")
+
+
+def _vectors(p: Point) -> list[float] | dict:
+    if p.keywords is None:
+        return p.vector
+    return {"": p.vector, KEYWORDS: {"indices": p.keywords.indices, "values": p.keywords.values}}
+
+
+def _hits(points: list[dict]) -> list[SearchHit]:
+    return [SearchHit(id=uuid.UUID(str(h["id"])), score=float(h["score"]), payload=h.get("payload") or {}) for h in points]

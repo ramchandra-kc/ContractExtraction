@@ -8,11 +8,12 @@ from pydantic import ValidationError
 
 from contract_extraction.core.errors import InvalidInput
 from contract_extraction.domain.config import Field, RetrievalConfig
-from contract_extraction.domain.enums import FieldResultStatus, JudgeIssue, Verdict
+from contract_extraction.domain.enums import FieldResultStatus, HitSource, JudgeIssue, Verdict
 from contract_extraction.extraction.judge import parse_verdict
 from contract_extraction.extraction.parsing import field_value, parse_json_lenient
 from contract_extraction.extraction.prompts import build_context, extraction_prompt, judge_prompt
 from contract_extraction.extraction.retrieval import Hit, Retriever
+from contract_extraction.indexing.keywords import query_vector
 from contract_extraction.pipeline.options import RunOptions, narrow
 from contract_extraction.persistence.repositories import ConfigRepo
 from contract_extraction.providers.base import Point, SearchHit
@@ -21,23 +22,32 @@ FIELD = Field(id=uuid.uuid4(), key="payment_terms", label="Payment Terms", value
               user_prompt="Extract payment_terms as JSON.\n", position=1, queries=("payment terms", "invoice due"))
 
 
-def rc(top_k=5, threshold="0.5", expansion=True, per_query_top=3, min_score="0.3") -> RetrievalConfig:
+def rc(top_k=5, threshold="0.5", expansion=True, per_query_top=3, min_score="0.3", keyword=False) -> RetrievalConfig:
     return RetrievalConfig(id=uuid.uuid4(), name="RAGX", top_k=top_k, score_threshold=Decimal(threshold),
-                           query_expansion=expansion, per_query_top=per_query_top, min_score=Decimal(min_score))
+                           query_expansion=expansion, per_query_top=per_query_top, min_score=Decimal(min_score),
+                           keyword_search=keyword)
 
 
 class FakeStore:
-    """Returns scripted hits per query vector (the vector is [query index])."""
+    """Returns scripted hits per query vector (the vector is [query index]) and per keyword query (its term ids)."""
 
-    def __init__(self, results: dict[int, list[tuple[str, float]]]):
+    def __init__(self, results: dict[int, list[tuple[str, float]]],
+                 keyword: dict[str, list[tuple[str, float]]] | None = None):
         self.results = results
-        self.ids = {name: uuid.uuid4() for hits in results.values() for name, _ in hits}
+        self.keyword = {tuple(query_vector(q).indices): hits for q, hits in (keyword or {}).items()}
+        names = [name for hits in [*results.values(), *self.keyword.values()] for name, _ in hits]
+        self.ids = {name: uuid.uuid4() for name in names}
         self.limits: list[int] = []
+
+    def _hits(self, scripted, limit):
+        return [SearchHit(self.ids[name], score, {"page": 1, "text": f"text of {name}"}) for name, score in scripted[:limit]]
 
     def search(self, collection, vector, limit):
         self.limits.append(limit)
-        return [SearchHit(self.ids[name], score, {"page": 1, "text": f"text of {name}"})
-                for name, score in self.results.get(int(vector[0]), [])[:limit]]
+        return self._hits(self.results.get(int(vector[0]), []), limit)
+
+    def keyword_search(self, collection, query, limit):
+        return self._hits(self.keyword.get(tuple(query.indices), []), limit)
 
 
 class IndexEmbedder:
@@ -74,6 +84,24 @@ def test_retrieval_thresholds_and_cache():
     assert [h.text for h in retriever.retrieve(FIELD, rc(threshold="0.4", min_score="0.5"))] == ["text of a"]
     assert [h.text for h in retriever.retrieve(FIELD, rc(threshold="0.4", min_score="0.3"))] == ["text of a", "text of b"]
     assert emb.seen == ["payment terms", "invoice due"], "query embeddings are cached across configs"
+
+
+def test_keyword_search_is_fused_with_dense_hits():
+    emb = IndexEmbedder()
+    store = FakeStore({0: [("a", 0.9), ("b", 0.6)], 1: [("c", 0.8)]},
+                      keyword={"payment terms": [("d", 7.0), ("b", 5.0)], "invoice due": [("d", 3.0)]})
+    retriever = Retriever(store, "col", emb)
+
+    assert [h.text for h in retriever.retrieve(FIELD, rc())] == ["text of a", "text of c", "text of b"], \
+        "keyword search off: dense scores only, as before"
+    hits = retriever.retrieve(FIELD, rc(keyword=True))
+    # d: keyword #1 twice; b: dense #2 + keyword #2; a, c: dense #1 once each (ties broken by dense score).
+    assert [h.text for h in hits] == ["text of d", "text of b", "text of a", "text of c"]
+    d, b, a, _ = hits
+    assert (d.source, d.score, d.keyword_score) == (HitSource.KEYWORD, None, 7.0)
+    assert (b.source, b.score, b.keyword_score, b.matched_query) == (HitSource.BOTH, 0.6, 5.0, "payment terms")
+    assert (a.source, a.score, a.keyword_score) == (HitSource.DENSE, 0.9, None)
+    assert [h.text for h in retriever.retrieve(FIELD, rc(keyword=True, top_k=2))] == ["text of d", "text of b"]
 
 
 def test_prompts():

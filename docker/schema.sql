@@ -198,6 +198,8 @@ CREATE TABLE retrieval_configs (
     per_query_top   integer      NOT NULL DEFAULT 3,
     -- Absolute score floor applied after merging.
     min_score       numeric(4, 3) NOT NULL DEFAULT 0.30,
+    -- Also search by keyword (BM25) and fuse the rankings with the dense ones (reciprocal rank fusion).
+    keyword_search  boolean      NOT NULL DEFAULT false,
     created_at      timestamptz  NOT NULL DEFAULT now(),
     updated_at      timestamptz  NOT NULL DEFAULT now(),
     CONSTRAINT pk_retrieval_configs PRIMARY KEY (id),
@@ -616,13 +618,18 @@ CREATE TABLE retrieval_hits (
     field_result_id uuid             NOT NULL,
     rank            integer          NOT NULL,
     chunk_id        uuid             NOT NULL,
-    score           double precision NOT NULL,
+    -- Best dense (cosine) score; NULL for a chunk found only by keyword or as an anchor.
+    score           double precision,
     -- Expansion query that found the chunk (NULL without query expansion).
     matched_query   text,
+    -- Best keyword (BM25) score; NULL for a chunk keyword search did not find.
+    keyword_score   double precision,
+    source          text             NOT NULL DEFAULT 'dense',
     CONSTRAINT pk_retrieval_hits PRIMARY KEY (field_result_id, rank),
     CONSTRAINT fk_retrieval_hits_field_result_id FOREIGN KEY (field_result_id) REFERENCES field_results (id) ON DELETE CASCADE,
     CONSTRAINT fk_retrieval_hits_chunk_id FOREIGN KEY (chunk_id) REFERENCES chunks (id),
-    CONSTRAINT ck_retrieval_hits_rank CHECK (rank > 0)
+    CONSTRAINT ck_retrieval_hits_rank CHECK (rank > 0),
+    CONSTRAINT ck_retrieval_hits_source CHECK (source IN ('dense', 'keyword', 'both', 'anchor'))
 );
 CREATE INDEX ix_retrieval_hits_chunk_id ON retrieval_hits (chunk_id);
 

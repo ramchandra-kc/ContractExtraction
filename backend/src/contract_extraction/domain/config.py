@@ -107,6 +107,8 @@ class RetrievalConfig(_Frozen):
     query_expansion: bool
     per_query_top: int
     min_score: Decimal
+    # Also search by keyword (BM25) and fuse the rankings (extraction.retrieval).
+    keyword_search: bool = False
 
 
 class Field(_Frozen):

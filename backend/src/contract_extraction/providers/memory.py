@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import math
 
-from .base import Point, ProviderError, SearchHit
+from .base import Point, ProviderError, SearchHit, SparseVector
 
 
 def _score(a: list[float], b: list[float], distance: str) -> float:
@@ -15,6 +15,11 @@ def _score(a: list[float], b: list[float], distance: str) -> float:
         return -math.dist(a, b)
     norm = math.sqrt(sum(x * x for x in a)) * math.sqrt(sum(y * y for y in b))
     return dot / norm if norm else 0.0
+
+
+def _idf(points: int, containing: int) -> float:
+    """Inverse document frequency as Qdrant computes it for ``modifier: idf``."""
+    return math.log(1 + (points - containing + 0.5) / (containing + 0.5))
 
 
 class MemoryStore:
@@ -40,6 +45,16 @@ class MemoryStore:
     def search(self, collection: str, vector: list[float], limit: int) -> list[SearchHit]:
         _, distance, store = self._collections[collection]
         hits = [SearchHit(p.id, _score(vector, p.vector, distance), p.payload) for p in store.values()]
+        return sorted(hits, key=lambda h: h.score, reverse=True)[:limit]
+
+    def keyword_search(self, collection: str, query: SparseVector, limit: int) -> list[SearchHit]:
+        _, _, store = self._collections[collection]
+        weights = {p.id: dict(zip(p.keywords.indices, p.keywords.values, strict=True)) if p.keywords else {}
+                   for p in store.values()}
+        idfs = {t: _idf(len(store), sum(1 for w in weights.values() if t in w)) for t in query.indices}
+        hits = [SearchHit(p.id, sum(weights[p.id][t] * idfs[t] * q for t, q in zip(query.indices, query.values, strict=True)
+                                    if t in weights[p.id]), p.payload)
+                for p in store.values() if any(t in weights[p.id] for t in query.indices)]
         return sorted(hits, key=lambda h: h.score, reverse=True)[:limit]
 
     def delete_collection(self, collection: str) -> None:

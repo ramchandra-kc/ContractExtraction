@@ -8,7 +8,7 @@ import httpx
 import pytest
 
 from contract_extraction.domain.config import Model, ModelProfile, Provider
-from contract_extraction.providers.base import Point, ProviderError
+from contract_extraction.providers.base import Point, ProviderError, SparseVector
 from contract_extraction.providers.memory import MemoryStore
 from contract_extraction.providers.ollama import OllamaChat, OllamaEmbedder
 from contract_extraction.providers.openai_compat import OpenAICompatChat, OpenAICompatEmbedder
@@ -182,18 +182,49 @@ def test_qdrant_rest_calls():
         if request.url.path.endswith("/points/search"):
             pid = str(uuid.uuid4())
             return httpx.Response(200, json={"result": [{"id": pid, "score": 0.9, "payload": {"page": 1}}]})
+        if request.url.path.endswith("/points/query"):
+            pid = str(uuid.uuid4())
+            return httpx.Response(200, json={"result": {"points": [{"id": pid, "score": 2.5, "payload": {"page": 2}}]}})
         return httpx.Response(200, json={"result": True})
 
     client, seen = _client(handler, "http://qdrant")
     store = QdrantStore("http://qdrant", client=client)
     store.ensure_collection("c", 3, "cosine")
-    store.upsert("c", [Point(uuid.uuid4(), [1.0, 0.0, 0.0], {"text": "x"})])
+    store.upsert("c", [Point(uuid.uuid4(), [1.0, 0.0, 0.0], {"text": "x"}, SparseVector([7, 9], [1.5, 0.5]))])
     hits = store.search("c", [1.0, 0.0, 0.0], 5)
+    found = store.keyword_search("c", SparseVector([7], [1.0]), 3)
 
     assert calls[:3] == [("GET", "/collections/c/exists"), ("PUT", "/collections/c"), ("PUT", "/collections/c/points")]
-    assert json.loads(seen[1].content) == {"vectors": {"size": 3, "distance": "Cosine"}}
+    assert json.loads(seen[1].content) == {"vectors": {"size": 3, "distance": "Cosine"},
+                                           "sparse_vectors": {"keywords": {"modifier": "idf"}}}
+    assert json.loads(seen[2].content)["points"][0]["vector"] == {"": [1.0, 0.0, 0.0],
+                                                                  "keywords": {"indices": [7, 9], "values": [1.5, 0.5]}}
     assert seen[2].url.params["wait"] == "true"
     assert hits[0].score == 0.9 and hits[0].payload == {"page": 1}
+    assert json.loads(seen[4].content) == {"query": {"indices": [7], "values": [1.0]}, "using": "keywords",
+                                           "limit": 3, "with_payload": True}
+    assert found[0].score == 2.5 and found[0].payload == {"page": 2}
+    assert store.keyword_search("c", SparseVector([], []), 3) == [], "a query of stop words only is not sent"
+    assert len(calls) == 5
+
+
+def test_qdrant_keyword_search_on_an_old_collection_says_rebuild():
+    client, _ = _client(lambda r: httpx.Response(400, json={"status": {"error": "Wrong input: Not existing vector name: keywords"}}))
+    with pytest.raises(ProviderError, match="no keyword vectors; rebuild its index"):
+        QdrantStore("http://qdrant", client=client).keyword_search("c", SparseVector([7], [1.0]), 3)
+
+
+def test_memory_store_keyword_search_matches_qdrant_bm25():
+    store = MemoryStore()
+    store.ensure_collection("c", 2, "cosine")
+    a, b, c = uuid.uuid4(), uuid.uuid4(), uuid.uuid4()
+    store.upsert("c", [Point(a, [1.0, 0.0], {}, SparseVector([1, 2], [1.0, 1.0])),
+                       Point(b, [0.0, 1.0], {}, SparseVector([2], [1.0])),
+                       Point(c, [0.0, 1.0], {})])
+    hits = store.keyword_search("c", SparseVector([1, 2], [1.0, 1.0]), 5)
+    # The scores Qdrant v1.12 returns for the same points (checked against a live instance).
+    assert [h.id for h in hits] == [a, b]
+    assert [round(h.score, 4) for h in hits] == [1.4508, 0.47]
 
 
 def test_memory_store_ranks_by_cosine():
