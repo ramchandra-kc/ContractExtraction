@@ -46,6 +46,17 @@ describe('ConfigPage', () => {
     expect(within(broken).getByRole('button', { name: 'Make default' })).toBeDisabled()
   })
 
+  it('lists the contract types and their fields', async () => {
+    configApi()
+    renderApp('/config?tab=types')
+    const row = (await screen.findByText('Master agreement')).closest('tr')!
+    expect(within(row).getByText('MSA')).toBeInTheDocument()
+    expect(within(row).getByText(/1 fields · P1 1 · P2 0 · P3 0/)).toBeInTheDocument()
+    expect(within(row).getByText('Customer name')).toBeInTheDocument()
+    const other = screen.getByText('Anything else').closest('tr')!
+    expect(within(other).getByText('fallback')).toBeInTheDocument()
+  })
+
   it('saves a pipeline with its RAG configs in the chosen order', async () => {
     const calls = configApi()
     renderApp('/config')

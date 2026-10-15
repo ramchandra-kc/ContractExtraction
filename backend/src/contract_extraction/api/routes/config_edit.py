@@ -19,6 +19,7 @@ from ...persistence.repositories import ConfigRepo
 from ...persistence.repositories.config_writes import ConfigWriter
 from ..config_schemas import (
     Catalog,
+    CatalogContractType,
     CatalogDecomposition,
     CatalogField,
     CatalogFieldSet,
@@ -29,6 +30,7 @@ from ..config_schemas import (
     CatalogProfile,
     CatalogProvider,
     CatalogRetrieval,
+    CatalogTypeField,
     DecompositionCreate,
     FieldCreate,
     FieldUpdate,
@@ -108,6 +110,13 @@ def _field(row: m.Field) -> CatalogField:
                         is_enabled=row.is_enabled, queries=[q.query for q in row.queries])
 
 
+def _contract_type(row: m.ContractType) -> CatalogContractType:
+    return CatalogContractType(key=row.key, label=row.label, description=row.description, is_fallback=row.is_fallback,
+                               position=row.position,
+                               fields=[CatalogTypeField(key=mb.field.key, group=mb.field_group, priority=mb.priority)
+                                       for mb in row.members])
+
+
 def _ref(row: m.PromptTemplate | m.FieldSet | None) -> VersionRef | None:
     return VersionRef(name=row.name, version=row.version) if row else None
 
@@ -142,8 +151,10 @@ def get_catalog(session: SessionDep):
     """All configuration rows with what they reference, for editing. Pipelines carry ``error`` when they cannot run."""
     q = lambda model, *order: session.scalars(select(model).order_by(*order)).all()  # noqa: E731
     repo = ConfigRepo(session)
-    field_sets = session.scalars(select(m.FieldSet).options(selectinload(m.FieldSet.fields).selectinload(m.Field.queries))
-                                 .order_by(m.FieldSet.name, m.FieldSet.version)).all()
+    field_sets = session.scalars(select(m.FieldSet).options(
+        selectinload(m.FieldSet.fields).selectinload(m.Field.queries),
+        selectinload(m.FieldSet.contract_types).selectinload(m.ContractType.members).selectinload(m.ContractTypeField.field),
+    ).order_by(m.FieldSet.name, m.FieldSet.version)).all()
     return Catalog(
         providers=[_provider(r) for r in session.scalars(select(m.LlmProvider).options(selectinload(m.LlmProvider.models))
                                                          .order_by(m.LlmProvider.key)).all()],
@@ -153,7 +164,8 @@ def get_catalog(session: SessionDep):
         indexes=[_index(r) for r in q(m.IndexConfig, m.IndexConfig.name)],
         retrievals=[_retrieval(r) for r in q(m.RetrievalConfig, m.RetrievalConfig.name)],
         field_sets=[CatalogFieldSet(name=fs.name, version=fs.version, description=fs.description,
-                                    fields=[_field(f) for f in fs.fields]) for fs in field_sets],
+                                    fields=[_field(f) for f in fs.fields],
+                                    contract_types=[_contract_type(t) for t in fs.contract_types]) for fs in field_sets],
         pipelines=[_pipeline(r, repo) for r in q(m.PipelineConfig, m.PipelineConfig.name)],
     )
 

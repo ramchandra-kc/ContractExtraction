@@ -186,6 +186,24 @@ def test_config_endpoints(client):
     default = next(p for p in pipelines if p["is_default"])
     assert [r["name"] for r in default["retrievals"]] == [f"RAG0{i}" for i in range(1, 8)]
     assert len(default["fields"]) == 286 and default["judge"]["temperature"] == "0.100"
+    types = {t["key"]: t for t in default["contract_types"]}
+    assert default["classification_enabled"] and len(types) == 19 and types["other"]["is_fallback"]
+    assert len(types["nda"]["field_keys"]) == 42 and "nda_direction" in types["nda"]["field_keys"]
+
+
+def test_run_shows_its_contract_types(client, db, storage, harness):
+    doc = _upload(client, harness.pdf).json()
+    created = client.post(f"/api/v1/documents/{doc['id']}/runs",
+                          json={"contract_types": ["nda"], "retrievals": ["RAG01"], "judge": False})
+    assert created.status_code == 202, created.text
+    assert created.json()["contract_types"] == [] and created.json()["options"]["contract_types"] == ["nda"]
+    _process(db, storage, harness)
+    detail = client.get(f"/api/v1/runs/{created.json()['id']}").json()
+    assert detail["contract_types"] == [{"key": "nda", "label": "NDA", "source": "override", "selected": True,
+                                         "confidence": None, "evidence": None}]
+    assert detail["progress_total"] == 42
+    bad = client.post(f"/api/v1/documents/{doc['id']}/runs", json={"contract_types": ["lease"]})
+    assert bad.status_code == 422 and "Unknown contract type" in bad.json()["detail"]
     providers = {p["key"]: p for p in client.get("/api/v1/config/providers").json()}
     assert providers["openrouter"]["api_key_env"] == "OPENROUTER_API_KEY" and providers["ollama-local"]["models"]
 

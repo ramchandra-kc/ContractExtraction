@@ -68,6 +68,9 @@ def test_catalog_lists_everything(client):
     fee = next(f for f in fields if f["key"] == "termination_for_convenience")
     assert (fee["type_spec"], fee["priority"], fee["user_prompt"]) == (
         "object: available_to, party_refs, notice_period, termination_fee", "P1", None)
+    types = {t["key"]: t for t in cat["field_sets"][0]["contract_types"]}
+    assert len(types) == 19 and types["other"]["is_fallback"] and types["nda"]["position"] == 1
+    assert {"key": "service_levels", "group": "specific", "priority": "P2"} in types["saas"]["fields"]
     assert any(mm["kind"] == "embedding" and mm["embedding_dimension"] for p in cat["providers"] for mm in p["models"])
     assert {r["name"] for r in cat["retrievals"]} >= {"RAG01", "RAG07"}
 

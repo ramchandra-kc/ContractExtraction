@@ -48,6 +48,7 @@ export function run(over: Partial<RunOut> = {}): RunOut {
     attempts: 1,
     decomposition_id: DEC_ID,
     vector_index_id: null,
+    contract_types: [],
     ...over,
   }
 }
@@ -89,8 +90,13 @@ export const pipelines: PipelineOut[] = [
       { name: 'RAG02', top_k: 5, score_threshold: '0.4', query_expansion: true, per_query_top: 5, min_score: '0.0' },
     ],
     fields: [
-      { key: 'customer_name', label: 'Customer name', description: null, value_type: 'text', query_count: 2 },
-      { key: 'payment_terms', label: 'Payment terms', description: null, value_type: 'text', query_count: 3 },
+      { key: 'customer_name', label: 'Customer name', description: null, value_type: 'text', priority: 'P1', query_count: 2 },
+      { key: 'payment_terms', label: 'Payment terms', description: null, value_type: 'text', priority: 'P1', query_count: 3 },
+    ],
+    classification_enabled: true,
+    contract_types: [
+      { key: 'msa', label: 'MSA', description: 'Master agreement', is_fallback: false, field_keys: ['customer_name', 'payment_terms'] },
+      { key: 'other', label: 'Other', description: 'Anything else', is_fallback: true, field_keys: ['customer_name'] },
     ],
   },
 ]
@@ -252,6 +258,16 @@ export const catalog: Catalog = {
           id: FIELD_CUSTOMER, key: 'customer_name', label: 'Customer name', description: null, value_type: 'text',
           type_spec: null, value_schema: {}, priority: 'P1', user_prompt: 'Find the customer.', position: 1, is_enabled: true,
           queries: ['customer', 'buyer'],
+        },
+      ],
+      contract_types: [
+        {
+          key: 'msa', label: 'MSA', description: 'Master agreement', is_fallback: false, position: 1,
+          fields: [{ key: 'customer_name', group: 'core', priority: 'P1' }],
+        },
+        {
+          key: 'other', label: 'Other', description: 'Anything else', is_fallback: true, position: 2,
+          fields: [{ key: 'customer_name', group: 'core', priority: 'P2' }],
         },
       ],
     },

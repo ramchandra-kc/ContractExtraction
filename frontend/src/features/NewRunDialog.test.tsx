@@ -10,6 +10,31 @@ import { problem, server } from '@/test/server'
 const ACTIVE_RUN = '77777777-7777-7777-7777-777777777777'
 
 describe('NewRunDialog', () => {
+  it('detects the contract type by default', async () => {
+    let body: RunCreate | null = null
+    server.use(
+      http.get('*/api/v1/documents/:id', () => HttpResponse.json(documentDetail())),
+      http.get('*/api/v1/config/pipelines', () => HttpResponse.json(pipelines)),
+      http.post('*/api/v1/documents/:id/runs', async ({ request }) => {
+        body = (await request.json()) as RunCreate
+        return problem(409, 'Conflict', 'stop here')
+      }),
+    )
+    renderApp(`/documents/${DOC_ID}`)
+    await userEvent.click(await screen.findByRole('button', { name: 'New run' }))
+    const dialog = await screen.findByRole('dialog')
+    expect(await within(dialog).findByRole('radio', { name: /Detect the contract type/ })).toBeChecked()
+    expect(within(dialog).queryByRole('checkbox', { name: 'Payment terms' })).toBeNull()
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Queue run' }))
+    await waitFor(() => expect(body).toMatchObject({ fields: null, contract_types: null }))
+
+    await userEvent.click(within(dialog).getByRole('radio', { name: /Contract types/ }))
+    expect(within(dialog).getByRole('button', { name: 'Queue run' })).toBeDisabled()
+    await userEvent.click(within(dialog).getByRole('checkbox', { name: 'MSA (2)' }))
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Queue run' }))
+    await waitFor(() => expect(body).toMatchObject({ fields: null, contract_types: ['msa'] }))
+  })
+
   it('queues a run narrowed to the chosen fields and opens it', async () => {
     let body: RunCreate | null = null
     server.use(
@@ -26,11 +51,13 @@ describe('NewRunDialog', () => {
     const { router } = renderApp(`/documents/${DOC_ID}`)
     await userEvent.click(await screen.findByRole('button', { name: 'New run' }))
     const dialog = await screen.findByRole('dialog')
-    await userEvent.click(await within(dialog).findByRole('checkbox', { name: 'Payment terms' }))
+    await userEvent.click(await within(dialog).findByRole('radio', { name: /Fields…/ }))
+    await userEvent.click(within(dialog).getByRole('checkbox', { name: 'Customer name' }))
     await userEvent.click(within(dialog).getByRole('button', { name: 'Queue run' }))
 
     await waitFor(() => expect(router.state.location.pathname).toBe(`/runs/${RUN_ID}`))
-    expect(body).toMatchObject({ pipeline: 'default', kind: 'full', fields: ['customer_name'], retrievals: null, judge: null })
+    expect(body).toMatchObject({ pipeline: 'default', kind: 'full', fields: ['customer_name'], contract_types: null,
+                                 retrievals: null, judge: null })
   })
 
   it('links the active run when the API answers 409', async () => {

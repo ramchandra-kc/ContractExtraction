@@ -3,6 +3,7 @@ import { useCatalog } from '@/api/config'
 import { ProblemAlert } from '@/components/ProblemAlert'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { ContractTypesTab } from '@/features/config/ContractTypesTab'
 import { FieldsTab } from '@/features/config/FieldsTab'
 import { ModelsTab } from '@/features/config/ModelsTab'
 import { PipelinesTab } from '@/features/config/PipelinesTab'
@@ -13,6 +14,7 @@ import { StorageTab } from '@/features/config/StorageTab'
 const TABS = [
   { value: 'pipelines', label: 'Pipelines', Tab: PipelinesTab },
   { value: 'retrievals', label: 'RAG configs', Tab: RetrievalsTab },
+  { value: 'types', label: 'Contract types', Tab: ContractTypesTab },
   { value: 'fields', label: 'Fields', Tab: FieldsTab },
   { value: 'models', label: 'Models & profiles', Tab: ModelsTab },
   { value: 'prompts', label: 'Prompts', Tab: PromptsTab },

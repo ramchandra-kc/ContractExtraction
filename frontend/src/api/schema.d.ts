@@ -784,6 +784,21 @@ export interface components {
             /** Pipelines */
             pipelines: components["schemas"]["CatalogPipeline"][];
         };
+        /** CatalogContractType */
+        CatalogContractType: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Description */
+            description: string;
+            /** Is Fallback */
+            is_fallback: boolean;
+            /** Position */
+            position: number;
+            /** Fields */
+            fields: components["schemas"]["CatalogTypeField"][];
+        };
         /** CatalogDecomposition */
         CatalogDecomposition: {
             /** Name */
@@ -853,6 +868,11 @@ export interface components {
             description: string | null;
             /** Fields */
             fields: components["schemas"]["CatalogField"][];
+            /**
+             * Contract Types
+             * @description From docs/contract_types_and_fields.md; edited there and regenerated (gen-catalogue)
+             */
+            contract_types: components["schemas"]["CatalogContractType"][];
         };
         /** CatalogIndex */
         CatalogIndex: {
@@ -1029,6 +1049,17 @@ export interface components {
             /** Min Score */
             min_score: string;
         };
+        /** CatalogTypeField */
+        CatalogTypeField: {
+            /** Key */
+            key: string;
+            /**
+             * Group
+             * @description core, commercial, risk_liability, restrictive_covenants, ip_data or specific
+             */
+            group: string;
+            priority: components["schemas"]["Priority"];
+        };
         /** ComponentOut */
         ComponentOut: {
             /** Name */
@@ -1037,6 +1068,22 @@ export interface components {
             ok: boolean;
             /** Detail */
             detail: string;
+        };
+        /** ContractTypeOut */
+        ContractTypeOut: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /** Description */
+            description: string;
+            /** Is Fallback */
+            is_fallback: boolean;
+            /**
+             * Field Keys
+             * @description Fields the type expects, in the order the catalogue lists them
+             */
+            field_keys: string[];
         };
         /** DecompositionCreate */
         DecompositionCreate: {
@@ -1243,6 +1290,11 @@ export interface components {
             description: string | null;
             /** Value Type */
             value_type: string;
+            /**
+             * Priority
+             * @default P2
+             */
+            priority: string;
             /** Query Count */
             query_count: number;
         };
@@ -1713,6 +1765,16 @@ export interface components {
              * @default []
              */
             fields: components["schemas"]["FieldOut"][];
+            /**
+             * Contract Types
+             * @default []
+             */
+            contract_types: components["schemas"]["ContractTypeOut"][];
+            /**
+             * Classification Enabled
+             * @default false
+             */
+            classification_enabled: boolean;
         };
         /** PipelineUpdate */
         PipelineUpdate: {
@@ -1935,6 +1997,27 @@ export interface components {
             /** Min Score */
             min_score?: number | string;
         };
+        /** RunClassificationOut */
+        RunClassificationOut: {
+            /** Key */
+            key: string;
+            /** Label */
+            label: string;
+            /**
+             * Source
+             * @description classifier, override or fallback
+             */
+            source: string;
+            /**
+             * Selected
+             * @description Whether the run extracts this type's fields
+             */
+            selected: boolean;
+            /** Confidence */
+            confidence: string | null;
+            /** Evidence */
+            evidence: string | null;
+        };
         /**
          * RunCreate
          * @description Queue a run. Narrowing options are applied to the pipeline before its snapshot is stored.
@@ -2016,6 +2099,12 @@ export interface components {
             started_at: string | null;
             /** Finished At */
             finished_at: string | null;
+            /**
+             * Contract Types
+             * @description Contract types considered for the run, selected first (empty until classification)
+             * @default []
+             */
+            contract_types: components["schemas"]["RunClassificationOut"][];
             /** Pipeline */
             pipeline: string | null;
             /** Options */

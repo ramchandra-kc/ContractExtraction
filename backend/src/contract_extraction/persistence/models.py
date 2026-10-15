@@ -476,6 +476,8 @@ class Run(Base):
     document: Mapped[Document] = relationship()
     pipeline_config: Mapped[PipelineConfig] = relationship()
     vector_index: Mapped[VectorIndex | None] = relationship()
+    classifications: Mapped[list[RunClassification]] = relationship(
+        order_by="(RunClassification.selected.desc(), RunClassification.confidence.desc().nulls_last())", viewonly=True)
 
 
 class RunEvent(Base):

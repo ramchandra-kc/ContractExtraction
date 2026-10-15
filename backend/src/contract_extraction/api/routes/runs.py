@@ -35,6 +35,9 @@ def run_out(run: m.Run) -> RunOut:
         "pipeline": run.config_snapshot.get("name"), "options": run.options, "worker_id": run.worker_id,
         "heartbeat_at": run.heartbeat_at, "cancel_requested": run.cancel_requested, "attempts": run.attempts,
         "decomposition_id": run.decomposition_id, "vector_index_id": run.vector_index_id,
+        "contract_types": [{"key": c.contract_type.key, "label": c.contract_type.label, "source": c.source,
+                            "selected": c.selected, "confidence": c.confidence, "evidence": c.evidence}
+                           for c in run.classifications],
     })
 
 

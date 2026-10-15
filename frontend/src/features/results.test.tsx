@@ -28,6 +28,28 @@ describe('run results', () => {
     expect(within(missing).getByText('not found')).toBeInTheDocument()
   })
 
+  it('shows the contract types the run used', async () => {
+    runApi()
+    server.use(
+      http.get('*/api/v1/runs/:id', () =>
+        HttpResponse.json(
+          run({
+            contract_types: [
+              { key: 'msa', label: 'MSA', source: 'classifier', selected: true, confidence: '0.920', evidence: 'Master Services Agreement' },
+              { key: 'nda', label: 'NDA', source: 'classifier', selected: false, confidence: '0.200', evidence: null },
+            ],
+          }),
+        ),
+      ),
+    )
+    renderApp(`/runs/${RUN_ID}`)
+    const panel = await screen.findByRole('region', { name: 'Contract type' })
+    expect(within(panel).getByText('MSA')).toBeInTheDocument()
+    expect(within(panel).getByText(/detected · confidence 0.92/)).toBeInTheDocument()
+    expect(within(panel).getByText('Master Services Agreement')).toBeInTheDocument()
+    expect(within(panel).getByText(/Also proposed .*NDA \(0.20\)/)).toBeInTheDocument()
+  })
+
   it('shows every outcome as fields × RAG configs', async () => {
     runApi()
     const { router } = renderApp(`/runs/${RUN_ID}`)

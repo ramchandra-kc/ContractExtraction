@@ -9,6 +9,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
+import { ContractTypes } from '@/features/ContractTypes'
 import { EventsTimeline } from '@/features/EventsTimeline'
 import { FieldResultSheet } from '@/features/FieldResultSheet'
 import { OutcomesMatrix } from '@/features/OutcomesMatrix'
@@ -103,6 +104,8 @@ export function RunPage() {
           </CardContent>
         </Card>
       )}
+
+      <ContractTypes types={r.contract_types} />
 
       {r.error && (
         <Alert variant="destructive">

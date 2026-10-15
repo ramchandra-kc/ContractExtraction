@@ -138,11 +138,28 @@ class CatalogField(BaseModel):
     queries: list[str]
 
 
+class CatalogTypeField(BaseModel):
+    key: str
+    group: str = Field(description="core, commercial, risk_liability, restrictive_covenants, ip_data or specific")
+    priority: Priority
+
+
+class CatalogContractType(BaseModel):
+    key: str
+    label: str
+    description: str
+    is_fallback: bool
+    position: int
+    fields: list[CatalogTypeField]
+
+
 class CatalogFieldSet(BaseModel):
     name: str
     version: int
     description: str | None
     fields: list[CatalogField]
+    contract_types: list[CatalogContractType] = Field(
+        description="From docs/contract_types_and_fields.md; edited there and regenerated (gen-catalogue)")
 
 
 class CatalogPipeline(BaseModel):

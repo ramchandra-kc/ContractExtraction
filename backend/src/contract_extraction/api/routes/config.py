@@ -8,7 +8,7 @@ from ...core.errors import AppError
 from ...domain.config import ModelProfile, PipelineConfig
 from ...persistence.repositories import ConfigRepo
 from ..deps import SessionDep
-from ..schemas import FieldOut, PipelineOut, ProfileOut, ProviderOut, RetrievalOut
+from ..schemas import ContractTypeOut, FieldOut, PipelineOut, ProfileOut, ProviderOut, RetrievalOut
 
 router = APIRouter(prefix="/config", tags=["config"])
 
@@ -28,7 +28,10 @@ def _pipeline(p: PipelineConfig, is_default: bool, description: str | None) -> P
         extraction=_profile(p.extraction_profile), judge=_profile(p.judge_profile if p.judge_enabled else None),
         retrievals=[RetrievalOut.model_validate(r.model_dump()) for r in p.retrievals],
         fields=[FieldOut(key=f.key, label=f.label, description=f.description, value_type=f.value_type,
-                         query_count=len(f.queries)) for f in p.field_set.fields],
+                         priority=f.priority, query_count=len(f.queries)) for f in p.field_set.fields],
+        contract_types=[ContractTypeOut(key=t.key, label=t.label, description=t.description, is_fallback=t.is_fallback,
+                                        field_keys=[mb.key for mb in t.fields]) for t in p.field_set.contract_types],
+        classification_enabled=p.classification_enabled,
     )
 
 

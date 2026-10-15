@@ -82,27 +82,45 @@ function RunForm({ document }: { document: DocumentDetail }) {
   )
 }
 
+type Scope = 'detect' | 'types' | 'fields'
+
 function PipelineOptions({ document, pipeline }: { document: DocumentDetail; pipeline: PipelineOut }) {
   const navigate = useNavigate()
   const createRun = useCreateRun(document.id)
   const [kind, setKind] = useState<Kind>('full')
-  const [fields, setFields] = useState(() => new Set(pipeline.fields?.map((f) => f.key)))
+  const [scope, setScope] = useState<Scope>('detect')
+  const [types, setTypes] = useState(() => new Set<string>())
+  const [fields, setFields] = useState(() => new Set<string>())
   const [retrievals, setRetrievals] = useState(() => new Set(pipeline.retrievals?.map((r) => r.name)))
   const [judge, setJudge] = useState(!!pipeline.judge)
   const [reuseCalls, setReuseCalls] = useState(true)
   const [redecompose, setRedecompose] = useState(false)
 
   const allFields = pipeline.fields ?? []
+  const allTypes = pipeline.contract_types ?? []
   const allRetrievals = pipeline.retrievals ?? []
+  const fallback = allTypes.find((t) => t.is_fallback)
   const extracts = kind !== 'decompose'
-  const valid = !extracts || (fields.size > 0 && retrievals.size > 0)
+  const chosen = scope === 'types' ? types.size > 0 : scope === 'fields' ? fields.size > 0 : true
+  const valid = !extracts || (chosen && retrievals.size > 0)
+
+  const scopes: { value: Scope; label: string; hint: string }[] = [
+    allTypes.length === 0
+      ? { value: 'detect', label: 'All fields', hint: 'Every field of the pipeline.' }
+      : pipeline.classification_enabled
+        ? { value: 'detect', label: 'Detect the contract type', hint: 'Extract the fields of the detected type(s).' }
+        : { value: 'detect', label: `Fallback type (${fallback?.label ?? 'none'})`, hint: 'This pipeline does not detect types.' },
+    ...(allTypes.length ? [{ value: 'types' as const, label: 'Contract types…', hint: 'Skip detection: extract these types’ fields.' }] : []),
+    { value: 'fields', label: 'Fields…', hint: 'Extract exactly these fields.' },
+  ]
 
   const submit = () => {
     const body: RunCreate = {
       pipeline: pipeline.name,
       kind,
-      // null means "all of the pipeline", which keeps the stored options short.
-      fields: extracts && fields.size < allFields.length ? allFields.filter((f) => fields.has(f.key)).map((f) => f.key) : null,
+      // null means "decided by the pipeline", which keeps the stored options short.
+      fields: extracts && scope === 'fields' ? allFields.filter((f) => fields.has(f.key)).map((f) => f.key) : null,
+      contract_types: extracts && scope === 'types' ? allTypes.filter((t) => types.has(t.key)).map((t) => t.key) : null,
       retrievals:
         extracts && retrievals.size < allRetrievals.length
           ? allRetrievals.filter((r) => retrievals.has(r.name)).map((r) => r.name)
@@ -135,12 +153,40 @@ function PipelineOptions({ document, pipeline }: { document: DocumentDetail; pip
 
       {extracts && (
         <>
-          <CheckList
-            title="Fields"
-            items={allFields.map((f) => ({ key: f.key, label: f.label, hint: f.description ?? undefined }))}
-            selected={fields}
-            onChange={setFields}
-          />
+          <fieldset className="space-y-2">
+            <legend className="text-sm font-medium">What to extract</legend>
+            {scopes.map((s) => (
+              <label key={s.value} className="flex items-start gap-2 text-sm">
+                <input
+                  type="radio"
+                  name="scope"
+                  value={s.value}
+                  checked={scope === s.value}
+                  onChange={() => setScope(s.value)}
+                  className="mt-1"
+                />
+                <span>
+                  {s.label} <span className="text-muted-foreground">— {s.hint}</span>
+                </span>
+              </label>
+            ))}
+          </fieldset>
+          {scope === 'types' && (
+            <CheckList
+              title="Contract types"
+              items={allTypes.map((t) => ({ key: t.key, label: `${t.label} (${t.field_keys.length})`, hint: t.description }))}
+              selected={types}
+              onChange={setTypes}
+            />
+          )}
+          {scope === 'fields' && (
+            <CheckList
+              title="Fields"
+              items={allFields.map((f) => ({ key: f.key, label: f.label, hint: f.description ?? undefined }))}
+              selected={fields}
+              onChange={setFields}
+            />
+          )}
           <CheckList
             title="RAG configs (priority order)"
             items={allRetrievals.map((r) => ({

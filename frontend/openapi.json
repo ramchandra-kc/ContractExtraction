@@ -2145,6 +2145,47 @@
         ],
         "title": "Catalog"
       },
+      "CatalogContractType": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "is_fallback": {
+            "type": "boolean",
+            "title": "Is Fallback"
+          },
+          "position": {
+            "type": "integer",
+            "title": "Position"
+          },
+          "fields": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogTypeField"
+            },
+            "type": "array",
+            "title": "Fields"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "label",
+          "description",
+          "is_fallback",
+          "position",
+          "fields"
+        ],
+        "title": "CatalogContractType"
+      },
       "CatalogDecomposition": {
         "properties": {
           "name": {
@@ -2323,6 +2364,14 @@
             },
             "type": "array",
             "title": "Fields"
+          },
+          "contract_types": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogContractType"
+            },
+            "type": "array",
+            "title": "Contract Types",
+            "description": "From docs/contract_types_and_fields.md; edited there and regenerated (gen-catalogue)"
           }
         },
         "type": "object",
@@ -2330,7 +2379,8 @@
           "name",
           "version",
           "description",
-          "fields"
+          "fields",
+          "contract_types"
         ],
         "title": "CatalogFieldSet"
       },
@@ -2883,6 +2933,29 @@
         ],
         "title": "CatalogRetrieval"
       },
+      "CatalogTypeField": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "group": {
+            "type": "string",
+            "title": "Group",
+            "description": "core, commercial, risk_liability, restrictive_covenants, ip_data or specific"
+          },
+          "priority": {
+            "$ref": "#/components/schemas/Priority"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "group",
+          "priority"
+        ],
+        "title": "CatalogTypeField"
+      },
       "ComponentOut": {
         "properties": {
           "name": {
@@ -2905,6 +2978,43 @@
           "detail"
         ],
         "title": "ComponentOut"
+      },
+      "ContractTypeOut": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "description": {
+            "type": "string",
+            "title": "Description"
+          },
+          "is_fallback": {
+            "type": "boolean",
+            "title": "Is Fallback"
+          },
+          "field_keys": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Field Keys",
+            "description": "Fields the type expects, in the order the catalogue lists them"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "label",
+          "description",
+          "is_fallback",
+          "field_keys"
+        ],
+        "title": "ContractTypeOut"
       },
       "DecompositionCreate": {
         "properties": {
@@ -3404,6 +3514,11 @@
           "value_type": {
             "type": "string",
             "title": "Value Type"
+          },
+          "priority": {
+            "type": "string",
+            "title": "Priority",
+            "default": "P2"
           },
           "query_count": {
             "type": "integer",
@@ -4819,6 +4934,19 @@
             "type": "array",
             "title": "Fields",
             "default": []
+          },
+          "contract_types": {
+            "items": {
+              "$ref": "#/components/schemas/ContractTypeOut"
+            },
+            "type": "array",
+            "title": "Contract Types",
+            "default": []
+          },
+          "classification_enabled": {
+            "type": "boolean",
+            "title": "Classification Enabled",
+            "default": false
           }
         },
         "type": "object",
@@ -5511,6 +5639,60 @@
         "type": "object",
         "title": "RetrievalUpdate"
       },
+      "RunClassificationOut": {
+        "properties": {
+          "key": {
+            "type": "string",
+            "title": "Key"
+          },
+          "label": {
+            "type": "string",
+            "title": "Label"
+          },
+          "source": {
+            "type": "string",
+            "title": "Source",
+            "description": "classifier, override or fallback"
+          },
+          "selected": {
+            "type": "boolean",
+            "title": "Selected",
+            "description": "Whether the run extracts this type's fields"
+          },
+          "confidence": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Confidence"
+          },
+          "evidence": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Evidence"
+          }
+        },
+        "type": "object",
+        "required": [
+          "key",
+          "label",
+          "source",
+          "selected",
+          "confidence",
+          "evidence"
+        ],
+        "title": "RunClassificationOut"
+      },
       "RunCreate": {
         "properties": {
           "pipeline": {
@@ -5689,6 +5871,15 @@
               }
             ],
             "title": "Finished At"
+          },
+          "contract_types": {
+            "items": {
+              "$ref": "#/components/schemas/RunClassificationOut"
+            },
+            "type": "array",
+            "title": "Contract Types",
+            "description": "Contract types considered for the run, selected first (empty until classification)",
+            "default": []
           },
           "pipeline": {
             "anyOf": [

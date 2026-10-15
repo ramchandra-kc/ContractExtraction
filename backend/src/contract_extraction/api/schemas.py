@@ -73,7 +73,16 @@ class FieldOut(BaseModel):
     label: str
     description: str | None
     value_type: str
+    priority: str = "P2"
     query_count: int
+
+
+class ContractTypeOut(BaseModel):
+    key: str
+    label: str
+    description: str
+    is_fallback: bool
+    field_keys: list[str] = Field(description="Fields the type expects, in the order the catalogue lists them")
 
 
 class ProfileOut(BaseModel):
@@ -96,6 +105,8 @@ class PipelineOut(BaseModel):
     judge: ProfileOut | None = None
     retrievals: list[RetrievalOut] = []
     fields: list[FieldOut] = []
+    contract_types: list[ContractTypeOut] = []
+    classification_enabled: bool = False
 
 
 # ---- documents ---------------------------------------------------------------------------------
@@ -115,7 +126,18 @@ class RunSummary(_Out):
     finished_at: datetime | None
 
 
+class RunClassificationOut(BaseModel):
+    key: str
+    label: str
+    source: str = Field(description="classifier, override or fallback")
+    selected: bool = Field(description="Whether the run extracts this type's fields")
+    confidence: Decimal | None
+    evidence: str | None
+
+
 class RunOut(RunSummary):
+    contract_types: list[RunClassificationOut] = Field(
+        [], description="Contract types considered for the run, selected first (empty until classification)")
     pipeline: str | None
     options: dict[str, Any]
     worker_id: str | None
