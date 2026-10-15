@@ -24,6 +24,8 @@ export function RetrievalsTab({ catalog }: { catalog: Catalog }) {
             <TableHead>Query expansion</TableHead>
             <TableHead className="text-right">Per query</TableHead>
             <TableHead className="text-right">Min score</TableHead>
+            <TableHead>Keyword search</TableHead>
+            <TableHead className="text-right">Anchor chunks</TableHead>
             <TableHead>Description</TableHead>
             <TableHead className="text-right">Actions</TableHead>
           </TableRow>
@@ -37,6 +39,8 @@ export function RetrievalsTab({ catalog }: { catalog: Catalog }) {
               <TableCell>{r.query_expansion ? 'on' : 'off'}</TableCell>
               <TableCell className="text-right">{r.per_query_top}</TableCell>
               <TableCell className="text-right">{r.min_score}</TableCell>
+              <TableCell>{r.keyword_search ? 'on' : 'off'}</TableCell>
+              <TableCell className="text-right">{r.anchor_chunks || 'off'}</TableCell>
               <TableCell className="text-xs whitespace-normal text-muted-foreground">
                 {r.description}
                 {!used.has(r.name) && <span className="block">Not used by any pipeline</span>}
@@ -78,6 +82,8 @@ function RetrievalForm({ initial, onDone }: { initial?: CatalogRetrieval; onDone
   const [expansion, setExpansion] = useState(initial?.query_expansion ?? true)
   const [perQuery, setPerQuery] = useState(show(initial?.per_query_top ?? 3))
   const [minScore, setMinScore] = useState(show(initial?.min_score ?? '0.3'))
+  const [keyword, setKeyword] = useState(initial?.keyword_search ?? false)
+  const [anchors, setAnchors] = useState(show(initial?.anchor_chunks ?? 0))
 
   const body = {
     description: toText(description),
@@ -86,6 +92,8 @@ function RetrievalForm({ initial, onDone }: { initial?: CatalogRetrieval; onDone
     query_expansion: expansion,
     per_query_top: toInt(perQuery)!,
     min_score: minScore.trim(),
+    keyword_search: keyword,
+    anchor_chunks: toInt(anchors) ?? 0,
   }
   const submit = () => {
     if (initial) update.mutate({ name: initial.name, body }, { onSuccess: onDone })
@@ -100,8 +108,15 @@ function RetrievalForm({ initial, onDone }: { initial?: CatalogRetrieval; onDone
         <TextInput label="Score threshold" value={threshold} onChange={setThreshold} hint="0–1; a hit must score at least this." />
         <TextInput label="Hits per query" value={perQuery} onChange={setPerQuery} hint="Fetched per expanded query before merging." />
         <TextInput label="Minimum score" value={minScore} onChange={setMinScore} hint="0–1; floor applied after merging." />
+        <TextInput
+          label="Anchor chunks"
+          value={anchors}
+          onChange={setAnchors}
+          hint="Opening/closing chunks added for fields with an anchor (e.g. parties); 0 = off."
+        />
       </div>
       <SwitchInput label="Query expansion (search with the field's queries, not only its label)" checked={expansion} onChange={setExpansion} />
+      <SwitchInput label="Keyword search (BM25, fused with the embedding ranking)" checked={keyword} onChange={setKeyword} />
       <SubmitBar
         label={initial ? 'Save' : 'Create'}
         pending={write.isPending}

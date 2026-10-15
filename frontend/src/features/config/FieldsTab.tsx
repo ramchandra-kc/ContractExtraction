@@ -12,6 +12,14 @@ const VALUE_TYPES = ['text', 'date', 'number', 'money', 'list', 'boolean', 'json
 type ValueType = (typeof VALUE_TYPES)[number]
 const PRIORITIES = ['P1', 'P2', 'P3'] as const
 type Priority = (typeof PRIORITIES)[number]
+// 'none' stands for no anchor (a select item cannot have an empty value).
+const ANCHORS = [
+  { value: 'none', label: 'None' },
+  { value: 'start', label: 'Opening chunks' },
+  { value: 'end', label: 'Closing chunks' },
+  { value: 'both', label: 'Opening and closing' },
+] as const
+type Anchor = 'start' | 'end' | 'both'
 
 export function FieldsTab({ catalog }: { catalog: Catalog }) {
   const [selected, setSelected] = useState(0)
@@ -63,6 +71,11 @@ export function FieldsTab({ catalog }: { catalog: Catalog }) {
                 <div className="flex gap-1">
                   <Badge variant="outline">{f.value_type}</Badge>
                   <Badge variant={f.priority === 'P1' ? 'default' : 'secondary'}>{f.priority}</Badge>
+                  {f.anchor && (
+                    <Badge variant="outline" title="Evidence always includes these chunks when the RAG config sets anchor chunks">
+                      anchor: {f.anchor}
+                    </Badge>
+                  )}
                 </div>
                 {f.type_spec && <p className="mt-1 max-w-48 font-mono text-xs text-muted-foreground">{f.type_spec}</p>}
               </TableCell>
@@ -108,6 +121,7 @@ function FieldForm({ fieldSet, initial, onDone }: { fieldSet: CatalogFieldSet; i
   const [userPrompt, setUserPrompt] = useState(initial?.user_prompt ?? '')
   const [enabled, setEnabled] = useState(initial?.is_enabled ?? true)
   const [queries, setQueries] = useState((initial?.queries ?? []).join('\n'))
+  const [anchor, setAnchor] = useState<string>(initial?.anchor ?? 'none')
 
   const body = {
     label: label.trim(),
@@ -117,6 +131,7 @@ function FieldForm({ fieldSet, initial, onDone }: { fieldSet: CatalogFieldSet; i
     user_prompt: toText(userPrompt),
     is_enabled: enabled,
     queries: queries.split('\n').map((q) => q.trim()).filter(Boolean),
+    anchor: anchor === 'none' ? null : (anchor as Anchor),
   }
   const submit = () => {
     if (initial) update.mutate({ id: initial.id, body }, { onSuccess: onDone })
@@ -143,6 +158,7 @@ function FieldForm({ fieldSet, initial, onDone }: { fieldSet: CatalogFieldSet; i
         />
       </div>
       <TextInput label="Description" value={description} onChange={setDescription} />
+      <SelectInput label="Anchor" value={anchor} onChange={setAnchor} options={ANCHORS.map((a) => ({ ...a }))} />
       <TextInput
         label="Extraction prompt (optional)"
         value={userPrompt}

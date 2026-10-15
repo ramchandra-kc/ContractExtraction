@@ -86,8 +86,8 @@ export const pipelines: PipelineOut[] = [
     extraction: { name: 'extract', model: 'llama3.1:8b', provider: 'ollama-local', temperature: '0.0' },
     judge: { name: 'judge', model: 'llama3.1:8b', provider: 'ollama-local', temperature: '0.1' },
     retrievals: [
-      { name: 'RAG01', top_k: 3, score_threshold: '0.5', query_expansion: false, per_query_top: 3, min_score: '0.0' },
-      { name: 'RAG02', top_k: 5, score_threshold: '0.4', query_expansion: true, per_query_top: 5, min_score: '0.0' },
+      { name: 'RAG01', top_k: 3, score_threshold: '0.5', query_expansion: false, per_query_top: 3, min_score: '0.0', keyword_search: false, anchor_chunks: 0 },
+      { name: 'RAG02', top_k: 5, score_threshold: '0.4', query_expansion: true, per_query_top: 5, min_score: '0.0', keyword_search: true, anchor_chunks: 2 },
     ],
     fields: [
       { key: 'customer_name', label: 'Customer name', description: null, value_type: 'text', priority: 'P1', query_count: 2 },
@@ -255,9 +255,18 @@ export const catalog: Catalog = {
     { name: 'default', description: null, embedding_model_id: MODEL_EMBED, embedding_model: 'nomic-embed-text', chunk_size: 2000, chunk_overlap: 300, vector_store: 'qdrant', distance: 'cosine', batch_size: 32 },
   ],
   retrievals: [
-    { name: 'RAG01', description: null, top_k: 10, score_threshold: '0.500', query_expansion: true, per_query_top: 3, min_score: '0.300' },
-    { name: 'RAG02', description: null, top_k: 5, score_threshold: '0.500', query_expansion: true, per_query_top: 3, min_score: '0.300' },
-    { name: 'RAG03', description: 'spare', top_k: 3, score_threshold: '0.500', query_expansion: false, per_query_top: 3, min_score: '0.300' },
+    {
+      name: 'RAG01', description: null, top_k: 10, score_threshold: '0.500', query_expansion: true, per_query_top: 3, min_score: '0.300',
+      keyword_search: false, anchor_chunks: 0,
+    },
+    {
+      name: 'RAG02', description: null, top_k: 5, score_threshold: '0.500', query_expansion: true, per_query_top: 3, min_score: '0.300',
+      keyword_search: true, anchor_chunks: 2,
+    },
+    {
+      name: 'RAG03', description: 'spare', top_k: 3, score_threshold: '0.500', query_expansion: false, per_query_top: 3, min_score: '0.300',
+      keyword_search: false, anchor_chunks: 0,
+    },
   ],
   field_sets: [
     {
@@ -268,7 +277,7 @@ export const catalog: Catalog = {
         {
           id: FIELD_CUSTOMER, key: 'customer_name', label: 'Customer name', description: null, value_type: 'text',
           type_spec: null, value_schema: {}, priority: 'P1', user_prompt: 'Find the customer.', position: 1, is_enabled: true,
-          queries: ['customer', 'buyer'],
+          queries: ['customer', 'buyer'], anchor: 'start',
         },
       ],
       contract_types: [
@@ -343,10 +352,22 @@ export const fieldResult: FieldResultDetail = {
     {
       rank: 1,
       score: 0.8123,
+      keyword_score: null,
+      source: 'dense',
       page: 2,
       matched_query: 'customer',
       chunk_id: '55555555-5555-5555-5555-555555555555',
       text: 'This agreement is made with Acme GmbH.',
+    },
+    {
+      rank: 2,
+      score: null,
+      keyword_score: 4.25,
+      source: 'keyword',
+      page: 1,
+      matched_query: 'buyer',
+      chunk_id: '77777777-7777-7777-7777-777777777777',
+      text: 'Parties: Acme GmbH (Buyer).',
     },
   ],
   llm_calls: [

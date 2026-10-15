@@ -15,6 +15,7 @@ from typing import Annotated, Any
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from ..domain.enums import (
+    Anchor,
     DecompositionMethod,
     Distance,
     Granularity,
@@ -30,6 +31,7 @@ Name = Annotated[str, Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9]
                             description="Letters, digits, '.', '_' and '-'; cannot be changed later")]
 Score = Annotated[Decimal, Field(ge=0, le=1, max_digits=4, decimal_places=3)]
 Positive = Annotated[int, Field(gt=0)]
+NonNegative = Annotated[int, Field(ge=0)]
 Cost = Annotated[Decimal, Field(ge=0, max_digits=12, decimal_places=6)]
 
 
@@ -121,6 +123,8 @@ class CatalogRetrieval(BaseModel):
     query_expansion: bool
     per_query_top: int
     min_score: Decimal
+    keyword_search: bool
+    anchor_chunks: int
 
 
 class CatalogField(BaseModel):
@@ -136,6 +140,8 @@ class CatalogField(BaseModel):
     position: int
     is_enabled: bool
     queries: list[str]
+    anchor: Anchor | None = Field(description="Evidence always includes the opening (start) and/or closing (end) chunks "
+                                              "when the RAG config sets anchor_chunks")
 
 
 class CatalogTypeField(BaseModel):
@@ -265,6 +271,8 @@ class RetrievalCreate(_In):
     query_expansion: bool = True
     per_query_top: Positive = 3
     min_score: Score = Decimal("0.30")
+    keyword_search: bool = Field(False, description="Also search by keyword (BM25) and fuse the rankings")
+    anchor_chunks: NonNegative = Field(0, description="Opening/closing chunks added for fields with an anchor; 0 = off")
 
 
 class RetrievalUpdate(_In):
@@ -274,6 +282,8 @@ class RetrievalUpdate(_In):
     query_expansion: bool = None  # type: ignore[assignment]
     per_query_top: Positive = None  # type: ignore[assignment]
     min_score: Score = None  # type: ignore[assignment]
+    keyword_search: bool = None  # type: ignore[assignment]
+    anchor_chunks: NonNegative = None  # type: ignore[assignment]
 
 
 # ---- model profiles -------------------------------------------------------------------------------
@@ -362,6 +372,7 @@ class FieldCreate(_In):
     user_prompt: str | None = Field(None, min_length=1, description="Omit or null to use the generic template")
     is_enabled: bool = True
     queries: list[str] = Field([], description="Expansion queries in order; blank ones are dropped")
+    anchor: Anchor | None = None
 
 
 class FieldUpdate(_In):
@@ -372,6 +383,7 @@ class FieldUpdate(_In):
     user_prompt: str | None = Field(None, min_length=1, description="null switches back to the generic template")
     is_enabled: bool = None  # type: ignore[assignment]
     queries: list[str] = None  # type: ignore[assignment]
+    anchor: Anchor | None = Field(None, description="null removes the anchor")
 
 
 # ---- providers and models -------------------------------------------------------------------------

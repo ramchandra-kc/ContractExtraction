@@ -738,6 +738,12 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /**
+         * Anchor
+         * @description Where in the document a field's evidence always comes from, besides retrieval.
+         * @enum {string}
+         */
+        Anchor: "start" | "end" | "both";
         /** BestValue */
         BestValue: {
             /**
@@ -884,6 +890,8 @@ export interface components {
             is_enabled: boolean;
             /** Queries */
             queries: string[];
+            /** @description Evidence always includes the opening (start) and/or closing (end) chunks when the RAG config sets anchor_chunks */
+            anchor: components["schemas"]["Anchor"] | null;
         };
         /** CatalogFieldSet */
         CatalogFieldSet: {
@@ -1075,6 +1083,10 @@ export interface components {
             per_query_top: number;
             /** Min Score */
             min_score: string;
+            /** Keyword Search */
+            keyword_search: boolean;
+            /** Anchor Chunks */
+            anchor_chunks: number;
         };
         /** CatalogTypeField */
         CatalogTypeField: {
@@ -1342,6 +1354,7 @@ export interface components {
              * @default []
              */
             queries: string[];
+            anchor?: components["schemas"]["Anchor"] | null;
         };
         /** FieldOut */
         FieldOut: {
@@ -1360,6 +1373,7 @@ export interface components {
             priority: string;
             /** Query Count */
             query_count: number;
+            anchor?: components["schemas"]["Anchor"] | null;
         };
         /** FieldResultDetail */
         FieldResultDetail: {
@@ -1462,6 +1476,8 @@ export interface components {
             is_enabled?: boolean;
             /** Queries */
             queries?: string[];
+            /** @description null removes the anchor */
+            anchor?: components["schemas"]["Anchor"] | null;
         };
         /**
          * Granularity
@@ -1551,8 +1567,21 @@ export interface components {
         HitOut: {
             /** Rank */
             rank: number;
-            /** Score */
-            score: number;
+            /**
+             * Score
+             * @description Dense (embedding) similarity; null when only keyword search or an anchor found it
+             */
+            score: number | null;
+            /**
+             * Keyword Score
+             * @description Keyword (BM25) score; null when keyword search did not find it
+             */
+            keyword_score?: number | null;
+            /**
+             * @description How the chunk was found: dense, keyword, both, or anchor (the field's opening/closing chunks)
+             * @default dense
+             */
+            source: components["schemas"]["HitSource"];
             /** Page */
             page: number;
             /** Matched Query */
@@ -1565,6 +1594,12 @@ export interface components {
             /** Text */
             text: string;
         };
+        /**
+         * HitSource
+         * @description How a retrieved chunk was found.
+         * @enum {string}
+         */
+        HitSource: "dense" | "keyword" | "both" | "anchor";
         /** ImageOut */
         ImageOut: {
             /**
@@ -2056,6 +2091,18 @@ export interface components {
              * @default 0.30
              */
             min_score: number | string;
+            /**
+             * Keyword Search
+             * @description Also search by keyword (BM25) and fuse the rankings
+             * @default false
+             */
+            keyword_search: boolean;
+            /**
+             * Anchor Chunks
+             * @description Opening/closing chunks added for fields with an anchor; 0 = off
+             * @default 0
+             */
+            anchor_chunks: number;
         };
         /** RetrievalOut */
         RetrievalOut: {
@@ -2071,6 +2118,16 @@ export interface components {
             per_query_top: number;
             /** Min Score */
             min_score: string;
+            /**
+             * Keyword Search
+             * @default false
+             */
+            keyword_search: boolean;
+            /**
+             * Anchor Chunks
+             * @default 0
+             */
+            anchor_chunks: number;
         };
         /** RetrievalUpdate */
         RetrievalUpdate: {
@@ -2086,6 +2143,10 @@ export interface components {
             per_query_top?: number;
             /** Min Score */
             min_score?: number | string;
+            /** Keyword Search */
+            keyword_search?: boolean;
+            /** Anchor Chunks */
+            anchor_chunks?: number;
         };
         /** RunClassificationOut */
         RunClassificationOut: {

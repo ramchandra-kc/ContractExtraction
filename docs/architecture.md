@@ -124,14 +124,14 @@ Providers sit behind interfaces, so tests can run with fakes and no Docker.
 | Stage | Input → output | Notes |
 |---|---|---|
 | **Decompose** | PDF → page Markdown + images | pymupdf4llm; optional OCR or hybrid for scanned PDFs; keep invisible OCR text; remove headers and footers only when a line repeats on 2+ pages and sits in the top or bottom zone |
-| **Index** | pages → chunks → embeddings → vector index | chunks of 2000 chars with 300 overlap (configurable); **one index per document**; full chunk text stored in the payload; embedding dimension read from the model |
-| **Retrieve** | field × search config → ranked chunks | query expansion (several queries per field), per-query top-k, score threshold, merge and deduplicate |
+| **Index** | pages → chunks → embeddings + keyword vectors → vector index | chunks of 2000 chars with 300 overlap (configurable); **one index per document**; each chunk's *search text* (Markdown removed, tables as rows, its section heading in front) is embedded and turned into a BM25 keyword vector; full chunk text stored in the payload; embedding dimension read from the model |
+| **Retrieve** | field × search config → ranked chunks | query expansion (several queries per field), per-query top-k, score threshold, optional keyword search fused with the dense ranking, optional anchor chunks, merge and deduplicate |
 | **Extract** | field prompt + chunks → value | Ollama in JSON mode; explicit `num_ctx` so long prompts are not silently cut |
 | **Judge** | value + evidence → verdict | separate LLM settings; can run in parallel with extraction |
 
 Everything that shapes a run is **configuration stored in the database** (see §7.1), not code:
 LLM providers and models, generation settings, system prompts, decomposition and chunking/embedding settings,
-RAG configurations (`RAG01…RAG06`: top-k, threshold, expansion on or off), and fields with their prompts and expansion
+RAG configurations (`RAG01…RAG07`: top-k, threshold, expansion, keyword search and anchor chunks on or off), and fields with their prompts and expansion
 queries. A **pipeline config** bundles them into a recipe. Every run stores the fully resolved recipe as a snapshot.
 
 **Fields and contract types** come from [`contract_types_and_fields.md`](contract_types_and_fields.md), the source of truth:
@@ -152,11 +152,17 @@ the threshold. Extracted values are checked against the field's JSON Schema (typ
 
 **Retrieval** (per field and RAG config):
 1. Use the field's expansion queries when `query_expansion` is on, otherwise the field label.
-2. Fetch `per_query_top` hits per query and keep those scoring at least `score_threshold`.
-3. De-duplicate by chunk, keeping the best score and the query that found it.
-4. Drop hits below `min_score` and keep the best `top_k`.
+2. Fetch `per_query_top` dense (embedding) hits per query and keep those scoring at least `score_threshold` and `min_score`.
+3. With `keyword_search`, also fetch `per_query_top` keyword (BM25) hits per query. Words are stemmed and stop words
+   dropped; terms rare in the document weigh most (Qdrant computes the IDF per collection) and heading terms count 3×.
+4. De-duplicate by chunk, keeping the best scores and the query that found it. Rank by dense score, or, with keyword
+   search, by reciprocal rank fusion of all the dense and keyword lists (Σ 1/(60 + rank)). Keep the best `top_k`.
+5. With `anchor_chunks`, a field with an `anchor` (cover-page fields such as `parties` start, signature-page fields
+   such as `signatories` end; listed in the catalogue document) also gets the document's first and/or last
+   `anchor_chunks` chunks, beyond `top_k`. Similarity search alone misses these: a cover page often ranks below clauses
+   that merely mention the parties. Keep `top_k + 2 × anchor_chunks` chunks within the extraction model's `num_ctx`.
 
-Query embeddings are computed once per run.
+Each hit records how it was found (`dense`, `keyword`, `both` or `anchor`). Query embeddings are computed once per run.
 
 **Execution** goes through the RAG configs in priority order, and through each config's fields: retrieve → extraction LLM →
 judge LLM. Each field result is committed on its own.
@@ -229,7 +235,7 @@ erDiagram
 | `prompt_templates` | versioned system prompts (extraction, judge, caption); one active version per name |
 | `decomposition_configs` | PDF → text settings (method, format, OCR, header/footer removal, optional captioning profile) |
 | `index_configs` | chunk size and overlap, embedding model, vector store, distance metric |
-| `retrieval_configs` | RAG settings: top-k, score threshold, query expansion, per-query top, minimum score |
+| `retrieval_configs` | RAG settings: top-k, score threshold, query expansion, per-query top, minimum score, keyword search, anchor chunks |
 | `field_sets`, `fields`, `field_queries` | versioned field sets; each field has a key, label, value type, catalogue type and JSON Schema, priority, optional hand-written prompt, and expansion queries |
 | `contract_types`, `contract_type_fields` | the contract types of a field set (one is the fallback) and the fields each expects, with their group and per-type priority |
 | `pipeline_configs`, `pipeline_config_retrievals` | the recipe a run executes, with its RAG configs in priority order; one is the default |
@@ -262,7 +268,7 @@ documents 1──* decompositions 1──* pages 1──* page_images
 - **decompositions**: one per attempt, with its config snapshot. Never overwritten.
 - **pages**: text, header and footer, size, metadata, and a generated full-text search column.
 - **vector_indexes**: one collection per decomposition × index config, reused by later runs.
-- **chunks**: chunk text with page and character ranges. `chunks.id` is the vector-store point id, so evidence can be traced exactly.
+- **chunks**: chunk text with page and character ranges, plus the search text and headings that are embedded and keyword-indexed. `chunks.id` is the vector-store point id, so evidence can be traced exactly.
 
 ### 7.3 Runs & results
 
@@ -278,7 +284,7 @@ experiments 1──* runs 1──* run_events
 - **run_events**: the run's timeline and log.
 - **run_classifications**: the contract types considered for the run (classifier proposals with confidence and quote, an override, or the fallback) and which were selected.
 - **field_results**: one outcome per run × RAG config × field (`extracted` / `not_found` / `error`).
-- **retrieval_hits**: the chunks used as evidence, with score and matching query.
+- **retrieval_hits**: the chunks used as evidence, with dense and keyword scores, how each was found (`source`) and the matching query.
 - **llm_calls**: every LLM call, with prompts, response, token usage, latency and cost.
 - **judgements**: verdicts (`PASS` / `FAIL` / `ERROR` / `SKIPPED`) plus an issue type. A result can be judged again, and the latest judgement counts.
 

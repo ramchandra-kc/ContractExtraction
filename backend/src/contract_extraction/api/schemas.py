@@ -9,7 +9,7 @@ from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..domain.enums import RunKind
+from ..domain.enums import Anchor, HitSource, RunKind
 from ..pipeline.options import RunOptions
 
 T = TypeVar("T")
@@ -66,6 +66,8 @@ class RetrievalOut(BaseModel):
     query_expansion: bool
     per_query_top: int
     min_score: Decimal
+    keyword_search: bool = False
+    anchor_chunks: int = 0
 
 
 class FieldOut(BaseModel):
@@ -75,6 +77,7 @@ class FieldOut(BaseModel):
     value_type: str
     priority: str = "P2"
     query_count: int
+    anchor: Anchor | None = None
 
 
 class ContractTypeOut(BaseModel):
@@ -290,7 +293,10 @@ class RunResults(BaseModel):
 
 class HitOut(BaseModel):
     rank: int
-    score: float
+    score: float | None = Field(description="Dense (embedding) similarity; null when only keyword search or an anchor found it")
+    keyword_score: float | None = Field(None, description="Keyword (BM25) score; null when keyword search did not find it")
+    source: HitSource = Field(HitSource.DENSE, description="How the chunk was found: dense, keyword, both, or anchor "
+                                                           "(the field's opening/closing chunks)")
     page: int
     matched_query: str | None
     chunk_id: uuid.UUID

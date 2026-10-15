@@ -192,7 +192,9 @@ function PipelineOptions({ document, pipeline }: { document: DocumentDetail; pip
             items={allRetrievals.map((r) => ({
               key: r.name,
               label: r.name,
-              hint: `top ${r.top_k}, threshold ${r.score_threshold}${r.query_expansion ? ', query expansion' : ''}`,
+              hint: `top ${r.top_k}, threshold ${r.score_threshold}${r.query_expansion ? ', query expansion' : ''}${
+                r.keyword_search ? ', keyword search' : ''
+              }${r.anchor_chunks ? `, ${r.anchor_chunks} anchor chunks` : ''}`,
             }))}
             selected={retrievals}
             onChange={setRetrievals}

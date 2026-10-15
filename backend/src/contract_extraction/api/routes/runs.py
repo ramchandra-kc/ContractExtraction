@@ -137,7 +137,8 @@ def get_field_result(run_id: uuid.UUID, field_result_id: uuid.UUID, session: Ses
         **_outcome_out(o),
         raw_answer=o.result.raw_answer,
         reused_from=repo.reused_from(field_result_id),
-        hits=[HitOut(rank=h.rank, score=h.score, page=c.page_start, matched_query=h.matched_query, chunk_id=c.id, text=c.text)
+        hits=[HitOut(rank=h.rank, score=h.score, keyword_score=h.keyword_score, source=h.source, page=c.page_start,
+                     matched_query=h.matched_query, chunk_id=c.id, text=c.text)
               for h, c in repo.evidence(field_result_id)],
         llm_calls=[LlmCallOut.model_validate(c) for c in repo.llm_calls(field_result_id)],
         judgements=[JudgementOut.model_validate(j) for j in repo.judgements(field_result_id)],

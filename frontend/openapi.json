@@ -2032,6 +2032,16 @@
   },
   "components": {
     "schemas": {
+      "Anchor": {
+        "type": "string",
+        "enum": [
+          "start",
+          "end",
+          "both"
+        ],
+        "title": "Anchor",
+        "description": "Where in the document a field's evidence always comes from, besides retrieval."
+      },
       "BestValue": {
         "properties": {
           "field_id": {
@@ -2405,6 +2415,17 @@
             },
             "type": "array",
             "title": "Queries"
+          },
+          "anchor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Anchor"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "Evidence always includes the opening (start) and/or closing (end) chunks when the RAG config sets anchor_chunks"
           }
         },
         "type": "object",
@@ -2420,7 +2441,8 @@
           "user_prompt",
           "position",
           "is_enabled",
-          "queries"
+          "queries",
+          "anchor"
         ],
         "title": "CatalogField"
       },
@@ -3006,6 +3028,14 @@
           "min_score": {
             "type": "string",
             "title": "Min Score"
+          },
+          "keyword_search": {
+            "type": "boolean",
+            "title": "Keyword Search"
+          },
+          "anchor_chunks": {
+            "type": "integer",
+            "title": "Anchor Chunks"
           }
         },
         "type": "object",
@@ -3016,7 +3046,9 @@
           "score_threshold",
           "query_expansion",
           "per_query_top",
-          "min_score"
+          "min_score",
+          "keyword_search",
+          "anchor_chunks"
         ],
         "title": "CatalogRetrieval"
       },
@@ -3636,6 +3668,16 @@
             "title": "Queries",
             "description": "Expansion queries in order; blank ones are dropped",
             "default": []
+          },
+          "anchor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Anchor"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "additionalProperties": false,
@@ -3679,6 +3721,16 @@
           "query_count": {
             "type": "integer",
             "title": "Query Count"
+          },
+          "anchor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Anchor"
+              },
+              {
+                "type": "null"
+              }
+            ]
           }
         },
         "type": "object",
@@ -3995,6 +4047,17 @@
             },
             "type": "array",
             "title": "Queries"
+          },
+          "anchor": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/Anchor"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "null removes the anchor"
           }
         },
         "additionalProperties": false,
@@ -4193,8 +4256,33 @@
             "title": "Rank"
           },
           "score": {
-            "type": "number",
-            "title": "Score"
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score",
+            "description": "Dense (embedding) similarity; null when only keyword search or an anchor found it"
+          },
+          "keyword_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Keyword Score",
+            "description": "Keyword (BM25) score; null when keyword search did not find it"
+          },
+          "source": {
+            "$ref": "#/components/schemas/HitSource",
+            "description": "How the chunk was found: dense, keyword, both, or anchor (the field's opening/closing chunks)",
+            "default": "dense"
           },
           "page": {
             "type": "integer",
@@ -4231,6 +4319,17 @@
           "text"
         ],
         "title": "HitOut"
+      },
+      "HitSource": {
+        "type": "string",
+        "enum": [
+          "dense",
+          "keyword",
+          "both",
+          "anchor"
+        ],
+        "title": "HitSource",
+        "description": "How a retrieved chunk was found."
       },
       "ImageOut": {
         "properties": {
@@ -5729,6 +5828,19 @@
             ],
             "title": "Min Score",
             "default": "0.30"
+          },
+          "keyword_search": {
+            "type": "boolean",
+            "title": "Keyword Search",
+            "description": "Also search by keyword (BM25) and fuse the rankings",
+            "default": false
+          },
+          "anchor_chunks": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Anchor Chunks",
+            "description": "Opening/closing chunks added for fields with an anchor; 0 = off",
+            "default": 0
           }
         },
         "additionalProperties": false,
@@ -5765,6 +5877,16 @@
           "min_score": {
             "type": "string",
             "title": "Min Score"
+          },
+          "keyword_search": {
+            "type": "boolean",
+            "title": "Keyword Search",
+            "default": false
+          },
+          "anchor_chunks": {
+            "type": "integer",
+            "title": "Anchor Chunks",
+            "default": 0
           }
         },
         "type": "object",
@@ -5830,6 +5952,15 @@
               }
             ],
             "title": "Min Score"
+          },
+          "keyword_search": {
+            "type": "boolean",
+            "title": "Keyword Search"
+          },
+          "anchor_chunks": {
+            "type": "integer",
+            "minimum": 0.0,
+            "title": "Anchor Chunks"
           }
         },
         "additionalProperties": false,

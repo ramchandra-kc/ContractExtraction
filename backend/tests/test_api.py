@@ -114,6 +114,8 @@ def test_run_lifecycle_and_results(client, db, storage, harness):
 
     original = client.get(f"/api/v1/runs/{run['id']}/results/{best['title']['field_result_id']}").json()
     assert original["hits"] and original["hits"][0]["text"] and original["reused_from"] is None
+    hit = original["hits"][0]
+    assert (hit["source"], hit["keyword_score"]) == ("dense", None) and hit["score"] is not None
     assert [c["purpose"] for c in original["llm_calls"]] == ["extraction", "judge"]
     assert original["llm_calls"][0]["user_prompt"].endswith(">>>") and original["judgements"][0]["verdict"] == "PASS"
 

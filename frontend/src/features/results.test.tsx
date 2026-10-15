@@ -70,8 +70,11 @@ describe('run results', () => {
     renderApp(`/runs/${RUN_ID}?result=${RESULT_A}`)
     const sheet = await screen.findByRole('dialog')
 
-    expect(await within(sheet).findByText('Evidence (1)')).toBeInTheDocument()
+    expect(await within(sheet).findByText('Evidence (2)')).toBeInTheDocument()
     expect(within(sheet).getByText('score 0.812')).toBeInTheDocument()
+    expect(within(sheet).getByText('keyword')).toBeInTheDocument()
+    expect(within(sheet).getByText('keyword 4.25')).toBeInTheDocument()
+    expect(within(sheet).getAllByText(/^score /)).toHaveLength(1)
     expect(within(sheet).getByRole('link', { name: 'page 2' })).toHaveAttribute(
       'href',
       `/documents/${DOC_ID}/pages?page=2&decomposition=${DEC_ID}`,

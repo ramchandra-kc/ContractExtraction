@@ -87,6 +87,10 @@ def test_retrieval_configs(client):
     problem(client.patch(f"{C}/retrievals/RAG99", json={"name": "RAG98"}), 422)
     problem(client.patch(f"{C}/retrievals/RAG99", json={"score_threshold": "1.5"}), 422)
     problem(client.patch(f"{C}/retrievals/NOPE", json={"top_k": 3}), 404)
+    assert (r.json()["keyword_search"], r.json()["anchor_chunks"]) == (False, 0)
+    r = client.patch(f"{C}/retrievals/RAG99", json={"keyword_search": True, "anchor_chunks": 2})
+    assert (r.json()["keyword_search"], r.json()["anchor_chunks"]) == (True, 2)
+    problem(client.patch(f"{C}/retrievals/RAG99", json={"anchor_chunks": -1}), 422)
 
     assert client.delete(f"{C}/retrievals/RAG99").status_code == 204
     problem(client.delete(f"{C}/retrievals/RAG01"), 409, "in use")
@@ -154,6 +158,10 @@ def test_fields(client):
     assert (r.json()["user_prompt"], r.json()["priority"]) == ("Find the title.", "P1")
     assert client.patch(f"{C}/fields/{title['id']}", json={"user_prompt": None}).json()["user_prompt"] is None
     problem(client.patch(f"{C}/fields/{title['id']}", json={"user_prompt": ""}), 422)
+    assert title["anchor"] == "start"
+    assert client.patch(f"{C}/fields/{title['id']}", json={"anchor": "both"}).json()["anchor"] == "both"
+    assert client.patch(f"{C}/fields/{title['id']}", json={"anchor": None}).json()["anchor"] is None
+    problem(client.patch(f"{C}/fields/{title['id']}", json={"anchor": "middle"}), 422)
 
     r = client.post(f"{C}/field-sets/contract_fields/1/fields",
                     json={"key": "notice_period", "label": "Notice period", "queries": ["notice period"]})

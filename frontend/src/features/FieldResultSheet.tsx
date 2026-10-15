@@ -94,7 +94,9 @@ function Detail({
           <div key={h.chunk_id} className="space-y-1 rounded-md border p-3 text-sm">
             <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
               <Badge variant="secondary">#{h.rank}</Badge>
-              <span>score {h.score.toFixed(3)}</span>
+              {h.source !== 'dense' && <Badge variant="outline">{h.source}</Badge>}
+              {h.score != null && <span>score {h.score.toFixed(3)}</span>}
+              {h.keyword_score != null && <span>keyword {h.keyword_score.toFixed(2)}</span>}
               <Link to={pageLink(h.page)} className="underline">
                 page {h.page}
               </Link>
