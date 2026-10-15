@@ -46,8 +46,10 @@ def test_labels_cover_every_enabled_field_of_the_default_field_set(session, docu
 def test_set_creates_then_replaces(session, document):
     repo, field = GroundTruthRepo(session), _field(session, "title")
     _, first = repo.set(document.id, field.id, "Acme Pty Ltd", "from the preamble")
-    _, second = repo.set(document.id, field.id, ["Acme", "Contoso"])
-    assert second.id == first.id and second.expected_value == ["Acme", "Contoso"] and second.notes is None
+    _, second = repo.set(document.id, field.id, "Acme Master Services Agreement")
+    assert second.id == first.id and second.expected_value == "Acme Master Services Agreement" and second.notes is None
+    with pytest.raises(InvalidInput, match="does not fit the type of 'title'"):
+        repo.set(document.id, field.id, ["Acme", "Contoso"])
     labelled = {f.key: gt for f, gt in repo.labels(document.id, repo.field_set()) if gt}
     assert list(labelled) == ["title"]
 

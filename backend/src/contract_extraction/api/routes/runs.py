@@ -7,8 +7,10 @@ import uuid
 from fastapi import APIRouter, Query
 
 from ...domain.enums import RunState
+from ...evaluation import score
 from ...persistence import models as m
 from ...persistence.repositories import RunRepo
+from ...persistence.repositories.ground_truth import GroundTruthRepo
 from ...persistence.repositories.results import Outcome, ResultRepo
 from ..deps import SessionDep
 from ..schemas import (
@@ -87,12 +89,43 @@ def get_run_results(run_id: uuid.UUID, session: SessionDep):
                       value_type=b["value_type"], value=b["value"],
                       status=b["status"], retrieval_config=b["retrieval_config"], verdict=b["verdict"], issue=b["issue"],
                       explanation=b["explanation"], field_result_id=b["field_result_id"],
-                      expected_value=b["expected_value"], exact_match=b["exact_match"])
+                      expected_value=b["expected_value"], exact_match=b["exact_match"],
+                      match_score=_score(b))
             for b in repo.best_values(run.id)]
-    evaluation = EvaluationOut(fields=len(best), labelled=sum(b.exact_match is not None for b in best),
-                               matched=sum(b.exact_match is True for b in best))
-    return RunResults(run=run_out(run), best=best, evaluation=evaluation,
+    return RunResults(run=run_out(run), best=best, evaluation=_evaluation(session, run, best),
                       results=[FieldResultOut(**_outcome_out(o)) for o in outcomes])
+
+
+def _score(b) -> float | None:
+    if b["exact_match"] is None:
+        return None
+    if b["status"] == "error":
+        return 0.0
+    return round(score(b["value"], b["expected_value"]), 3)
+
+
+def _evaluation(session, run: m.Run, best: list[BestValue]) -> EvaluationOut:
+    """Best values against the field labels, plus the run's contract types against the document's."""
+    labelled = [b for b in best if b.exact_match is not None]
+    fs_id = run.config_snapshot.get("field_set", {}).get("id")
+    gt = GroundTruthRepo(session)
+    extracted = {b.field_key for b in best}
+    fs = session.get(m.FieldSet, uuid.UUID(fs_id)) if fs_id else None
+    skipped, expected = [], []
+    if fs is not None:
+        expected = [t.key for t in gt.contract_types(run.document_id, fs)]
+        # Fields skipped because of the contract type: only for a finished run whose fields followed its type
+        # (not one given exact fields, a decompose-only or a partial run).
+        if best and run.state == RunState.SUCCEEDED and run.options.get("fields") is None:
+            skipped = [f.key for f, label in gt.labels(run.document_id, fs)
+                       if label is not None and label.expected_value != "" and f.key not in extracted]
+    used = [c.contract_type.key for c in run.classifications if c.selected]
+    return EvaluationOut(
+        fields=len(best), labelled=len(labelled), matched=sum(b.exact_match is True for b in best),
+        score=round(sum(b.match_score or 0 for b in labelled) / len(labelled), 3) if labelled else None,
+        skipped=skipped, expected_contract_types=expected, used_contract_types=used,
+        contract_types_match=sorted(expected) == sorted(used) if expected and used else None,
+    )
 
 
 @router.get("/{run_id}/results/{field_result_id}", response_model=FieldResultDetail)

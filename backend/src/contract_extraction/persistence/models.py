@@ -596,6 +596,16 @@ class GroundTruth(Base):
     updated_at: Mapped[datetime] = _updated()
 
 
+class DocumentContractType(Base):
+    __tablename__ = "document_contract_types"
+
+    document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"), primary_key=True)
+    contract_type_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("contract_types.id", ondelete="CASCADE"), primary_key=True)
+    created_at: Mapped[datetime] = _created()
+
+    contract_type: Mapped[ContractType] = relationship()
+
+
 # Read-only views, kept out of Base.metadata so they are never mistaken for tables.
 views = MetaData()
 

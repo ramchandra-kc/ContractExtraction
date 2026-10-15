@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { draftFromOutcome, fromDraft, toDraft } from './groundTruth'
+import { draftFromOutcome, editorKind, fromDraft, hintFor, toDraft } from './groundTruth'
 
 describe('ground-truth drafts', () => {
   it('stores "not in this contract" as an empty string', () => {
@@ -27,6 +27,17 @@ describe('ground-truth drafts', () => {
 
   it('requires a value unless it is marked absent', () => {
     expect(fromDraft({ absent: false, text: '   ' }, 'text')).toMatchObject({ ok: false })
+  })
+
+  it('picks the editor shape from the schema, else the value type', () => {
+    expect(editorKind('text', { type: 'array', items: { type: 'string' } })).toBe('list')
+    expect(editorKind('json', { type: 'array', items: { type: 'object' } })).toBe('json')
+    expect(editorKind('text', { type: ['boolean', 'null'] })).toBe('json')
+    expect(editorKind('text', { type: 'string', enum: ['mutual', 'one_way'] })).toBe('text')
+    expect(editorKind('money')).toBe('json')
+    expect(editorKind('list', {})).toBe('list')
+    expect(editorKind('date')).toBe('text')
+    expect(hintFor('text', { type: 'string', enum: ['mutual', 'one_way'] })).toBe('One of: mutual, one_way.')
   })
 
   it('starts from a run outcome', () => {

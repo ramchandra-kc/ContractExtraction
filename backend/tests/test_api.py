@@ -219,7 +219,7 @@ def test_request_id_and_openapi(client):
         "health", "health_ready", "list_pipelines", "list_providers", "upload_document", "list_documents",
         "get_document", "get_document_file", "get_pages", "get_image", "create_run", "list_runs", "get_run",
         "cancel_run", "list_run_events", "get_run_results", "get_field_result",
-        "list_ground_truth", "set_ground_truth", "delete_ground_truth",
+        "list_ground_truth", "set_ground_truth", "delete_ground_truth", "set_contract_types",
         "get_catalog", "create_pipeline", "update_pipeline", "delete_pipeline", "set_default_pipeline",
         "create_retrieval", "update_retrieval", "delete_retrieval", "create_profile", "update_profile", "delete_profile",
         "create_decomposition", "delete_decomposition", "create_index_config", "delete_index_config",
@@ -265,7 +265,13 @@ def test_ground_truth_and_evaluation(client, db, storage, harness):
     put = client.put(f"{base}/{fields['title']}", json={"expected_value": "acme pty ltd", "notes": "preamble"})
     assert put.status_code == 200, put.text
     assert put.json()["expected_value"] == "acme pty ltd" and put.json()["notes"] == "preamble" and put.json()["updated_at"]
-    assert client.put(f"{base}/{fields['payment_terms']}", json={"expected_value": "60 days"}).status_code == 200
+    misfit = client.put(f"{base}/{fields['payment_terms']}", json={"expected_value": "60 days"})
+    assert misfit.status_code == 422 and "does not fit the type of 'payment_terms'" in misfit.json()["detail"]
+    terms = {"due_period": "P60D", "currency": "AUD"}
+    assert client.put(f"{base}/{fields['payment_terms']}", json={"expected_value": terms}).status_code == 200
+    status = client.put(f"{base}/{fields['document_status']}", json={"expected_value": "Executed"})
+    assert status.json()["expected_value"] == "executed", "enum labels are normalised like answers"
+    client.delete(f"{base}/{fields['document_status']}")
 
     null = client.put(f"{base}/{fields['payment_terms']}", json={"expected_value": None})
     assert null.status_code == 422 and null.headers["content-type"] == PROBLEM and "must not be null" in null.json()["detail"]
@@ -281,11 +287,40 @@ def test_ground_truth_and_evaluation(client, db, storage, harness):
     best = {b["field_key"]: b for b in results["best"]}
     assert best["title"]["field_id"] == fields["title"]
     assert (best["title"]["expected_value"], best["title"]["exact_match"]) == ("acme pty ltd", True)
-    assert (best["payment_terms"]["expected_value"], best["payment_terms"]["exact_match"]) == ("60 days", False)
-    assert results["evaluation"] == {"fields": 2, "labelled": 2, "matched": 1}
+    assert (best["payment_terms"]["expected_value"], best["payment_terms"]["exact_match"]) == (terms, False)
+    assert (best["title"]["match_score"], best["payment_terms"]["match_score"]) == (1.0, 0.0)
+    assert {"fields": 2, "labelled": 2, "matched": 1, "score": 0.5, "skipped": []}.items() <= results["evaluation"].items()
 
     assert client.delete(f"{base}/{fields['payment_terms']}").status_code == 204
     assert client.delete(f"{base}/{fields['payment_terms']}").status_code == 404
     results = client.get(f"/api/v1/runs/{run_id}/results").json()
-    assert results["evaluation"] == {"fields": 2, "labelled": 1, "matched": 1}
+    assert (results["evaluation"]["labelled"], results["evaluation"]["matched"]) == (1, 1)
     assert next(b for b in results["best"] if b["field_key"] == "payment_terms")["exact_match"] is None
+
+
+def test_contract_type_ground_truth(client, db, storage, harness):
+    doc = _upload(client, harness.pdf).json()
+    base = f"/api/v1/documents/{doc['id']}/ground-truth"
+    listed = client.get(base).json()
+    assert listed["expected_contract_types"] == [] and len(listed["contract_types"]) == 19
+    fields = {i["field_key"]: i for i in listed["items"]}
+    assert fields["payment_terms"]["value_schema"]["type"] == "object" and fields["payment_terms"]["priority"] == "P1"
+
+    assert client.put(f"{base}/contract-types", json={"contract_types": ["msa", "msa"]}).json() == ["msa"]
+    bad = client.put(f"{base}/contract-types", json={"contract_types": ["lease"]})
+    assert bad.status_code == 422 and "Unknown contract type" in bad.json()["detail"]
+    assert client.get(base).json()["expected_contract_types"] == ["msa"]
+    client.put(f"{base}/{fields['nda_direction']['field_id']}", json={"expected_value": "mutual"})
+    client.put(f"{base}/{fields['permitted_purpose']['field_id']}", json={"expected_value": ""})
+
+    client.post(f"/api/v1/documents/{doc['id']}/runs", json={"retrievals": ["RAG01"], "judge": False})
+    _process(db, storage, harness)  # the scripted classifier says MSA
+    run_id = client.get("/api/v1/runs", params={"document_id": doc["id"]}).json()["items"][0]["id"]
+    evaluation = client.get(f"/api/v1/runs/{run_id}/results").json()["evaluation"]
+    assert evaluation["expected_contract_types"] == evaluation["used_contract_types"] == ["msa"]
+    assert evaluation["contract_types_match"] is True
+    assert evaluation["skipped"] == ["nda_direction"], "an NDA field with a value; '' labels are correctly skipped"
+
+    assert client.put(f"{base}/contract-types", json={"contract_types": ["msa", "sow"]}).json() == ["msa", "sow"]
+    assert client.get(f"/api/v1/runs/{run_id}/results").json()["evaluation"]["contract_types_match"] is False
+    assert client.put(f"{base}/contract-types", json={"contract_types": []}).json() == []

@@ -170,6 +170,22 @@ export function useSetGroundTruth(documentId: string) {
   })
 }
 
+export function useSetContractTypes(documentId: string) {
+  const qc = useQueryClient()
+  return useMutation({
+    mutationFn: async (contractTypes: string[]) =>
+      (
+        await unwrap(
+          api.PUT('/api/v1/documents/{document_id}/ground-truth/contract-types', {
+            params: { path: { document_id: documentId } },
+            body: { contract_types: contractTypes },
+          }),
+        )
+      ).data,
+    onSuccess: () => refreshLabels(qc, documentId),
+  })
+}
+
 export function useDeleteGroundTruth(documentId: string) {
   const qc = useQueryClient()
   return useMutation({

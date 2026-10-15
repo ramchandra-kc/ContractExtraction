@@ -196,7 +196,7 @@ stateDiagram-v2
 
 ## 7. Data model
 
-The full definition is in [`docker/schema.sql`](../docker/schema.sql): 30 tables and 2 views in four groups. The default
+The full definition is in [`docker/schema.sql`](../docker/schema.sql): 31 tables and 2 views in four groups. The default
 configuration is in [`docker/seed.sql`](../docker/seed.sql); the fields and contract types in the generated
 [`docker/seed_catalogue.sql`](../docker/seed_catalogue.sql).
 
@@ -284,13 +284,21 @@ experiments 1──* runs 1──* run_events
 
 ### 7.4 Evaluation
 
+Contract types: a document can be labelled with its contract type(s) (`document_contract_types`); a run's results
+then say whether the types it used match (`contract_types_match`) and which fields labelled with a value it did not
+extract because its type does not expect them (`skipped`). Field labels must fit the field's JSON Schema (enum spellings
+are normalised as for answers). Besides `exact_match` (view below), every labelled best value gets a 0–1 `match_score`
+(`evaluation.py`): objects score by key, lists by best-matching item, so a nearly right `liability_cap` is not just
+"wrong"; the run's `score` is their mean.
+
 - **ground_truth**: human-labelled expected values per document and field. A label is any JSON value except null; `""` means
   "not in this contract".
 - **`v_best_values`** (view): the best value per run and field (a PASS from the highest-priority RAG config, otherwise the first extracted value).
   Priority is read from the run's **snapshot**, so editing a pipeline never changes a past run's best values.
-- **`v_run_evaluation`** (view): best values next to the ground truth, with a simple exact-match flag: trimmed, case-insensitive text;
-  NULL when unlabelled; always false for an `error` outcome. A `""` label matches a `not_found` outcome. This view is the only place
-  matching is defined; the API returns its result with each best value, plus counts (`fields`, `labelled`, `matched`).
+- **`v_run_evaluation`** (view): best values next to the ground truth, with an exact-match flag: trimmed, case-insensitive text,
+  and objects and lists compared as JSON (key order and null-valued keys ignored); NULL when unlabelled; always false for an
+  `error` outcome. A `""` label matches a `not_found` outcome. The API returns it with each best value, plus `match_score`
+  (partial credit, `evaluation.py`) and counts (`fields`, `labelled`, `matched`, `score`).
 
 ### Rules
 

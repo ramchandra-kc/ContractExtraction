@@ -1450,7 +1450,7 @@
           "ground truth"
         ],
         "summary": "List Ground Truth",
-        "description": "Every enabled field of a field set (the default pipeline's by default) with the document's label, if any.",
+        "description": "Every enabled field of a field set (the default pipeline's by default) with the document's label, if\nany, plus the set's contract types and the document's labelled ones.",
         "operationId": "list_ground_truth",
         "parameters": [
           {
@@ -1505,13 +1505,88 @@
         }
       }
     },
+    "/api/v1/documents/{document_id}/ground-truth/contract-types": {
+      "put": {
+        "tags": [
+          "ground truth"
+        ],
+        "summary": "Set Contract Types",
+        "description": "Replace the document's labelled contract types (keys of the default pipeline's field set by default).",
+        "operationId": "set_contract_types",
+        "parameters": [
+          {
+            "name": "document_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid",
+              "title": "Document Id"
+            }
+          },
+          {
+            "name": "field_set_id",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Field Set Id"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ContractTypesSet"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Successful Response",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "title": "Response Set Contract Types"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Validation Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/documents/{document_id}/ground-truth/{field_id}": {
       "put": {
         "tags": [
           "ground truth"
         ],
         "summary": "Set Ground Truth",
-        "description": "Create or replace a label. 422 for null; use \"\" for a value that is not in the contract.",
+        "description": "Create or replace a label. 422 for null or a value that does not fit the field's type; use \"\" for a\nvalue that is not in the contract.",
         "operationId": "set_ground_truth",
         "parameters": [
           {
@@ -2040,6 +2115,18 @@
             ],
             "title": "Exact Match",
             "description": "Best value equals the ground truth; null when unlabelled"
+          },
+          "match_score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Match Score",
+            "description": "0-1 partial credit against the ground truth (objects and lists by key and item); null when unlabelled"
           }
         },
         "type": "object",
@@ -3016,6 +3103,24 @@
         ],
         "title": "ContractTypeOut"
       },
+      "ContractTypesSet": {
+        "properties": {
+          "contract_types": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Contract Types",
+            "description": "Contract type keys of the document; [] clears the label"
+          }
+        },
+        "additionalProperties": false,
+        "type": "object",
+        "required": [
+          "contract_types"
+        ],
+        "title": "ContractTypesSet"
+      },
       "DecompositionCreate": {
         "properties": {
           "name": {
@@ -3363,6 +3468,57 @@
           "matched": {
             "type": "integer",
             "title": "Matched"
+          },
+          "score": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Score",
+            "description": "Mean match_score of the labelled fields"
+          },
+          "skipped": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Skipped",
+            "description": "Fields with a value in the ground truth that the run did not extract (its contract type does not expect them)",
+            "default": []
+          },
+          "expected_contract_types": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Expected Contract Types",
+            "description": "The document's labelled contract types",
+            "default": []
+          },
+          "used_contract_types": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Used Contract Types",
+            "description": "Contract types whose fields the run extracted",
+            "default": []
+          },
+          "contract_types_match": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contract Types Match",
+            "description": "Used types equal the labelled ones; null when unlabelled or the run did not choose types"
           }
         },
         "type": "object",
@@ -3873,6 +4029,29 @@
             "type": "string",
             "title": "Value Type"
           },
+          "type_spec": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type Spec"
+          },
+          "value_schema": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Value Schema",
+            "description": "JSON Schema a label must fit ({} = any value)",
+            "default": {}
+          },
+          "priority": {
+            "type": "string",
+            "title": "Priority",
+            "default": "P2"
+          },
           "expected_value": {
             "title": "Expected Value",
             "description": "The label; null when unlabelled, \"\" when not in this contract"
@@ -3921,6 +4100,24 @@
             },
             "type": "array",
             "title": "Items"
+          },
+          "contract_types": {
+            "items": {
+              "$ref": "#/components/schemas/ContractTypeOut"
+            },
+            "type": "array",
+            "title": "Contract Types",
+            "description": "The field set's contract types",
+            "default": []
+          },
+          "expected_contract_types": {
+            "items": {
+              "type": "string"
+            },
+            "type": "array",
+            "title": "Expected Contract Types",
+            "description": "The document's labelled contract types (keys)",
+            "default": []
           }
         },
         "type": "object",

@@ -731,6 +731,17 @@ CREATE TABLE ground_truth (
 );
 CREATE INDEX ix_ground_truth_field_id ON ground_truth (field_id);
 
+-- Human-labelled contract types of a document, for measuring classification.
+CREATE TABLE document_contract_types (
+    document_id      uuid        NOT NULL,
+    contract_type_id uuid        NOT NULL,
+    created_at       timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT pk_document_contract_types PRIMARY KEY (document_id, contract_type_id),
+    CONSTRAINT fk_document_contract_types_document_id FOREIGN KEY (document_id) REFERENCES documents (id) ON DELETE CASCADE,
+    CONSTRAINT fk_document_contract_types_contract_type_id FOREIGN KEY (contract_type_id) REFERENCES contract_types (id) ON DELETE CASCADE
+);
+CREATE INDEX ix_document_contract_types_contract_type_id ON document_contract_types (contract_type_id);
+
 -- Best value per run and field: a PASS from the highest-priority RAG config, otherwise the first
 -- extracted value in priority order, otherwise the first outcome. Every field with an outcome appears once.
 -- Priority comes from the run's own snapshot, so later pipeline edits never change a past run's best values.
@@ -771,9 +782,10 @@ ORDER BY fr.run_id, fr.field_id,
          sp.position NULLS LAST,
          fr.created_at;
 
--- Best values next to the ground truth. exact_match compares trimmed, case-insensitive text
--- (NULL when no label exists; false for an error outcome, which must never count as correct).
--- A label of "" means "not in this contract" and matches a not_found outcome. Finer scoring is left to analysis code.
+-- Best values next to the ground truth. exact_match compares trimmed, case-insensitive text, and objects and
+-- lists as JSON (key order and null-valued keys ignored); NULL when no label exists, false for an error outcome,
+-- which must never count as correct. A label of "" means "not in this contract" and matches a not_found outcome.
+-- Partial credit for objects and lists is computed by the API (evaluation.py).
 CREATE VIEW v_run_evaluation AS
 SELECT
     b.run_id,
@@ -787,6 +799,8 @@ SELECT
     CASE
         WHEN gt.id IS NULL THEN NULL
         WHEN b.status = 'error' THEN false
+        WHEN jsonb_typeof(gt.expected_value) IN ('object', 'array')
+            THEN coalesce(jsonb_strip_nulls(b.value) = jsonb_strip_nulls(gt.expected_value), false)
         ELSE lower(btrim(coalesce(b.value #>> '{}', ''))) = lower(btrim(coalesce(gt.expected_value #>> '{}', '')))
     END              AS exact_match
 FROM v_best_values b

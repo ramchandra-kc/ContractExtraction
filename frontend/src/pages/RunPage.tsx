@@ -17,18 +17,42 @@ import { ResultsTable } from '@/features/ResultsTable'
 import { formatDateTime, formatSpan } from '@/lib/format'
 
 function EvaluationSummary({ evaluation }: { evaluation: EvaluationOut }) {
+  const types =
+    evaluation.contract_types_match == null ? null : (
+      <p className="text-sm">
+        Contract type: {evaluation.contract_types_match ? 'matches' : <strong>does not match</strong>} the label (
+        {evaluation.expected_contract_types?.join(', ')}
+        {!evaluation.contract_types_match && `; the run used ${evaluation.used_contract_types?.join(', ')}`}).
+      </p>
+    )
+  const skipped =
+    evaluation.skipped?.length > 0 ? (
+      <p className="text-sm">
+        Not extracted, though labelled with a value: {evaluation.skipped.join(', ')} — the contract type(s) of this run do
+        not expect them.
+      </p>
+    ) : null
   if (evaluation.labelled === 0) {
     return (
-      <p className="text-sm text-muted-foreground">
-        No ground truth for these fields yet. Use “Label…” to record the expected values.
-      </p>
+      <div className="space-y-1">
+        {types}
+        <p className="text-sm text-muted-foreground">
+          No ground truth for these fields yet. Use “Label…” to record the expected values.
+        </p>
+        {skipped}
+      </div>
     )
   }
   return (
-    <p className="text-sm">
-      Ground truth: <strong>{evaluation.matched}</strong> of {evaluation.labelled} labelled fields match
-      {evaluation.labelled < evaluation.fields && ` (${evaluation.fields - evaluation.labelled} unlabelled)`}.
-    </p>
+    <div className="space-y-1">
+      {types}
+      <p className="text-sm">
+        Ground truth: <strong>{evaluation.matched}</strong> of {evaluation.labelled} labelled fields match
+        {evaluation.labelled < evaluation.fields && ` (${evaluation.fields - evaluation.labelled} unlabelled)`}
+        {evaluation.score != null && `; partial-credit score ${Math.round(evaluation.score * 100)}%`}.
+      </p>
+      {skipped}
+    </div>
   )
 }
 

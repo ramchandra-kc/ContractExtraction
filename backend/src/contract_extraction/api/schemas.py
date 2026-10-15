@@ -248,6 +248,8 @@ class BestValue(BaseModel):
     field_result_id: uuid.UUID
     expected_value: Any = Field(None, description="Ground truth for the document and field; null when unlabelled")
     exact_match: bool | None = Field(None, description="Best value equals the ground truth; null when unlabelled")
+    match_score: float | None = Field(None, description="0-1 partial credit against the ground truth (objects and "
+                                                        "lists by key and item); null when unlabelled")
 
 
 class EvaluationOut(BaseModel):
@@ -256,6 +258,13 @@ class EvaluationOut(BaseModel):
     fields: int
     labelled: int
     matched: int
+    score: float | None = Field(None, description="Mean match_score of the labelled fields")
+    skipped: list[str] = Field([], description="Fields with a value in the ground truth that the run did not extract "
+                                               "(its contract type does not expect them)")
+    expected_contract_types: list[str] = Field([], description="The document's labelled contract types")
+    used_contract_types: list[str] = Field([], description="Contract types whose fields the run extracted")
+    contract_types_match: bool | None = Field(None, description="Used types equal the labelled ones; null when "
+                                                                "unlabelled or the run did not choose types")
 
 
 class FieldResultOut(BaseModel):
@@ -336,6 +345,9 @@ class GroundTruthItem(BaseModel):
     field_key: str
     field_label: str
     value_type: str
+    type_spec: str | None = None
+    value_schema: dict[str, Any] = Field({}, description="JSON Schema a label must fit ({} = any value)")
+    priority: str = "P2"
     expected_value: Any = Field(None, description='The label; null when unlabelled, "" when not in this contract')
     notes: str | None = None
     updated_at: datetime | None = None
@@ -344,6 +356,14 @@ class GroundTruthItem(BaseModel):
 class GroundTruthOut(BaseModel):
     field_set: FieldSetRef
     items: list[GroundTruthItem]
+    contract_types: list[ContractTypeOut] = Field([], description="The field set's contract types")
+    expected_contract_types: list[str] = Field([], description="The document's labelled contract types (keys)")
+
+
+class ContractTypesSet(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    contract_types: list[str] = Field(description="Contract type keys of the document; [] clears the label")
 
 
 class GroundTruthSet(BaseModel):

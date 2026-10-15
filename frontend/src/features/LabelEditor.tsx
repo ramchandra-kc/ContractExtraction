@@ -6,7 +6,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
-import { fromDraft, hintFor, isAbsent, type LabelDraft } from '@/lib/groundTruth'
+import { editorKind, fromDraft, hintFor, isAbsent, type LabelDraft } from '@/lib/groundTruth'
 
 /** A ground-truth label: "Not in this contract" for "", otherwise the value; a dash when unlabelled. */
 export function LabelValue({ value }: { value: unknown }) {
@@ -17,6 +17,8 @@ export function LabelValue({ value }: { value: unknown }) {
 
 interface Props {
   valueType: string
+  /** The field's JSON Schema, when known: shapes the input and its hint. */
+  valueSchema?: Record<string, unknown>
   initial: LabelDraft
   initialNotes?: string | null
   pending?: boolean
@@ -26,14 +28,15 @@ interface Props {
 }
 
 /** Form for one label: the value (shaped by value type) or "not in this contract", plus notes. */
-export function LabelEditor({ valueType, initial, initialNotes, pending, error, onSave, onCancel }: Props) {
+export function LabelEditor({ valueType, valueSchema, initial, initialNotes, pending, error, onSave, onCancel }: Props) {
   const id = useId()
+  const kind = editorKind(valueType, valueSchema)
   const [draft, setDraft] = useState(initial)
   const [notes, setNotes] = useState(initialNotes ?? '')
   const [invalid, setInvalid] = useState<string | null>(null)
 
   const save = () => {
-    const parsed = fromDraft(draft, valueType)
+    const parsed = fromDraft(draft, kind)
     if (!parsed.ok) return setInvalid(parsed.error)
     setInvalid(null)
     onSave(parsed.value, notes.trim())
@@ -57,11 +60,11 @@ export function LabelEditor({ valueType, initial, initialNotes, pending, error, 
           <Textarea
             id={`${id}-value`}
             value={draft.text}
-            rows={valueType === 'list' || valueType === 'json' ? 4 : 2}
-            className={valueType === 'json' ? 'font-mono text-xs' : undefined}
+            rows={kind === 'list' || kind === 'json' ? 4 : 2}
+            className={kind === 'json' ? 'font-mono text-xs' : undefined}
             onChange={(e) => setDraft({ ...draft, text: e.target.value })}
           />
-          <p className="text-xs text-muted-foreground">{hintFor(valueType)}</p>
+          <p className="text-xs break-all text-muted-foreground">{hintFor(kind, valueSchema)}</p>
         </div>
       )}
       <div className="space-y-1">

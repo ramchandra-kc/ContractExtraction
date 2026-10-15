@@ -1,7 +1,8 @@
 """Ground truth: human-labelled expected values per document and field.
 
-A label is any JSON value except null. The empty string means "not in this contract" and matches a
-not_found outcome in ``v_run_evaluation``. Matching itself lives only in that view.
+A label is any JSON value except null that fits the field's value schema. The empty string means "not
+in this contract" and matches a not_found outcome in ``v_run_evaluation`` (exact match); evaluation.py
+adds partial credit. A document can also be labelled with its contract types, to measure classification.
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ from sqlalchemy.dialects.postgresql import insert
 from sqlalchemy.orm import Session
 
 from ...core.errors import InvalidInput, NotFound
+from ...extraction.validation import conform
 from .. import models as m
 
 
@@ -55,6 +57,11 @@ class GroundTruthRepo:
             raise NotFound(f"Field {field_id} not found")
         if expected_value is None:
             raise InvalidInput('expected_value must not be null; use "" for a value that is not in this contract')
+        if expected_value != "":
+            expected_value, problems = conform(expected_value, field.value_schema or {})
+            if problems:
+                raise InvalidInput(f"The label does not fit the type of {field.key!r} ({field.type_spec}): "
+                                   + "; ".join(problems[:3]))
         stmt = insert(m.GroundTruth).values(document_id=document_id, field_id=field_id,
                                             expected_value=expected_value, notes=notes)
         self.session.execute(stmt.on_conflict_do_update(
@@ -66,6 +73,27 @@ class GroundTruthRepo:
             .execution_options(populate_existing=True)
         ).one()
         return field, label
+
+    def contract_types(self, document_id: uuid.UUID, field_set: m.FieldSet) -> list[m.ContractType]:
+        """The document's labelled contract types in the field set, in catalogue order."""
+        return list(self.session.scalars(
+            select(m.ContractType).join(m.DocumentContractType, m.DocumentContractType.contract_type_id == m.ContractType.id)
+            .where(m.DocumentContractType.document_id == document_id, m.ContractType.field_set_id == field_set.id)
+            .order_by(m.ContractType.position)))
+
+    def set_contract_types(self, document_id: uuid.UUID, field_set: m.FieldSet, keys: list[str]) -> list[m.ContractType]:
+        """Replace the document's labelled contract types in the field set ([] clears them)."""
+        known = {t.key: t for t in field_set.contract_types}
+        unknown = [k for k in keys if k not in known]
+        if unknown:
+            raise InvalidInput(f"Unknown contract type(s) {unknown}; known: {sorted(known)}")
+        self.session.execute(delete(m.DocumentContractType).where(
+            m.DocumentContractType.document_id == document_id,
+            m.DocumentContractType.contract_type_id.in_([t.id for t in known.values()])))
+        self.session.add_all(m.DocumentContractType(document_id=document_id, contract_type_id=known[k].id)
+                             for k in dict.fromkeys(keys))
+        self.session.flush()
+        return self.contract_types(document_id, field_set)
 
     def delete(self, document_id: uuid.UUID, field_id: uuid.UUID) -> None:
         result = self.session.execute(

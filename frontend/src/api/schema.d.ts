@@ -563,10 +563,31 @@ export interface paths {
         };
         /**
          * List Ground Truth
-         * @description Every enabled field of a field set (the default pipeline's by default) with the document's label, if any.
+         * @description Every enabled field of a field set (the default pipeline's by default) with the document's label, if
+         *     any, plus the set's contract types and the document's labelled ones.
          */
         get: operations["list_ground_truth"];
         put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/v1/documents/{document_id}/ground-truth/contract-types": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        /**
+         * Set Contract Types
+         * @description Replace the document's labelled contract types (keys of the default pipeline's field set by default).
+         */
+        put: operations["set_contract_types"];
         post?: never;
         delete?: never;
         options?: never;
@@ -584,7 +605,8 @@ export interface paths {
         get?: never;
         /**
          * Set Ground Truth
-         * @description Create or replace a label. 422 for null; use "" for a value that is not in the contract.
+         * @description Create or replace a label. 422 for null or a value that does not fit the field's type; use "" for a
+         *     value that is not in the contract.
          */
         put: operations["set_ground_truth"];
         post?: never;
@@ -756,6 +778,11 @@ export interface components {
              * @description Best value equals the ground truth; null when unlabelled
              */
             exact_match?: boolean | null;
+            /**
+             * Match Score
+             * @description 0-1 partial credit against the ground truth (objects and lists by key and item); null when unlabelled
+             */
+            match_score?: number | null;
         };
         /** Body_upload_document */
         Body_upload_document: {
@@ -1085,6 +1112,14 @@ export interface components {
              */
             field_keys: string[];
         };
+        /** ContractTypesSet */
+        ContractTypesSet: {
+            /**
+             * Contract Types
+             * @description Contract type keys of the document; [] clears the label
+             */
+            contract_types: string[];
+        };
         /** DecompositionCreate */
         DecompositionCreate: {
             /**
@@ -1227,6 +1262,34 @@ export interface components {
             labelled: number;
             /** Matched */
             matched: number;
+            /**
+             * Score
+             * @description Mean match_score of the labelled fields
+             */
+            score?: number | null;
+            /**
+             * Skipped
+             * @description Fields with a value in the ground truth that the run did not extract (its contract type does not expect them)
+             * @default []
+             */
+            skipped: string[];
+            /**
+             * Expected Contract Types
+             * @description The document's labelled contract types
+             * @default []
+             */
+            expected_contract_types: string[];
+            /**
+             * Used Contract Types
+             * @description Contract types whose fields the run extracted
+             * @default []
+             */
+            used_contract_types: string[];
+            /**
+             * Contract Types Match
+             * @description Used types equal the labelled ones; null when unlabelled or the run did not choose types
+             */
+            contract_types_match?: boolean | null;
         };
         /** EventOut */
         EventOut: {
@@ -1419,6 +1482,21 @@ export interface components {
             field_label: string;
             /** Value Type */
             value_type: string;
+            /** Type Spec */
+            type_spec?: string | null;
+            /**
+             * Value Schema
+             * @description JSON Schema a label must fit ({} = any value)
+             * @default {}
+             */
+            value_schema: {
+                [key: string]: unknown;
+            };
+            /**
+             * Priority
+             * @default P2
+             */
+            priority: string;
             /**
              * Expected Value
              * @description The label; null when unlabelled, "" when not in this contract
@@ -1434,6 +1512,18 @@ export interface components {
             field_set: components["schemas"]["FieldSetRef"];
             /** Items */
             items: components["schemas"]["GroundTruthItem"][];
+            /**
+             * Contract Types
+             * @description The field set's contract types
+             * @default []
+             */
+            contract_types: components["schemas"]["ContractTypeOut"][];
+            /**
+             * Expected Contract Types
+             * @description The document's labelled contract types (keys)
+             * @default []
+             */
+            expected_contract_types: string[];
         };
         /** GroundTruthSet */
         GroundTruthSet: {
@@ -3280,6 +3370,43 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["GroundTruthOut"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    set_contract_types: {
+        parameters: {
+            query?: {
+                field_set_id?: string | null;
+            };
+            header?: never;
+            path: {
+                document_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["ContractTypesSet"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string[];
                 };
             };
             /** @description Validation Error */

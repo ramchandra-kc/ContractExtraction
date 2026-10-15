@@ -93,6 +93,68 @@ describe('GroundTruthCard', () => {
     expect(puts).toHaveLength(0)
   })
 
+  it('labels the contract type and then lists only its fields', async () => {
+    const typed = (expected: string[]) => ({
+      ...groundTruth,
+      items: [
+        ...groundTruth.items,
+        { ...groundTruth.items[1], field_id: 'nda-field', field_key: 'nda_direction', field_label: 'NDA direction' },
+      ],
+      contract_types: [
+        { key: 'msa', label: 'MSA', description: 'Master agreement', is_fallback: false, field_keys: ['payment_terms'] },
+        { key: 'nda', label: 'NDA', description: 'Confidentiality', is_fallback: false, field_keys: ['nda_direction'] },
+        { key: 'other', label: 'Other', description: 'Fallback', is_fallback: true, field_keys: [] },
+      ],
+      expected_contract_types: expected,
+    })
+    let expected: string[] = []
+    const sent: unknown[] = []
+    server.use(
+      http.get('*/api/v1/documents/:id/ground-truth', () => HttpResponse.json(typed(expected))),
+      http.put('*/api/v1/documents/:id/ground-truth/contract-types', async ({ request }) => {
+        const body = (await request.json()) as { contract_types: string[] }
+        sent.push(body)
+        expected = body.contract_types
+        return HttpResponse.json(expected)
+      }),
+    )
+    render()
+    const types = await screen.findByRole('region', { name: 'Contract type labels' })
+    expect(within(types).queryByRole('button', { name: 'Other' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Edit NDA direction' })).toBeInTheDocument()
+
+    await userEvent.click(within(types).getByRole('button', { name: 'MSA' }))
+    await waitFor(() => expect(sent).toEqual([{ contract_types: ['msa'] }]))
+    await waitFor(() => expect(within(types).getByRole('button', { name: 'MSA' })).toHaveAttribute('aria-pressed', 'true'))
+    expect(screen.queryByRole('button', { name: 'Edit NDA direction' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Edit Payment terms' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Edit Customer name' })).toBeInTheDocument()
+
+    await userEvent.click(screen.getByRole('switch', { name: /Show all 4 fields/ }))
+    expect(screen.getByRole('button', { name: 'Edit NDA direction' })).toBeInTheDocument()
+  })
+
+  it('saves a structured label as JSON shaped by the field schema', async () => {
+    const { puts } = labelApi()
+    const schema = { type: 'object', properties: { due_period: { type: ['string', 'null'] }, currency: {} } }
+    server.use(
+      http.get('*/api/v1/documents/:id/ground-truth', () =>
+        HttpResponse.json({
+          ...groundTruth,
+          items: groundTruth.items.map((i) =>
+            i.field_id === FIELD_PAYMENT ? { ...i, value_type: 'json', type_spec: 'object: due_period, currency', value_schema: schema } : i,
+          ),
+        }),
+      ),
+    )
+    render()
+    await userEvent.click(await screen.findByRole('button', { name: 'Edit Payment terms' }))
+    expect(screen.getByText(/JSON shaped like \{"due_period":"…","currency":null\}/)).toBeInTheDocument()
+    await userEvent.type(screen.getByLabelText('Expected value'), '{{"due_period": "P30D"}')
+    await userEvent.click(screen.getByRole('button', { name: 'Save' }))
+    await waitFor(() => expect(puts).toEqual([{ fieldId: FIELD_PAYMENT, body: { expected_value: { due_period: 'P30D' }, notes: null } }]))
+  })
+
   it('clears a label', async () => {
     const { deletes } = labelApi()
     render()
@@ -116,13 +178,24 @@ describe('labels on the run page', () => {
   it('shows the expected value, the match and the summary', async () => {
     render()
     expect(await screen.findByText(/labelled fields match/)).toHaveTextContent(
-      'Ground truth: 1 of 1 labelled fields match (1 unlabelled).',
+      'Ground truth: 1 of 1 labelled fields match (1 unlabelled); partial-credit score 100%.',
     )
     const customer = screen.getByRole('button', { name: 'Customer name' }).closest('tr')!
     expect(within(customer).getByText('acme gmbh')).toBeInTheDocument()
     expect(within(customer).getByLabelText('matches')).toBeInTheDocument()
     const payment = screen.getByRole('button', { name: 'Payment terms' }).closest('tr')!
     expect(within(payment).getByLabelText('not labelled')).toBeInTheDocument()
+  })
+
+  it('shows the contract type check and the fields its type skipped', async () => {
+    render({
+      ...results,
+      evaluation: { ...results.evaluation, expected_contract_types: ['msa', 'sow'], used_contract_types: ['msa'],
+                    contract_types_match: false, skipped: ['sow_number'] },
+    })
+    expect(await screen.findByText(/Contract type:/)).toHaveTextContent(
+      'Contract type: does not match the label (msa, sow; the run used msa).')
+    expect(screen.getByText(/Not extracted, though labelled/)).toHaveTextContent('sow_number')
   })
 
   it('labels a field the run did not find as not in this contract', async () => {
@@ -140,7 +213,7 @@ describe('labels on the run page', () => {
     const unlabelled = {
       ...results,
       best: results.best.map((b) => ({ ...b, expected_value: null, exact_match: null })),
-      evaluation: { fields: 2, labelled: 0, matched: 0 },
+      evaluation: { ...results.evaluation, labelled: 0, matched: 0, score: null },
     }
     render(unlabelled)
     expect(await screen.findByText(/No ground truth for these fields yet/)).toBeInTheDocument()

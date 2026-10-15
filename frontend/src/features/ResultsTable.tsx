@@ -8,7 +8,7 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } f
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
 import { LabelEditor, LabelValue } from '@/features/LabelEditor'
-import { draftFromOutcome, toDraft } from '@/lib/groundTruth'
+import { draftFromOutcome, editorKind, toDraft } from '@/lib/groundTruth'
 
 function Match({ match }: { match: boolean | null | undefined }) {
   if (match === true) return <span className="text-emerald-700" aria-label="matches">✓</span>
@@ -92,7 +92,9 @@ function LabelDialog({ best, documentId, onClose }: { best: BestValue; documentI
   const setLabel = useSetGroundTruth(documentId)
   // Notes are not part of run results; read them so saving keeps them.
   const labels = useGroundTruth(documentId)
-  const notes = labels.data?.items.find((i) => i.field_id === best.field_id)?.notes
+  const item = labels.data?.items.find((i) => i.field_id === best.field_id)
+  const notes = item?.notes
+  const kind = editorKind(best.value_type, item?.value_schema)
   const labelled = best.expected_value !== null && best.expected_value !== undefined
   return (
     <Dialog open onOpenChange={(open) => !open && onClose()}>
@@ -108,11 +110,8 @@ function LabelDialog({ best, documentId, onClose }: { best: BestValue; documentI
         ) : (
           <LabelEditor
             valueType={best.value_type}
-            initial={
-              labelled
-                ? toDraft(best.expected_value, best.value_type)
-                : draftFromOutcome(best.status, best.value, best.value_type)
-            }
+            valueSchema={item?.value_schema}
+            initial={labelled ? toDraft(best.expected_value, kind) : draftFromOutcome(best.status, best.value, kind)}
             initialNotes={notes}
             pending={setLabel.isPending}
             error={setLabel.error}

@@ -135,7 +135,10 @@ export const results: RunResults = {
       exact_match: null,
     },
   ],
-  evaluation: { fields: 2, labelled: 1, matched: 1 },
+  evaluation: {
+    fields: 2, labelled: 1, matched: 1, score: 1, skipped: [], expected_contract_types: [], used_contract_types: [],
+    contract_types_match: null,
+  },
   results: [
     {
       id: RESULT_A,
@@ -187,6 +190,8 @@ export const groundTruth: GroundTruthOut = {
       field_key: 'customer_name',
       field_label: 'Customer name',
       value_type: 'text',
+      value_schema: {},
+      priority: 'P1',
       expected_value: 'acme gmbh',
       notes: 'from the preamble',
       updated_at: '2026-10-14T11:00:00Z',
@@ -196,6 +201,8 @@ export const groundTruth: GroundTruthOut = {
       field_key: 'payment_terms',
       field_label: 'Payment terms',
       value_type: 'text',
+      value_schema: {},
+      priority: 'P1',
       expected_value: null,
       notes: null,
       updated_at: null,
@@ -205,11 +212,15 @@ export const groundTruth: GroundTruthOut = {
       field_key: 'parties',
       field_label: 'Parties',
       value_type: 'list',
+      value_schema: {},
+      priority: 'P1',
       expected_value: '',
       notes: null,
       updated_at: '2026-10-14T11:00:00Z',
     },
   ],
+  contract_types: [],
+  expected_contract_types: [],
 }
 
 const MODEL_CHAT = 'aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaa1'
