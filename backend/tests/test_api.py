@@ -39,7 +39,7 @@ def _upload(client, path, name="contract.pdf"):
 
 
 def _run_options(**extra):
-    return {"fields": ["customer_name", "payment_terms"], "retrievals": ["RAG01", "RAG07"], **extra}
+    return {"fields": ["title", "payment_terms"], "retrievals": ["RAG01", "RAG07"], **extra}
 
 
 def _process(db, storage, harness):
@@ -93,7 +93,7 @@ def test_run_lifecycle_and_results(client, db, storage, harness):
     assert created.status_code == 202, created.text
     run = created.json()
     assert created.headers["Location"] == f"/api/v1/runs/{run['id']}"
-    assert run["state"] == "queued" and run["pipeline"] == "default" and run["options"]["fields"] == ["customer_name", "payment_terms"]
+    assert run["state"] == "queued" and run["pipeline"] == "default" and run["options"]["fields"] == ["title", "payment_terms"]
 
     conflict = client.post(f"/api/v1/documents/{doc['id']}/runs", json=_run_options())
     assert conflict.status_code == 409 and conflict.headers["content-type"] == PROBLEM
@@ -109,15 +109,15 @@ def test_run_lifecycle_and_results(client, db, storage, harness):
 
     results = client.get(f"/api/v1/runs/{run['id']}/results").json()
     best = {b["field_key"]: b for b in results["best"]}
-    assert best["customer_name"]["value"] == "Acme Pty Ltd" and best["customer_name"]["verdict"] == "PASS"
+    assert best["title"]["value"] == "Acme Pty Ltd" and best["title"]["verdict"] == "PASS"
     assert [r["retrieval_config"] for r in results["results"]] == ["RAG01", "RAG01", "RAG07", "RAG07"]
 
-    original = client.get(f"/api/v1/runs/{run['id']}/results/{best['customer_name']['field_result_id']}").json()
+    original = client.get(f"/api/v1/runs/{run['id']}/results/{best['title']['field_result_id']}").json()
     assert original["hits"] and original["hits"][0]["text"] and original["reused_from"] is None
     assert [c["purpose"] for c in original["llm_calls"]] == ["extraction", "judge"]
     assert original["llm_calls"][0]["user_prompt"].endswith(">>>") and original["judgements"][0]["verdict"] == "PASS"
 
-    reused_id = next(r["id"] for r in results["results"] if r["retrieval_config"] == "RAG07" and r["field_key"] == "customer_name")
+    reused_id = next(r["id"] for r in results["results"] if r["retrieval_config"] == "RAG07" and r["field_key"] == "title")
     reused = client.get(f"/api/v1/runs/{run['id']}/results/{reused_id}").json()
     assert reused["reused_from"] == original["id"] and len(reused["llm_calls"]) == 2
 
@@ -185,7 +185,7 @@ def test_config_endpoints(client):
     pipelines = client.get("/api/v1/config/pipelines").json()
     default = next(p for p in pipelines if p["is_default"])
     assert [r["name"] for r in default["retrievals"]] == [f"RAG0{i}" for i in range(1, 8)]
-    assert len(default["fields"]) == 12 and default["judge"]["temperature"] == "0.100"
+    assert len(default["fields"]) == 286 and default["judge"]["temperature"] == "0.100"
     providers = {p["key"]: p for p in client.get("/api/v1/config/providers").json()}
     assert providers["openrouter"]["api_key_env"] == "OPENROUTER_API_KEY" and providers["ollama-local"]["models"]
 
@@ -241,10 +241,10 @@ def test_ground_truth_and_evaluation(client, db, storage, harness):
     base = f"/api/v1/documents/{doc['id']}/ground-truth"
     listed = client.get(base).json()
     assert (listed["field_set"]["name"], listed["field_set"]["version"]) == ("contract_fields", 1)
-    assert len(listed["items"]) == 12 and all(i["expected_value"] is None and i["updated_at"] is None for i in listed["items"])
+    assert len(listed["items"]) == 286 and all(i["expected_value"] is None and i["updated_at"] is None for i in listed["items"])
     fields = {i["field_key"]: i["field_id"] for i in listed["items"]}
 
-    put = client.put(f"{base}/{fields['customer_name']}", json={"expected_value": "acme pty ltd", "notes": "preamble"})
+    put = client.put(f"{base}/{fields['title']}", json={"expected_value": "acme pty ltd", "notes": "preamble"})
     assert put.status_code == 200, put.text
     assert put.json()["expected_value"] == "acme pty ltd" and put.json()["notes"] == "preamble" and put.json()["updated_at"]
     assert client.put(f"{base}/{fields['payment_terms']}", json={"expected_value": "60 days"}).status_code == 200
@@ -253,7 +253,7 @@ def test_ground_truth_and_evaluation(client, db, storage, harness):
     assert null.status_code == 422 and null.headers["content-type"] == PROBLEM and "must not be null" in null.json()["detail"]
     assert client.put(f"{base}/{fields['payment_terms']}", json={"notes": "x"}).status_code == 422
     assert client.put(f"{base}/{doc['id']}", json={"expected_value": "x"}).status_code == 404
-    unknown_doc = f"/api/v1/documents/{fields['customer_name']}/ground-truth"
+    unknown_doc = f"/api/v1/documents/{fields['title']}/ground-truth"
     assert client.get(unknown_doc).status_code == 404
 
     client.post(f"/api/v1/documents/{doc['id']}/runs", json=_run_options())
@@ -261,8 +261,8 @@ def test_ground_truth_and_evaluation(client, db, storage, harness):
     run_id = client.get("/api/v1/runs", params={"document_id": doc["id"]}).json()["items"][0]["id"]
     results = client.get(f"/api/v1/runs/{run_id}/results").json()
     best = {b["field_key"]: b for b in results["best"]}
-    assert best["customer_name"]["field_id"] == fields["customer_name"]
-    assert (best["customer_name"]["expected_value"], best["customer_name"]["exact_match"]) == ("acme pty ltd", True)
+    assert best["title"]["field_id"] == fields["title"]
+    assert (best["title"]["expected_value"], best["title"]["exact_match"]) == ("acme pty ltd", True)
     assert (best["payment_terms"]["expected_value"], best["payment_terms"]["exact_match"]) == ("60 days", False)
     assert results["evaluation"] == {"fields": 2, "labelled": 2, "matched": 1}
 

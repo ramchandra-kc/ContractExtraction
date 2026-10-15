@@ -248,7 +248,11 @@ export const catalog: Catalog = {
       version: 1,
       description: null,
       fields: [
-        { id: FIELD_CUSTOMER, key: 'customer_name', label: 'Customer name', description: null, value_type: 'text', user_prompt: 'Find the customer.', position: 1, is_enabled: true, queries: ['customer', 'buyer'] },
+        {
+          id: FIELD_CUSTOMER, key: 'customer_name', label: 'Customer name', description: null, value_type: 'text',
+          type_spec: null, value_schema: {}, priority: 'P1', user_prompt: 'Find the customer.', position: 1, is_enabled: true,
+          queries: ['customer', 'buyer'],
+        },
       ],
     },
   ],

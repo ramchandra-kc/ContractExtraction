@@ -5,7 +5,7 @@ It uses no database fixtures. It leaves one document (always the same PDF, cache
 dev database. A narrow run (one field, one RAG config, judge on) takes about 30 s with native Ollama.
 
 CE_GATEWAY_URL (http://127.0.0.1:8080), CE_FRONTEND_URL (http://localhost:5173), CE_SMOKE_TIMEOUT (600 s),
-CE_SMOKE_FIELD (customer_name) and CE_SMOKE_RETRIEVAL (RAG02) override the defaults.
+CE_SMOKE_FIELD (parties) and CE_SMOKE_RETRIEVAL (RAG02) override the defaults.
 """
 
 from __future__ import annotations
@@ -28,7 +28,7 @@ pytestmark = [
 GATEWAY = os.getenv("CE_GATEWAY_URL", "http://127.0.0.1:8080").rstrip("/")
 FRONTEND = os.getenv("CE_FRONTEND_URL", "http://localhost:5173").rstrip("/")
 TIMEOUT = float(os.getenv("CE_SMOKE_TIMEOUT", "600"))
-FIELD = os.getenv("CE_SMOKE_FIELD", "customer_name")
+FIELD = os.getenv("CE_SMOKE_FIELD", "parties")
 RETRIEVAL = os.getenv("CE_SMOKE_RETRIEVAL", "RAG02")
 # make_pdf writes a new trailer id every time, so the PDF is generated once and reused: the same bytes are the same document.
 PDF = Path(__file__).resolve().parents[2] / ".dev" / "smoke.pdf"

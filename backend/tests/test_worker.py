@@ -48,7 +48,7 @@ def test_inline_runs_are_never_claimable(db, storage, tmp_path):
     from contract_extraction.ingestion import register_file
     from contract_extraction.pipeline.options import RunOptions
 
-    options = RunOptions(fields=["customer_name"], retrievals=["RAG01"])
+    options = RunOptions(fields=["title"], retrievals=["RAG01"])
     doc_id, _, _ = register_file(db, storage, h.settings, h.pdf)
     with db.session() as s:
         run = RunRepo(s).enqueue(doc_id, h.pipeline(options), options=options.model_dump(exclude_defaults=True), start_as="cli")

@@ -65,7 +65,11 @@ class ConfigRepo:
 
     def resolve_pipeline(self, name: str | None = None) -> d.PipelineConfig:
         """The named pipeline config (or the default one) with everything it references, validated."""
-        q = select(m.PipelineConfig)
+        field_set = selectinload(m.PipelineConfig.field_set)
+        q = select(m.PipelineConfig).options(
+            field_set.selectinload(m.FieldSet.fields).selectinload(m.Field.queries),
+            field_set.selectinload(m.FieldSet.contract_types).selectinload(m.ContractType.members),
+        )
         q = q.where(m.PipelineConfig.name == name) if name else q.where(m.PipelineConfig.is_default)
         row = self.session.scalars(q).one_or_none()
         if row is None:
@@ -79,6 +83,11 @@ class ConfigRepo:
         fields = tuple(_field(f) for f in row.field_set.fields if f.is_enabled)
         if not fields:
             raise InvalidConfig(f"Field set {row.field_set.name!r} v{row.field_set.version} has no enabled fields")
+        enabled = {f.key for f in fields}
+        types = tuple(_contract_type(t, enabled) for t in row.field_set.contract_types)
+        if types and not any(t.is_fallback for t in types):
+            raise InvalidConfig(f"Field set {row.field_set.name!r} v{row.field_set.version} has contract types "
+                                "but no fallback type")
         if not row.retrievals:
             raise InvalidConfig(f"Pipeline config {row.name!r} has no retrieval configs")
 
@@ -87,7 +96,8 @@ class ConfigRepo:
             name=row.name,
             decomposition=_decomposition(row.decomposition_config),
             index=_index(row.index_config),
-            field_set=d.FieldSet(id=row.field_set.id, name=row.field_set.name, version=row.field_set.version, fields=fields),
+            field_set=d.FieldSet(id=row.field_set.id, name=row.field_set.name, version=row.field_set.version,
+                                 fields=fields, contract_types=types),
             extraction_profile=_profile(row.extraction_profile, ModelKind.CHAT, "extraction"),
             extraction_prompt=_prompt(row.extraction_prompt, PromptRole.EXTRACTION_SYSTEM),
             judge_enabled=row.judge_enabled,
@@ -154,4 +164,15 @@ def _retrieval(row: m.RetrievalConfig) -> d.RetrievalConfig:
 
 def _field(row: m.Field) -> d.Field:
     return d.Field(id=row.id, key=row.key, label=row.label, description=row.description, value_type=row.value_type,
+                   type_spec=row.type_spec, value_schema=row.value_schema, priority=row.priority,
                    user_prompt=row.user_prompt, position=row.position, queries=tuple(q.query for q in row.queries))
+
+
+def _contract_type(row: m.ContractType, enabled: set[str]) -> d.ContractType:
+    """A contract type with its enabled fields (a disabled field is skipped for every type)."""
+    members = tuple(d.ContractTypeField(key=mb.field.key, group=mb.field_group, priority=mb.priority)
+                    for mb in row.members if mb.field.key in enabled)
+    if not members:
+        raise InvalidConfig(f"Contract type {row.key!r} has no enabled fields")
+    return d.ContractType(id=row.id, key=row.key, label=row.label, description=row.description,
+                          is_fallback=row.is_fallback, fields=members)

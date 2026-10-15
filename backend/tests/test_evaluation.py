@@ -39,23 +39,23 @@ def test_labels_cover_every_enabled_field_of_the_default_field_set(session, docu
     fs = repo.field_set()
     assert (fs.name, fs.version) == ("contract_fields", 1)
     labels = repo.labels(document.id, fs)
-    assert len(labels) == 12 and all(gt is None for _, gt in labels)
+    assert len(labels) == 286 and all(gt is None for _, gt in labels)
     assert [f.position for f, _ in labels] == sorted(f.position for f, _ in labels)
 
 
 def test_set_creates_then_replaces(session, document):
-    repo, field = GroundTruthRepo(session), _field(session, "customer_name")
+    repo, field = GroundTruthRepo(session), _field(session, "title")
     _, first = repo.set(document.id, field.id, "Acme Pty Ltd", "from the preamble")
     _, second = repo.set(document.id, field.id, ["Acme", "Contoso"])
     assert second.id == first.id and second.expected_value == ["Acme", "Contoso"] and second.notes is None
     labelled = {f.key: gt for f, gt in repo.labels(document.id, repo.field_set()) if gt}
-    assert list(labelled) == ["customer_name"]
+    assert list(labelled) == ["title"]
 
 
 def test_set_rejects_null_and_unknown_fields(session, document):
     repo = GroundTruthRepo(session)
     with pytest.raises(InvalidInput, match="must not be null"):
-        repo.set(document.id, _field(session, "customer_name").id, None)
+        repo.set(document.id, _field(session, "title").id, None)
     with pytest.raises(NotFound):
         repo.set(document.id, document.id, "x")
     with pytest.raises(NotFound):
@@ -63,7 +63,7 @@ def test_set_rejects_null_and_unknown_fields(session, document):
 
 
 def test_delete_and_cascade(session, document):
-    repo, field = GroundTruthRepo(session), _field(session, "customer_name")
+    repo, field = GroundTruthRepo(session), _field(session, "title")
     repo.set(document.id, field.id, "Acme")
     repo.delete(document.id, field.id)
     with pytest.raises(NotFound):
@@ -83,7 +83,7 @@ def test_best_values_rank_by_the_run_snapshot_not_the_live_pipeline(db, storage,
     run_id = h.enqueue()  # RAG01, RAG02, RAG07: every config gets the same answers, so priority decides
     assert h.execute(run_id) == RunState.SUCCEEDED
     before = _best(session, run_id)
-    assert before["customer_name"][0] == before["payment_terms"][0] == "RAG01"
+    assert before["title"][0] == before["payment_terms"][0] == "RAG01"
 
     default = select(m.PipelineConfig.id).where(m.PipelineConfig.is_default).scalar_subquery()
     pcr = m.PipelineConfigRetrieval
@@ -101,15 +101,15 @@ def test_exact_match(db, storage, tmp_path, session):
     doc_id = RunRepo(session).get(run_id).document_id
     repo = GroundTruthRepo(session)
 
-    assert _best(session, run_id)["customer_name"][2:] == (None, None), "unlabelled"
-    repo.set(doc_id, _field(session, "customer_name").id, "  acme pty LTD ")
+    assert _best(session, run_id)["title"][2:] == (None, None), "unlabelled"
+    repo.set(doc_id, _field(session, "title").id, "  acme pty LTD ")
     repo.set(doc_id, _field(session, "payment_terms").id, "")  # not in this contract; the run found nothing
     best = _best(session, run_id)
-    assert best["customer_name"][3] is True
+    assert best["title"][3] is True
     assert best["payment_terms"][1:] == (None, "", True)
 
-    repo.set(doc_id, _field(session, "customer_name").id, "Contoso Limited")
-    assert _best(session, run_id)["customer_name"][3] is False
+    repo.set(doc_id, _field(session, "title").id, "Contoso Limited")
+    assert _best(session, run_id)["title"][3] is False
 
 
 def test_an_error_outcome_never_matches(db, storage, tmp_path, session):

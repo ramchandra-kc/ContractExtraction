@@ -8,6 +8,8 @@
     contract-extraction cancel RUN_ID         cancel a queued run / stop a running one before its next field
     contract-extraction api                   serve the HTTP API (127.0.0.1:8000, behind the gateway)
     contract-extraction openapi [-o PATH]     write the API's OpenAPI document (no database needed)
+    contract-extraction gen-catalogue [--with-queries]
+                                              regenerate docker/seed_catalogue.sql from docs/contract_types_and_fields.md
     contract-extraction providers [set KEY --base-url URL | --enable | --disable]
                                               list LLM providers / switch e.g. native ↔ Docker Ollama
 """
@@ -25,7 +27,7 @@ from sqlalchemy import func, select
 
 from .core.errors import AppError
 from .core.logging import setup_logging
-from .core.settings import load_settings
+from .core.settings import BACKEND_ROOT, load_settings
 from .domain.enums import RunKind, RunState
 from .persistence import models as m
 from .persistence.db import Database
@@ -95,7 +97,7 @@ def _short(value: object, width: int = 70) -> str:
 
 def run(pdf: Path, pipeline_name: str | None, kind: str, options: RunOptions, queue: bool = False) -> int:
     from .ingestion import register_file
-    from .pipeline.executor import RunExecutor
+    from .pipeline.executor import RunExecutor, select_fields
     from .pipeline.options import narrow
     from .worker import default_worker_id
 
@@ -113,8 +115,9 @@ def run(pdf: Path, pipeline_name: str | None, kind: str, options: RunOptions, qu
             # Inline runs start in the same transaction, so a worker can never claim them.
             run_id = RunRepo(s).enqueue(document_id, pipeline, RunKind(kind), options.model_dump(exclude_defaults=True),
                                         start_as=None if queue else worker_id).id
-        calls = len(pipeline.field_set.fields) * len(pipeline.retrievals) * (2 if pipeline.judge_enabled else 1)
-        print(f"run {run_id}: {code}, {len(pipeline.field_set.fields)} fields x {len(pipeline.retrievals)} RAG configs "
+        n_fields = len(select_fields(pipeline, options, ()))
+        calls = n_fields * len(pipeline.retrievals) * (2 if pipeline.judge_enabled else 1)
+        print(f"run {run_id}: {code}, {n_fields} fields x {len(pipeline.retrievals)} RAG configs "
               f"(up to {calls} LLM calls)", flush=True)
         if queue:
             print("queued; a worker will run it. Follow it with: contract-extraction status " + str(run_id))
@@ -253,6 +256,57 @@ def providers(key: str | None, base_url: str | None, enabled: bool | None) -> in
         db.dispose()
 
 
+def gen_catalogue(doc: Path, out: Path, queries_path: Path, with_queries: bool, per_field: int) -> int:
+    """Parse the catalogue document and write the seed SQL; optionally generate missing search queries."""
+    from . import catalogue
+
+    try:
+        cat = catalogue.load(doc)
+        queries = catalogue.load_queries(queries_path)
+    except (OSError, ValueError, AppError) as exc:
+        print(f"FAIL: {exc}", file=sys.stderr)
+        return 1
+    stale = sorted(set(queries) - set(cat.fields))
+    if stale:
+        print(f"warning: {queries_path.name} has queries for unknown fields (ignored): {', '.join(stale)}", file=sys.stderr)
+
+    if with_queries:
+        from .providers import factory
+
+        settings = load_settings()
+        setup_logging(settings.log_level)
+        db = Database(settings.database)
+        try:
+            with db.session() as s:
+                profile = ConfigRepo(s).resolve_pipeline().extraction_profile
+        except AppError as exc:
+            print(f"FAIL: cannot resolve the default pipeline's extraction model: {exc}", file=sys.stderr)
+            return 1
+        finally:
+            db.dispose()
+        chat = factory.chat_client(profile, settings)
+        missing = [f for key, f in cat.fields.items() if not queries.get(key)]
+        print(f"generating queries for {len(missing)} fields with {profile.model.name}", flush=True)
+        for i, f in enumerate(missing, start=1):
+            try:
+                result = chat.complete(catalogue.QUERY_SYSTEM, catalogue.query_prompt(f, per_field), profile)
+            except ProviderError as exc:
+                print(f"FAIL at {f.key}: {exc} (queries so far are saved)", file=sys.stderr)
+                catalogue.save_queries(queries_path, queries)
+                return 1
+            got = catalogue.parse_queries(result.text, per_field)
+            if got:
+                queries[f.key] = got
+            print(f"  [{i}/{len(missing)}] {f.key}: {len(got)} queries", flush=True)
+            catalogue.save_queries(queries_path, queries)  # after each field, so an interruption loses nothing
+
+    out.write_text(catalogue.to_sql(cat, queries), encoding="utf-8")
+    with_generated = sum(1 for k in cat.fields if queries.get(k))
+    print(f"wrote {out}: {len(cat.types)} contract types ({cat.fallback.label} is the fallback), {len(cat.fields)} fields "
+          f"({with_generated} with generated queries, {len(cat.fields) - with_generated} with label + description)")
+    return 0
+
+
 def openapi_json() -> str:
     """The API's OpenAPI document as stable, pretty JSON (the frontend's generated types are built from it)."""
     from .api.app import create_app
@@ -304,6 +358,16 @@ def main(argv: list[str] | None = None) -> int:
     p_openapi = sub.add_parser("openapi", help="write the API's OpenAPI document (stdout by default)")
     p_openapi.add_argument("-o", "--output", type=Path, help="file to write, e.g. ../frontend/openapi.json")
 
+    repo_root = BACKEND_ROOT.parent
+    p_cat = sub.add_parser("gen-catalogue", help="regenerate docker/seed_catalogue.sql from the contract types document")
+    p_cat.add_argument("--doc", type=Path, default=repo_root / "docs" / "contract_types_and_fields.md")
+    p_cat.add_argument("-o", "--output", type=Path, default=repo_root / "docker" / "seed_catalogue.sql")
+    p_cat.add_argument("--queries", type=Path, default=repo_root / "docs" / "contract_field_queries.json",
+                       help="search queries per field (JSON); fields without any use their label and description")
+    p_cat.add_argument("--with-queries", action="store_true",
+                       help="generate missing queries with the default pipeline's extraction model (needs the database and LLM)")
+    p_cat.add_argument("--per-field", type=int, default=8, help="queries to generate per field")
+
     p_prov = sub.add_parser("providers", help="list LLM providers, or change one with 'providers set'")
     prov_sub = p_prov.add_subparsers(dest="action")
     p_set = prov_sub.add_parser("set", help="change a provider's URL or enable/disable it")
@@ -341,6 +405,8 @@ def main(argv: list[str] | None = None) -> int:
         return 0
     if args.command == "openapi":
         return openapi(args.output)
+    if args.command == "gen-catalogue":
+        return gen_catalogue(args.doc, args.output, args.queries, args.with_queries, args.per_field)
     return 2
 
 

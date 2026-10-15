@@ -10,11 +10,20 @@ from __future__ import annotations
 import uuid
 from datetime import datetime
 from decimal import Decimal
-from typing import Annotated
+from typing import Annotated, Any
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
-from ..domain.enums import DecompositionMethod, Distance, ModelKind, PromptRole, TextFormat, ValueType, VectorStore
+from ..domain.enums import (
+    DecompositionMethod,
+    Distance,
+    ModelKind,
+    Priority,
+    PromptRole,
+    TextFormat,
+    ValueType,
+    VectorStore,
+)
 
 Name = Annotated[str, Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$",
                             description="Letters, digits, '.', '_' and '-'; cannot be changed later")]
@@ -119,7 +128,10 @@ class CatalogField(BaseModel):
     label: str
     description: str | None
     value_type: str
-    user_prompt: str
+    type_spec: str | None = Field(description="Catalogue type, e.g. 'object: rate, cap' (null: not from the catalogue)")
+    value_schema: dict[str, Any] = Field(description="JSON Schema of the value ({} = any)")
+    priority: Priority
+    user_prompt: str | None = Field(description="Hand-written instructions; null uses the generic template")
     position: int
     is_enabled: bool
     queries: list[str]
@@ -302,7 +314,8 @@ class FieldCreate(_In):
     label: str = Field(min_length=1)
     description: str | None = None
     value_type: ValueType = ValueType.TEXT
-    user_prompt: str = Field(min_length=1)
+    priority: Priority = Priority.P2
+    user_prompt: str | None = Field(None, min_length=1, description="Omit or null to use the generic template")
     is_enabled: bool = True
     queries: list[str] = Field([], description="Expansion queries in order; blank ones are dropped")
 
@@ -311,7 +324,8 @@ class FieldUpdate(_In):
     label: str = Field(None, min_length=1)  # type: ignore[assignment]
     description: str | None = None
     value_type: ValueType = None  # type: ignore[assignment]
-    user_prompt: str = Field(None, min_length=1)  # type: ignore[assignment]
+    priority: Priority = None  # type: ignore[assignment]
+    user_prompt: str | None = Field(None, min_length=1, description="null switches back to the generic template")
     is_enabled: bool = None  # type: ignore[assignment]
     queries: list[str] = None  # type: ignore[assignment]
 

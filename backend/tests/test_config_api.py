@@ -64,7 +64,10 @@ def test_catalog_lists_everything(client):
     assert default["extraction_prompt"] == {"name": "extraction_system", "version": 1}
     assert {"extraction_system", "judge_system"} <= {p["name"] for p in cat["prompts"] if p["is_active"]}
     fields = cat["field_sets"][0]["fields"]
-    assert len(fields) == 12 and all(f["queries"] for f in fields)
+    assert len(fields) == 286 and all(f["queries"] and f["value_schema"] for f in fields)
+    fee = next(f for f in fields if f["key"] == "termination_for_convenience")
+    assert (fee["type_spec"], fee["priority"], fee["user_prompt"]) == (
+        "object: available_to, party_refs, notice_period, termination_fee", "P1", None)
     assert any(mm["kind"] == "embedding" and mm["embedding_dimension"] for p in cat["providers"] for mm in p["models"])
     assert {r["name"] for r in cat["retrievals"]} >= {"RAG01", "RAG07"}
 
@@ -126,22 +129,32 @@ def test_prompt_versions(client):
 
 def test_fields(client):
     fields = catalog(client)["field_sets"][0]["fields"]
-    customer = next(f for f in fields if f["key"] == "customer_name")
-    r = client.patch(f"{C}/fields/{customer['id']}", json={"label": "Client", "queries": ["who is the client", "  ", "buyer"]})
-    assert r.status_code == 200 and r.json()["label"] == "Client" and r.json()["queries"] == ["who is the client", "buyer"]
-    problem(client.patch(f"{C}/fields/{customer['id']}", json={"label": None}), 422)
-    problem(client.patch(f"{C}/fields/{customer['id']}", json={"key": "client"}), 422)
+    title = next(f for f in fields if f["key"] == "title")
+    r = client.patch(f"{C}/fields/{title['id']}", json={"label": "Name", "queries": ["agreement title", "  ", "heading"]})
+    assert r.status_code == 200 and r.json()["label"] == "Name" and r.json()["queries"] == ["agreement title", "heading"]
+    problem(client.patch(f"{C}/fields/{title['id']}", json={"label": None}), 422)
+    problem(client.patch(f"{C}/fields/{title['id']}", json={"key": "name"}), 422)
+    r = client.patch(f"{C}/fields/{title['id']}", json={"user_prompt": "Find the title.", "priority": "P1"})
+    assert (r.json()["user_prompt"], r.json()["priority"]) == ("Find the title.", "P1")
+    assert client.patch(f"{C}/fields/{title['id']}", json={"user_prompt": None}).json()["user_prompt"] is None
+    problem(client.patch(f"{C}/fields/{title['id']}", json={"user_prompt": ""}), 422)
 
     r = client.post(f"{C}/field-sets/contract_fields/1/fields",
-                    json={"key": "notice_period", "label": "Notice period", "user_prompt": "Find the notice period.",
-                          "queries": ["notice period"]})
-    assert r.status_code == 201 and r.json()["position"] == 13
+                    json={"key": "notice_period", "label": "Notice period", "queries": ["notice period"]})
+    assert r.status_code == 201 and r.json()["position"] == 287 and r.json()["user_prompt"] is None
+    assert (r.json()["priority"], r.json()["value_schema"]) == ("P2", {})
     problem(client.post(f"{C}/field-sets/contract_fields/1/fields", json={"key": "Bad Key", "label": "x", "user_prompt": "x"}), 422)
 
-    enabled = [f["id"] for f in catalog(client)["field_sets"][0]["fields"] if f["is_enabled"]]
-    for fid in enabled[:-1]:
-        assert client.patch(f"{C}/fields/{fid}", json={"is_enabled": False}).status_code == 200
-    problem(client.patch(f"{C}/fields/{enabled[-1]}", json={"is_enabled": False}), 422, "default pipeline")
+
+def test_disabling_the_last_field_of_a_type_is_refused(client, session):
+    from sqlalchemy import select, update
+
+    from contract_extraction.persistence import models as m
+
+    other = select(m.ContractTypeField.field_id).join(m.ContractType).where(m.ContractType.key == "other")
+    session.execute(update(m.Field).where(m.Field.id.in_(other), m.Field.key != "payment_terms").values(is_enabled=False))
+    last = next(f for f in catalog(client)["field_sets"][0]["fields"] if f["key"] == "payment_terms")
+    problem(client.patch(f"{C}/fields/{last['id']}", json={"is_enabled": False}), 422, "'other' has no enabled fields")
 
 
 def test_profiles_and_models(client):

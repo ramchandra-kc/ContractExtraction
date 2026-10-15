@@ -53,6 +53,15 @@ class ValueType(StrEnum):
     JSON = "json"
 
 
+class Priority(StrEnum):
+    """Field priority from the catalogue: P1 = direct financial, time or exit exposure; P3 = informational.
+    Values sort by importance (P1 < P2 < P3)."""
+
+    P1 = "P1"
+    P2 = "P2"
+    P3 = "P3"
+
+
 class IndexStatus(StrEnum):
     BUILDING = "building"
     READY = "ready"

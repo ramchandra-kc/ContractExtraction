@@ -26,12 +26,12 @@ from contract_extraction.providers.base import ChatResult, ProviderError
 from contract_extraction.providers.memory import MemoryStore
 from helpers import BODY, HashEmbedder, make_pdf
 
-FIELDS = ["customer_name", "payment_terms"]
-_KEY = re.compile(r"extract the following fields:\s*\n\s*([a-z_]+)")
+FIELDS = ["title", "payment_terms"]
+_KEY = re.compile(r"extract the following fields?:\s*\n\s*([a-z_]+)")
 
 
 class ScriptedChat:
-    """Extraction: finds Acme for customer_name, nothing else. Judge: PASS when the answer names Acme."""
+    """Extraction: finds Acme for title, nothing else. Judge: PASS when the answer names Acme."""
 
     def __init__(self, judge: bool, fail_on: str | None = None, on_call=None):
         self.judge, self.fail_on, self.on_call = judge, fail_on, on_call
@@ -49,7 +49,7 @@ class ScriptedChat:
             key = _KEY.search(user).group(1)
             if key == self.fail_on:
                 raise ProviderError("model crashed")
-            text = '{"%s": "%s"}' % (key, "Acme Pty Ltd" if key == "customer_name" else "")
+            text = '{"%s": "%s"}' % (key, "Acme Pty Ltd" if key == "title" else "")
         return ChatResult(text=text, latency_ms=12, prompt_tokens=200, completion_tokens=10, params={"model": profile.model.name})
 
 
@@ -105,14 +105,27 @@ def test_full_run_records_everything(db, storage, tmp_path):
     assert run.started_at and run.finished_at and run.decomposition_id and run.vector_index_id
     assert results == 6 and judgements == 6 and hits == 18
     assert calls == 4, "2 fields x (extraction + judge); RAG02 and RAG07 reuse RAG01's answers"
-    assert best["customer_name"] == ("Acme Pty Ltd", "RAG01", "PASS")
+    assert best["title"] == ("Acme Pty Ltd", "RAG01", "PASS")
     assert best["payment_terms"] == (None, "RAG01", "FAIL")
     assert any("Stage extracting" in e for e in events) and any("Extraction finished" in e for e in events)
+    assert "Extracting 2 fields x 3 RAG configs" in events
 
     with db.session() as s:
         call = s.scalars(select(m.LlmCall).where(m.LlmCall.run_id == run_id, m.LlmCall.purpose == "extraction")).first()
         assert call.user_prompt.endswith(">>>") and call.system_prompt and call.prompt_tokens == 200
         assert call.status == "ok" and call.provider_key == "ollama-local"
+
+
+def test_without_chosen_fields_the_fallback_type_is_extracted(db, storage, tmp_path):
+    h = Harness(db, storage, tmp_path, "fallback")
+    run_id = h.enqueue(RunOptions(retrievals=["RAG01"], judge=False))
+    assert h.execute(run_id) == RunState.SUCCEEDED
+    run, best, results, _, _, _, events = _summary(db, run_id)
+    assert results == 44 and run.progress_total == 44, "Other = Core + Commercial + Risk & Liability"
+    assert "Extracting 44 fields x 1 RAG configs" in events
+    assert {"title", "payment_terms", "liability_cap"} <= set(best) and "nda_direction" not in best
+    keys = [_KEY.search(c).group(1) for c in h.extractor.calls]
+    assert keys[0] == "document_status", "P1 fields first, then field-set order"
 
 
 def test_reuse_can_be_turned_off(db, storage, tmp_path):
@@ -121,7 +134,7 @@ def test_reuse_can_be_turned_off(db, storage, tmp_path):
     assert h.execute(run_id) == RunState.SUCCEEDED
     _, best, results, calls, judgements, _, _ = _summary(db, run_id)
     assert calls == 12 and results == 6 and judgements == 6
-    assert best["customer_name"][2] == "PASS"
+    assert best["title"][2] == "PASS"
 
 
 def test_parallel_judge_matches_sequential(db, storage, tmp_path):
@@ -131,7 +144,7 @@ def test_parallel_judge_matches_sequential(db, storage, tmp_path):
     run, best, results, calls, judgements, _, events = _summary(db, run_id)
     assert (run.progress_done, run.progress_total) == (6, 6)
     assert (results, calls, judgements) == (6, 4, 6)
-    assert best["customer_name"] == ("Acme Pty Ltd", "RAG01", "PASS")
+    assert best["title"] == ("Acme Pty Ltd", "RAG01", "PASS")
 
 
 def test_extraction_error_does_not_stop_the_run(db, storage, tmp_path):
@@ -151,7 +164,7 @@ def test_judge_off(db, storage, tmp_path):
     assert h.execute(run_id) == RunState.SUCCEEDED
     run, best, results, calls, judgements, _, _ = _summary(db, run_id)
     assert (results, calls, judgements) == (2, 2, 0) and not h.judge.calls
-    assert best["customer_name"] == ("Acme Pty Ltd", "RAG01", None)
+    assert best["title"] == ("Acme Pty Ltd", "RAG01", None)
 
 
 def test_cancellation_between_fields(db, storage, tmp_path):
@@ -183,21 +196,21 @@ def test_run_uses_its_snapshot_not_live_config(db, storage, tmp_path):
     h = Harness(db, storage, tmp_path, "snapshot")
     run_id = h.enqueue()
     with db.session() as s:
-        original = s.scalar(select(m.Field.user_prompt).where(m.Field.key == "customer_name"))
-        s.execute(update(m.Field).where(m.Field.key == "customer_name").values(user_prompt="CHANGED AFTER ENQUEUE"))
+        original = s.scalar(select(m.Field.user_prompt).where(m.Field.key == "title"))
+        s.execute(update(m.Field).where(m.Field.key == "title").values(user_prompt="CHANGED AFTER ENQUEUE"))
     try:
         assert h.execute(run_id) == RunState.SUCCEEDED
         assert not any(c.startswith("CHANGED") for c in h.extractor.calls)
     finally:
         with db.session() as s:
-            s.execute(update(m.Field).where(m.Field.key == "customer_name").values(user_prompt=original))
+            s.execute(update(m.Field).where(m.Field.key == "title").values(user_prompt=original))
 
 
 def test_only_queued_runs_execute(db, storage, tmp_path):
     from contract_extraction.core.errors import Conflict
 
     h = Harness(db, storage, tmp_path, "twice")
-    run_id = h.enqueue(RunOptions(fields=["customer_name"], retrievals=["RAG01"]))
+    run_id = h.enqueue(RunOptions(fields=["title"], retrievals=["RAG01"]))
     h.execute(run_id)
     with pytest.raises(Conflict):
         h.execute(run_id)

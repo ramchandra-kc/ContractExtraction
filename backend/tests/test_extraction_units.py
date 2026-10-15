@@ -84,6 +84,47 @@ def test_prompts():
     assert judge_prompt(FIELD, context, '{"payment_terms": "30 days"}').startswith("Question: Extract Payment Terms\nContext: ")
 
 
+CATALOGUE_FIELD = Field(id=uuid.uuid4(), key="late_payment_interest", label="Late payment interest",
+                        description="Interest or fees on overdue amounts", value_type="json",
+                        type_spec="object: rate, basis", position=2,
+                        value_schema={"type": "object", "properties": {"rate": {}, "basis": {}}})
+
+
+def test_generic_prompt_for_catalogue_fields():
+    prompt = extraction_prompt(CATALOGUE_FIELD, "ctx")
+    assert prompt.startswith("Task: From the given contract text chunks, extract the following field:\nlate_payment_interest\n")
+    assert "Interest or fees on overdue amounts" in prompt
+    assert "An object with the keys rate, basis; null for keys the text does not state." in prompt
+    assert 'JSON Format:\n{"late_payment_interest": {"rate": null, "basis": null}}\nInput Chunks:<<<\nctx\n>>>' in prompt
+    assert judge_prompt(CATALOGUE_FIELD, "ctx", "{}").startswith(
+        "Question: Extract Late payment interest (Interest or fees on overdue amounts)\n")
+
+
+@pytest.mark.parametrize("spec, expected", [
+    ("enum: mutual, one_way", '"mutual | one_way"'),
+    ("list of: name, rate", '[{"name": null, "rate": null}]'),
+    ("strings", '[""]'),
+    ("bool", "true"),
+    ("money", '{"amount": 0, "currency": ""}'),
+])
+def test_generic_prompt_json_shapes(spec, expected):
+    from contract_extraction.catalogue import value_schema
+
+    f = CATALOGUE_FIELD.model_copy(update={"type_spec": spec, "value_schema": value_schema(spec)})
+    assert f'{{"late_payment_interest": {expected}}}' in extraction_prompt(f, "")
+
+
+def test_fields_for_types(session):
+    fs = ConfigRepo(session).resolve_pipeline().field_set
+    nda = fs.fields_for_types(["nda"])
+    assert len(nda) == 42 and nda[0].key == "document_status", "P1 first"
+    union = fs.fields_for_types(["msa", "sow"])
+    assert len({f.key for f in union}) == len(union) == 66 + 10, "SOW adds only its own fields to the MSA's"
+    assert [f.key for f in fs.fields_for_types([])] == [f.key for f in fs.fields_for_types(["other"])]
+    with pytest.raises(ValueError, match="Unknown contract type"):
+        fs.fields_for_types(["lease"])
+
+
 @pytest.mark.parametrize("answer, expected", [
     ('{"payment_terms": "30 days"}', (FieldResultStatus.EXTRACTED, "30 days")),
     ('Sure!\n```json\n{"payment_terms": "30 days"}\n```', (FieldResultStatus.EXTRACTED, "30 days")),
@@ -115,8 +156,8 @@ def test_parse_verdict():
 
 def test_narrow_options(session):
     p = ConfigRepo(session).resolve_pipeline()
-    n = narrow(p, RunOptions(fields=["payment_terms", "customer_name"], retrievals=["RAG07", "RAG02"], judge=False))
-    assert [f.key for f in n.field_set.fields] == ["customer_name", "payment_terms"], "pipeline order is kept"
+    n = narrow(p, RunOptions(fields=["payment_terms", "title"], retrievals=["RAG07", "RAG02"], judge=False))
+    assert [f.key for f in n.field_set.fields] == ["title", "payment_terms"], "pipeline order is kept"
     assert [r.name for r in n.retrievals] == ["RAG02", "RAG07"], "priority order is kept"
     assert not n.judge_enabled and n.judge_profile is None
     assert n.snapshot()["judge_enabled"] is False

@@ -165,8 +165,7 @@ class RunExecutor:
     def _run(self, run_id: uuid.UUID, pipeline: PipelineConfig, options: RunOptions, kind: RunKind,
              document_id: uuid.UUID) -> RunState:
         try:
-            self.event(run_id, f"Run started: {kind}, pipeline {pipeline.name}, "
-                               f"{len(pipeline.field_set.fields)} fields x {len(pipeline.retrievals)} RAG configs")
+            self.event(run_id, f"Run started: {kind}, pipeline {pipeline.name}, {len(pipeline.retrievals)} RAG configs")
             self._stage(run_id, RunStage.DECOMPOSING)
             dec = ensure_decomposition(self.db, self.storage, document_id, pipeline.decomposition, options.redecompose)
             self.event(run_id, f"Decomposition {'reused' if dec.reused else 'created'}: {dec.page_count} pages",
@@ -184,8 +183,11 @@ class RunExecutor:
 
             if kind != RunKind.DECOMPOSE:
                 self.check_continue(run_id)
+                fields = select_fields(pipeline, options, ())
                 self._stage(run_id, RunStage.EXTRACTING)
-                summary = _Extraction(self, run_id, pipeline, options, store, idx.collection_name).run()
+                self.event(run_id, f"Extracting {len(fields)} fields x {len(pipeline.retrievals)} RAG configs",
+                           stage=RunStage.EXTRACTING, fields=[f.key for f in fields])
+                summary = _Extraction(self, run_id, pipeline, options, fields, store, idx.collection_name).run()
                 self.event(run_id, "Extraction finished", stage=RunStage.EXTRACTING, **summary)
             return self._finish(run_id, RunState.SUCCEEDED)
         except RunLost:
@@ -217,14 +219,23 @@ class _Answer:
         return self.judgement.result() if isinstance(self.judgement, Future) else self.judgement
 
 
+def select_fields(pipeline: PipelineConfig, options: RunOptions, type_keys: tuple[str, ...]) -> tuple[Field, ...]:
+    """Fields a run extracts: the ones chosen in the run options, else those of the given contract types
+    (the fallback type when none are given)."""
+    if options.fields is not None:
+        return pipeline.field_set.fields  # already narrowed to the chosen fields
+    return pipeline.field_set.fields_for_types(type_keys)
+
+
 class _Extraction:
     def __init__(self, ex: RunExecutor, run_id: uuid.UUID, pipeline: PipelineConfig, options: RunOptions,
-                 store: VectorStore, collection: str):
+                 fields: tuple[Field, ...], store: VectorStore, collection: str):
         self.ex, self.db, self.run_id, self.p, self.options = ex, ex.db, run_id, pipeline, options
+        self.fields = fields
         self.retriever = Retriever(store, collection, ex.providers.embedder(pipeline.index.embedding_model))
         self.chat = ex.providers.chat(pipeline.extraction_profile)
         self.judge_chat = ex.providers.chat(pipeline.judge_profile) if pipeline.judge_enabled and pipeline.judge_profile else None
-        self.total = len(pipeline.field_set.fields) * len(pipeline.retrievals)
+        self.total = len(fields) * len(pipeline.retrievals)
         self._lock = threading.Lock()
         self.done = self.calls = self.reused = 0
 
@@ -259,7 +270,7 @@ class _Extraction:
         answers: dict[tuple, _Answer] = {}
         try:
             for rc in self.p.retrievals:
-                for f in self.p.field_set.fields:
+                for f in self.fields:
                     self.ex.check_continue(self.run_id)
                     hits = self.retriever.retrieve(f, rc)
                     key = (f.id, tuple(h.chunk_id for h in hits))

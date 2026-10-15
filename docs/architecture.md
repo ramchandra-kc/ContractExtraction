@@ -80,7 +80,7 @@ Docker (docker/docker-compose.yml): Postgres, Qdrant, Ollama (optional profile)
 | **gateway** | routing `/api/*` → backend; request IDs; access logs; timeouts; upload size limit; CORS; aggregated `/health`; authentication (last phase) | backend API | contain business logic; access the database or storage |
 | **backend API** | REST resources (documents, runs, results, pages, system); validation; enqueueing runs; reading results | Postgres, file storage | be reached by the browser directly; run pipeline work inside a request |
 | **backend worker** | claims queued runs; heartbeats; cancellation; pipeline stages; writes results | Postgres, Qdrant, LLM provider, file storage | expose HTTP |
-| **docker** | one compose file for Postgres, Qdrant and (optionally) Ollama; the Postgres image with `schema.sql` and `seed.sql` baked in | none | contain application code |
+| **docker** | one compose file for Postgres, Qdrant and (optionally) Ollama; the Postgres image with `schema.sql`, `seed.sql` and `seed_catalogue.sql` baked in | none | contain application code |
 
 ### Dependency rules
 
@@ -134,6 +134,15 @@ LLM providers and models, generation settings, system prompts, decomposition and
 RAG configurations (`RAG01…RAG07`: top-k, threshold, expansion on or off), and fields with their prompts and expansion
 queries. A **pipeline config** bundles them into a recipe. Every run stores the fully resolved recipe as a snapshot.
 
+**Fields and contract types** come from [`contract_types_and_fields.md`](contract_types_and_fields.md), the source of truth:
+18 contract types (NDA, MSA, SOW, SaaS, …) plus a fallback type **Other**, and 286 fields. Each field has a type (e.g.
+`duration`, `object: rate, cap`), turned into a JSON Schema, a priority (P1 = direct financial, time or exit exposure …
+P3 = informational) and a description. Shared groups (Core, Commercial, Risk & Liability, Restrictive Covenants, IP & Data)
+are defined once; each type adds its own fields. `contract-extraction gen-catalogue` parses the document and writes
+`docker/seed_catalogue.sql`. A run extracts the fields of the document's contract type(s), P1 first, or exactly the fields
+chosen in its options. Catalogue fields have no hand-written prompt: the extraction prompt is built from the field's
+description and value type.
+
 **Retrieval** (per field and RAG config):
 1. Use the field's expansion queries when `query_expansion` is on, otherwise the field label.
 2. Fetch `per_query_top` hits per query and keep those scoring at least `score_threshold`.
@@ -180,8 +189,9 @@ stateDiagram-v2
 
 ## 7. Data model
 
-The full definition is in [`docker/schema.sql`](../docker/schema.sql): 26 tables and 2 views in four groups. The default
-configuration is in [`docker/seed.sql`](../docker/seed.sql).
+The full definition is in [`docker/schema.sql`](../docker/schema.sql): 28 tables and 2 views in four groups. The default
+configuration is in [`docker/seed.sql`](../docker/seed.sql); the fields and contract types in the generated
+[`docker/seed_catalogue.sql`](../docker/seed_catalogue.sql).
 
 ### 7.1 Model & RAG configuration
 
@@ -192,6 +202,9 @@ erDiagram
     llm_models ||--o{ index_configs : "embedding model"
     field_sets ||--o{ fields : contains
     fields ||--o{ field_queries : "expansion queries"
+    field_sets ||--o{ contract_types : defines
+    contract_types ||--o{ contract_type_fields : expects
+    fields ||--o{ contract_type_fields : ""
     pipeline_configs }o--|| decomposition_configs : uses
     pipeline_configs }o--|| index_configs : uses
     pipeline_configs }o--|| field_sets : extracts
@@ -210,7 +223,8 @@ erDiagram
 | `decomposition_configs` | PDF → text settings (method, format, OCR, header/footer removal, optional captioning profile) |
 | `index_configs` | chunk size and overlap, embedding model, vector store, distance metric |
 | `retrieval_configs` | RAG settings: top-k, score threshold, query expansion, per-query top, minimum score |
-| `field_sets`, `fields`, `field_queries` | versioned field sets; each field has a key, label, value type, user prompt and expansion queries |
+| `field_sets`, `fields`, `field_queries` | versioned field sets; each field has a key, label, value type, catalogue type and JSON Schema, priority, optional hand-written prompt, and expansion queries |
+| `contract_types`, `contract_type_fields` | the contract types of a field set (one is the fallback) and the fields each expects, with their group and per-type priority |
 | `pipeline_configs`, `pipeline_config_retrievals` | the recipe a run executes, with its RAG configs in priority order; one is the default |
 
 **Editing** (API `/config/*` and the UI's Configuration page). Runs execute from their snapshot, so edits only affect runs
@@ -358,7 +372,7 @@ See [ADR 0002](adr/0002-custom-gateway.md) and [`gateway/README.md`](../gateway/
   The `ollama-local` provider's `base_url` picks one: `contract-extraction providers set ollama-local --base-url …`.
   Runs record the URL they used in their snapshot.
 - **Docker:** `docker/docker-compose.yml` starts Postgres and Qdrant, plus Ollama with `--profile ollama`.
-  The Postgres image is built from `docker/Dockerfile` with `schema.sql` and `seed.sql` baked in. They run on an empty volume,
+  The Postgres image is built from `docker/Dockerfile` with `schema.sql`, `seed.sql` and the generated `seed_catalogue.sql` baked in. They run on an empty volume,
   so `down -v`, then `up --build`, gives a clean database.
 - **Local processes:** backend API, one or more backend workers, gateway and frontend. `scripts/dev.sh` starts the
   Docker services and all of them with one command, in the foreground. It runs the installed entry points directly

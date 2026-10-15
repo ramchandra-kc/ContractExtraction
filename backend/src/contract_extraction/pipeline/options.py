@@ -3,6 +3,8 @@ so the snapshot always describes exactly what the run does."""
 
 from __future__ import annotations
 
+import difflib
+
 from pydantic import BaseModel, ConfigDict
 
 from ..core.errors import InvalidInput
@@ -29,7 +31,10 @@ def narrow(pipeline: PipelineConfig, options: RunOptions) -> PipelineConfig:
         known = {f.key: f for f in pipeline.field_set.fields}
         unknown = [k for k in options.fields if k not in known]
         if unknown:
-            raise InvalidInput(f"Unknown field(s) {unknown}; known: {sorted(known)}")
+            close = sorted({c for k in unknown for c in difflib.get_close_matches(k, known, n=3)})
+            hint = f"; did you mean {close}?" if close else ""
+            raise InvalidInput(f"Unknown field(s) {unknown} in field set {pipeline.field_set.name!r} "
+                               f"({len(known)} fields){hint}")
         keep = [f for f in pipeline.field_set.fields if f.key in set(options.fields)]
         update["field_set"] = pipeline.field_set.model_copy(update={"fields": tuple(keep)})
     if options.retrievals is not None:

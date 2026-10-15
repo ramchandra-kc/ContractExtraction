@@ -818,8 +818,24 @@ export interface components {
             description: string | null;
             /** Value Type */
             value_type: string;
-            /** User Prompt */
-            user_prompt: string;
+            /**
+             * Type Spec
+             * @description Catalogue type, e.g. 'object: rate, cap' (null: not from the catalogue)
+             */
+            type_spec: string | null;
+            /**
+             * Value Schema
+             * @description JSON Schema of the value ({} = any)
+             */
+            value_schema: {
+                [key: string]: unknown;
+            };
+            priority: components["schemas"]["Priority"];
+            /**
+             * User Prompt
+             * @description Hand-written instructions; null uses the generic template
+             */
+            user_prompt: string | null;
             /** Position */
             position: number;
             /** Is Enabled */
@@ -1185,8 +1201,13 @@ export interface components {
             description?: string | null;
             /** @default text */
             value_type: components["schemas"]["ValueType"];
-            /** User Prompt */
-            user_prompt: string;
+            /** @default P2 */
+            priority: components["schemas"]["Priority"];
+            /**
+             * User Prompt
+             * @description Omit or null to use the generic template
+             */
+            user_prompt?: string | null;
             /**
              * Is Enabled
              * @default true
@@ -1303,8 +1324,12 @@ export interface components {
             /** Description */
             description?: string | null;
             value_type?: components["schemas"]["ValueType"];
-            /** User Prompt */
-            user_prompt?: string;
+            priority?: components["schemas"]["Priority"];
+            /**
+             * User Prompt
+             * @description null switches back to the generic template
+             */
+            user_prompt?: string | null;
             /** Is Enabled */
             is_enabled?: boolean;
             /** Queries */
@@ -1665,6 +1690,13 @@ export interface components {
             /** Retrievals */
             retrievals?: string[];
         };
+        /**
+         * Priority
+         * @description Field priority from the catalogue: P1 = direct financial, time or exit exposure; P3 = informational.
+         *     Values sort by importance (P1 < P2 < P3).
+         * @enum {string}
+         */
+        Priority: "P1" | "P2" | "P3";
         /** ProfileCreate */
         ProfileCreate: {
             /**

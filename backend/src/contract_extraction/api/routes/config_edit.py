@@ -103,7 +103,8 @@ def _retrieval(row: m.RetrievalConfig) -> CatalogRetrieval:
 
 def _field(row: m.Field) -> CatalogField:
     return CatalogField(id=row.id, key=row.key, label=row.label, description=row.description,
-                        value_type=row.value_type, user_prompt=row.user_prompt, position=row.position,
+                        value_type=row.value_type, type_spec=row.type_spec, value_schema=row.value_schema,
+                        priority=row.priority, user_prompt=row.user_prompt, position=row.position,
                         is_enabled=row.is_enabled, queries=[q.query for q in row.queries])
 
 

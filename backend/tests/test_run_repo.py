@@ -23,7 +23,8 @@ def test_enqueue_stores_snapshot(session, document):
     assert run.state == RunState.QUEUED
     assert run.pipeline_config_id == pipeline.id
     assert run.config_snapshot["name"] == "default"
-    assert len(run.config_snapshot["field_set"]["fields"]) == 12
+    assert len(run.config_snapshot["field_set"]["fields"]) == 286
+    assert len(run.config_snapshot["field_set"]["contract_types"]) == 19
     assert run.options == {"note": "x"}
     assert RunRepo(session).list_for_document(document.id) == [run]
 

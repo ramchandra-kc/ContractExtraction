@@ -207,7 +207,7 @@ CREATE TABLE retrieval_configs (
     CONSTRAINT ck_retrieval_configs_scores CHECK (score_threshold BETWEEN 0 AND 1 AND min_score BETWEEN 0 AND 1)
 );
 
--- A versioned set of fields to extract (e.g. contract_fields v1).
+-- A versioned set of fields to extract (e.g. contract_fields v1), with the contract types that use them.
 CREATE TABLE field_sets (
     id          uuid        NOT NULL DEFAULT gen_random_uuid(),
     name        text        NOT NULL,
@@ -227,8 +227,15 @@ CREATE TABLE fields (
     label        text        NOT NULL,
     description  text,
     value_type   text        NOT NULL DEFAULT 'text',
-    -- Extraction instructions; the retrieved context is appended at run time.
-    user_prompt  text        NOT NULL,
+    -- Type as written in docs/contract_types_and_fields.md, e.g. 'duration' or 'object: rate, cap' (NULL: not from the catalogue).
+    type_spec    text,
+    -- JSON Schema of the value: shown to the model and used to check answers ('{}' accepts anything).
+    value_schema jsonb       NOT NULL DEFAULT '{}',
+    -- Highest priority among the contract types using the field (P1 = direct financial, time or exit exposure).
+    priority     text        NOT NULL DEFAULT 'P2',
+    -- Hand-written extraction instructions; NULL uses the generic template built from the description and
+    -- value schema. The retrieved context is appended at run time.
+    user_prompt  text,
     position     integer     NOT NULL,
     is_enabled   boolean     NOT NULL DEFAULT true,
     created_at   timestamptz NOT NULL DEFAULT now(),
@@ -238,7 +245,10 @@ CREATE TABLE fields (
     CONSTRAINT uq_fields_field_set_id_key UNIQUE (field_set_id, key),
     CONSTRAINT uq_fields_field_set_id_position UNIQUE (field_set_id, position),
     CONSTRAINT ck_fields_key CHECK (key ~ '^[a-z][a-z0-9_]*$'),
-    CONSTRAINT ck_fields_value_type CHECK (value_type IN ('text', 'date', 'number', 'money', 'list', 'boolean', 'json'))
+    CONSTRAINT ck_fields_value_type CHECK (value_type IN ('text', 'date', 'number', 'money', 'list', 'boolean', 'json')),
+    CONSTRAINT ck_fields_priority CHECK (priority IN ('P1', 'P2', 'P3')),
+    CONSTRAINT ck_fields_value_schema CHECK (jsonb_typeof(value_schema) = 'object'),
+    CONSTRAINT ck_fields_user_prompt CHECK (user_prompt IS NULL OR length(trim(user_prompt)) > 0)
 );
 
 -- Semantic-search queries used for a field when query expansion is on.
@@ -252,6 +262,46 @@ CREATE TABLE field_queries (
     CONSTRAINT uq_field_queries_field_id_position UNIQUE (field_id, position),
     CONSTRAINT ck_field_queries_query CHECK (length(trim(query)) > 0)
 );
+
+-- Contract types of a field set (NDA, MSA, SOW, ...). A run extracts the fields of the detected types;
+-- the fallback type covers contracts that match none of them.
+CREATE TABLE contract_types (
+    id           uuid        NOT NULL DEFAULT gen_random_uuid(),
+    field_set_id uuid        NOT NULL,
+    key          text        NOT NULL,
+    label        text        NOT NULL,
+    -- How to recognise the type; shown to the classifier.
+    description  text        NOT NULL,
+    is_fallback  boolean     NOT NULL DEFAULT false,
+    position     integer     NOT NULL,
+    created_at   timestamptz NOT NULL DEFAULT now(),
+    updated_at   timestamptz NOT NULL DEFAULT now(),
+    CONSTRAINT pk_contract_types PRIMARY KEY (id),
+    CONSTRAINT fk_contract_types_field_set_id FOREIGN KEY (field_set_id) REFERENCES field_sets (id) ON DELETE CASCADE,
+    CONSTRAINT uq_contract_types_field_set_id_key UNIQUE (field_set_id, key),
+    CONSTRAINT uq_contract_types_field_set_id_position UNIQUE (field_set_id, position),
+    CONSTRAINT ck_contract_types_key CHECK (key ~ '^[a-z][a-z0-9_]*$')
+);
+-- At most one fallback type per field set.
+CREATE UNIQUE INDEX uq_contract_types_fallback ON contract_types (field_set_id) WHERE is_fallback;
+
+-- Fields a contract type expects, with the group they are listed under and their priority for that type.
+-- Type and field belong to the same field set (enforced by the catalogue generator and the config API).
+CREATE TABLE contract_type_fields (
+    contract_type_id uuid    NOT NULL,
+    field_id         uuid    NOT NULL,
+    -- core, commercial, risk_liability, restrictive_covenants, ip_data, or specific (the type's own fields).
+    field_group      text    NOT NULL,
+    priority         text    NOT NULL,
+    position         integer NOT NULL,
+    CONSTRAINT pk_contract_type_fields PRIMARY KEY (contract_type_id, field_id),
+    CONSTRAINT fk_contract_type_fields_contract_type_id FOREIGN KEY (contract_type_id) REFERENCES contract_types (id) ON DELETE CASCADE,
+    CONSTRAINT fk_contract_type_fields_field_id FOREIGN KEY (field_id) REFERENCES fields (id) ON DELETE CASCADE,
+    CONSTRAINT uq_contract_type_fields_contract_type_id_position UNIQUE (contract_type_id, position),
+    CONSTRAINT ck_contract_type_fields_field_group CHECK (field_group ~ '^[a-z][a-z0-9_]*$'),
+    CONSTRAINT ck_contract_type_fields_priority CHECK (priority IN ('P1', 'P2', 'P3'))
+);
+CREATE INDEX ix_contract_type_fields_field_id ON contract_type_fields (field_id);
 
 -- A runnable recipe: which decomposition, index, fields, models, prompts and RAG configs a run uses.
 CREATE TABLE pipeline_configs (
@@ -694,6 +744,7 @@ CREATE TRIGGER trg_index_configs_updated_at         BEFORE UPDATE ON index_confi
 CREATE TRIGGER trg_retrieval_configs_updated_at     BEFORE UPDATE ON retrieval_configs     FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER trg_field_sets_updated_at            BEFORE UPDATE ON field_sets            FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER trg_fields_updated_at                BEFORE UPDATE ON fields                FOR EACH ROW EXECUTE FUNCTION set_updated_at();
+CREATE TRIGGER trg_contract_types_updated_at        BEFORE UPDATE ON contract_types        FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER trg_pipeline_configs_updated_at      BEFORE UPDATE ON pipeline_configs      FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER trg_documents_updated_at             BEFORE UPDATE ON documents             FOR EACH ROW EXECUTE FUNCTION set_updated_at();
 CREATE TRIGGER trg_vector_indexes_updated_at        BEFORE UPDATE ON vector_indexes        FOR EACH ROW EXECUTE FUNCTION set_updated_at();

@@ -4,8 +4,9 @@
 #   docker compose -f docker/docker-compose.yml --profile ollama up -d --build --wait   # + local Ollama
 #   docker compose -f docker/docker-compose.yml down -v                                 # stop and wipe all data
 #
-# schema.sql and seed.sql are baked into the Postgres image (Dockerfile) and run only when the volume is
-# empty, so after editing them: `down -v`, then `up --build` gives a clean database with the new schema.
+# schema.sql, seed.sql and seed_catalogue.sql (generated from docs/contract_types_and_fields.md) are baked into the
+# Postgres image (Dockerfile) and run only when the volume is empty, so after editing them: `down -v`, then
+# `up --build` gives a clean database with the new schema.
 # Every value below can be overridden from the environment (e.g. POSTGRES_PORT=55432).
 name: contract-extraction
 

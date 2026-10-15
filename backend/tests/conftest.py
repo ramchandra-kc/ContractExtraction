@@ -2,7 +2,7 @@
 
 Database tests use a throwaway database (``contract_extraction_test`` by default, from
 config/.env.test, or ``$TEST_DATABASE_URL``) on the Postgres started from docker/. It is
-dropped and recreated once per test session from docker/schema.sql and docker/seed.sql;
+dropped and recreated once per test session from docker/schema.sql, seed.sql and seed_catalogue.sql;
 every test runs inside a transaction that is rolled back. Without a reachable Postgres
 the database tests are skipped.
 """
@@ -52,7 +52,7 @@ def engine() -> Iterator[Engine]:
         admin.execute(f'DROP DATABASE IF EXISTS "{name}" WITH (FORCE)')
         admin.execute(f'CREATE DATABASE "{name}"')
     with psycopg.connect(_libpq(url), autocommit=True) as conn:
-        for script in ("schema.sql", "seed.sql"):
+        for script in ("schema.sql", "seed.sql", "seed_catalogue.sql"):
             conn.execute((DOCKER_DIR / script).read_text(encoding="utf-8"))
 
     eng = create_engine(url)

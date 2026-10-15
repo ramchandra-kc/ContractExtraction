@@ -43,8 +43,8 @@ def test_edits_reach_the_next_run_and_never_change_a_past_one(db, storage, tmp_p
     tag = uuid.uuid4().hex[:6]
     rag_a, rag_b, name = f"inv-a-{tag}", f"inv-b-{tag}", f"inv-{tag}"
     with db.session() as s:
-        customer = s.scalars(select(m.Field).where(m.Field.key == "customer_name")).one()
-        original = (customer.id, customer.user_prompt, [q.query for q in customer.queries])
+        title = s.scalars(select(m.Field).where(m.Field.key == "title")).one()
+        original = (title.id, title.user_prompt, [q.query for q in title.queries])
 
     try:
         with db.session() as s:
@@ -75,15 +75,18 @@ def test_edits_reach_the_next_run_and_never_change_a_past_one(db, storage, tmp_p
             version = w.create_prompt_version("extraction_system", "Edited system prompt.", None).version
             w.update_pipeline(name, {"retrievals": [rag_b, rag_a],
                                      "extraction_prompt": {"name": "extraction_system", "version": version}})
-            # Keep the seeded text: the scripted model reads the field key from it.
-            w.update_field(original[0], {"user_prompt": original[1] + "\nEDITED-7C", "queries": ["the buyer"]})
+            # A hand-written prompt replaces the generic one; the scripted model reads the field key from it.
+            w.update_field(original[0], {"user_prompt": "Task: extract the following field:\ntitle\nEDITED-7C\n",
+                                         "queries": ["the heading"]})
 
         run_b = _enqueue(h, name)
         snap_b = _snapshot(db, run_b)
         assert [(r["name"], r["top_k"]) for r in snap_b["retrievals"]] == [(rag_b, 5), (rag_a, 3)]
         assert (snap_b["extraction_prompt"]["version"], snap_b["extraction_prompt"]["body"]) == (version, "Edited system prompt.")
-        customer_b = next(f for f in snap_b["field_set"]["fields"] if f["key"] == "customer_name")
-        assert customer_b["user_prompt"].endswith("EDITED-7C") and customer_b["queries"] == ["the buyer"]
+        title_a = next(f for f in snap_a["field_set"]["fields"] if f["key"] == "title")
+        title_b = next(f for f in snap_b["field_set"]["fields"] if f["key"] == "title")
+        assert title_a["user_prompt"] is None
+        assert title_b["user_prompt"].endswith("EDITED-7C\n") and title_b["queries"] == ["the heading"]
 
         assert _snapshot(db, run_a) == snap_a, "a past run's snapshot never changes"
         assert _best(db, run_a) == best_a, "nor do its best values"

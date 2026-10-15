@@ -34,7 +34,7 @@ uv run contract-extraction worker    # executes the runs the API queues
 B=http://localhost:8000/api/v1
 curl -F file=@contract.pdf $B/documents                                   # 201 new / 200 already stored
 curl -X POST $B/documents/<id>/runs -H 'content-type: application/json' \
-     -d '{"fields":["customer_name"],"retrievals":["RAG02"]}'               # 202, Location: /api/v1/runs/<run id>
+     -d '{"fields":["parties"],"retrievals":["RAG02"]}'                     # 202, Location: /api/v1/runs/<run id>
 curl $B/runs/<run id>                                                      # poll state and progress
 curl $B/runs/<run id>/results                                              # best values (with ground truth) + every outcome
 curl -X PUT $B/documents/<id>/ground-truth/<field id> -H 'content-type: application/json' \
@@ -73,8 +73,8 @@ uv run contract-extraction providers set openrouter --enable                    
 ### Extraction runs
 
 ```bash
-uv run contract-extraction run contract.pdf                                    # every field x every RAG config
-uv run contract-extraction run contract.pdf --fields customer_name,payment_terms --retrievals RAG02
+uv run contract-extraction run contract.pdf                                    # the contract type's fields x every RAG config
+uv run contract-extraction run contract.pdf --fields parties,payment_terms --retrievals RAG02
 uv run contract-extraction run contract.pdf --no-judge --no-reuse --pipeline my-pipeline
 ```
 
@@ -82,7 +82,11 @@ uv run contract-extraction run contract.pdf --no-judge --no-reuse --pipeline my-
 inline and prints the best value per field. Ctrl-C marks the run cancelled. Every call, its evidence and the verdicts are in the
 database (`field_results`, `retrieval_hits`, `llm_calls`, `judgements`, `run_events`, view `v_best_values`).
 
-**Speed:** a full default run is up to 12 fields × 7 RAG configs × 2 calls. With native Ollama on the Apple GPU, a call takes
+**Which fields:** `--fields` extracts exactly those. Without it, a run extracts the fields of the document's contract type(s),
+most important (P1) first; until type detection lands, that is the fallback type **Other** (44 fields: Core, Commercial,
+Risk & Liability).
+
+**Speed:** a default run is 44 fields × 7 RAG configs × 2 calls at most. With native Ollama on the Apple GPU, a call takes
 about 7–15 s. Ollama in Docker on macOS is CPU-only and takes about 90–150 s per call. Reuse of repeated evidence cuts the number
 of calls a lot on short documents. Narrow runs with `--fields` / `--retrievals` while experimenting.
 
@@ -90,6 +94,19 @@ of calls a lot on short documents. Narrow runs with `--fields` / `--retrievals` 
 
 - **Pipeline configuration** (providers, models, prompts, RAG configs, fields) lives in **the database**. It is read through
   `ConfigRepo.resolve_pipeline()`.
+- **Fields and contract types** come from [`docs/contract_types_and_fields.md`](../docs/contract_types_and_fields.md):
+  18 contract types plus the fallback **Other**, 286 fields, each with a type, a priority (P1–P3) and a description. After
+  editing the document, regenerate the seed and recreate the database:
+
+  ```bash
+  uv run contract-extraction gen-catalogue                  # writes docker/seed_catalogue.sql (checks the document first)
+  uv run contract-extraction gen-catalogue --with-queries   # also asks the default extraction model for search queries
+  ../scripts/dev.sh reset                                   # wipes the dev database and loads the new seed
+  ```
+
+  Generated search queries are kept in `docs/contract_field_queries.json` (review and edit freely; fields without any use
+  their label and description). Catalogue fields have no hand-written prompt: the extraction prompt is built from the
+  field's description and value type (`extraction/prompts.py`); a `user_prompt` set in the UI overrides it.
 - **Settings** hold only connection details and paths. They come from `config/`, where later files override earlier ones:
   `.env` → `.env.<APP_ENV>` → `.env.local` → `.env.<APP_ENV>.local` → real environment variables. Nested keys use `__`
   (e.g. `DATABASE__URL`).
@@ -114,12 +131,13 @@ src/contract_extraction/
   secrets.py     API key lookup by the env var named in the database
   health.py      liveness and readiness, shared by /health and `check`
   worker.py      claim loop (SKIP LOCKED), heartbeat, cancellation, stale-run cleanup
-  cli.py         contract-extraction check | ingest | run | worker | status | cancel | api | openapi | providers
+  catalogue.py   contract types and fields parsed from docs/contract_types_and_fields.md → docker/seed_catalogue.sql
+  cli.py         contract-extraction check | ingest | run | worker | status | cancel | api | openapi | providers | gen-catalogue
 ```
 
 ## Tests
 
-`uv run pytest` recreates the `contract_extraction_test` database from `docker/schema.sql` and `docker/seed.sql`, then rolls back
+`uv run pytest` recreates the `contract_extraction_test` database from `docker/schema.sql`, `seed.sql` and `seed_catalogue.sql`, then rolls back
 each test. Point it elsewhere with `TEST_DATABASE_URL` (the database name must end in `_test`). Without a reachable Postgres, the
 database tests are skipped.
 
@@ -135,3 +153,5 @@ Run it after editing `schema.sql`.
 
 `tests/test_openapi_matches_frontend.py` compares the API's OpenAPI document with `frontend/openapi.json`, which the frontend's
 types are generated from. After changing the API, run `npm run gen:api` in `frontend/`.
+
+`tests/test_catalogue.py` checks that `docker/seed_catalogue.sql` matches what `gen-catalogue` produces from the document.

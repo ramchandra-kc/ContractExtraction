@@ -10,6 +10,8 @@ import { FormDialog, SelectInput, SubmitBar, SwitchInput, TextInput } from './fo
 
 const VALUE_TYPES = ['text', 'date', 'number', 'money', 'list', 'boolean', 'json'] as const
 type ValueType = (typeof VALUE_TYPES)[number]
+const PRIORITIES = ['P1', 'P2', 'P3'] as const
+type Priority = (typeof PRIORITIES)[number]
 
 export function FieldsTab({ catalog }: { catalog: Catalog }) {
   const [selected, setSelected] = useState(0)
@@ -57,8 +59,12 @@ export function FieldsTab({ catalog }: { catalog: Catalog }) {
                 <span className="font-medium">{f.label}</span> <span className="font-mono text-xs text-muted-foreground">{f.key}</span>
                 {f.description && <p className="text-xs text-muted-foreground">{f.description}</p>}
               </TableCell>
-              <TableCell>
-                <Badge variant="outline">{f.value_type}</Badge>
+              <TableCell className="whitespace-normal">
+                <div className="flex gap-1">
+                  <Badge variant="outline">{f.value_type}</Badge>
+                  <Badge variant={f.priority === 'P1' ? 'default' : 'secondary'}>{f.priority}</Badge>
+                </div>
+                {f.type_spec && <p className="mt-1 max-w-48 font-mono text-xs text-muted-foreground">{f.type_spec}</p>}
               </TableCell>
               <TableCell className="max-w-md text-xs whitespace-normal text-muted-foreground">{f.queries.join(' · ')}</TableCell>
               <TableCell>
@@ -98,6 +104,7 @@ function FieldForm({ fieldSet, initial, onDone }: { fieldSet: CatalogFieldSet; i
   const [label, setLabel] = useState(initial?.label ?? '')
   const [description, setDescription] = useState(initial?.description ?? '')
   const [valueType, setValueType] = useState<ValueType>((initial?.value_type as ValueType) ?? 'text')
+  const [priority, setPriority] = useState<Priority>(initial?.priority ?? 'P2')
   const [userPrompt, setUserPrompt] = useState(initial?.user_prompt ?? '')
   const [enabled, setEnabled] = useState(initial?.is_enabled ?? true)
   const [queries, setQueries] = useState((initial?.queries ?? []).join('\n'))
@@ -106,7 +113,8 @@ function FieldForm({ fieldSet, initial, onDone }: { fieldSet: CatalogFieldSet; i
     label: label.trim(),
     description: toText(description),
     value_type: valueType,
-    user_prompt: userPrompt,
+    priority,
+    user_prompt: toText(userPrompt),
     is_enabled: enabled,
     queries: queries.split('\n').map((q) => q.trim()).filter(Boolean),
   }
@@ -119,7 +127,7 @@ function FieldForm({ fieldSet, initial, onDone }: { fieldSet: CatalogFieldSet; i
       {!initial && (
         <TextInput label="Key" value={key} onChange={setKey} placeholder="notice_period" hint="Lowercase letters, digits and _. Cannot be changed later." />
       )}
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid gap-3 sm:grid-cols-3">
         <TextInput label="Label" value={label} onChange={setLabel} />
         <SelectInput
           label="Value type"
@@ -127,15 +135,21 @@ function FieldForm({ fieldSet, initial, onDone }: { fieldSet: CatalogFieldSet; i
           onChange={(v) => setValueType(v as ValueType)}
           options={VALUE_TYPES.map((t) => ({ value: t, label: t }))}
         />
+        <SelectInput
+          label="Priority"
+          value={priority}
+          onChange={(v) => setPriority(v as Priority)}
+          options={PRIORITIES.map((p) => ({ value: p, label: p }))}
+        />
       </div>
       <TextInput label="Description" value={description} onChange={setDescription} />
       <TextInput
-        label="Extraction prompt"
+        label="Extraction prompt (optional)"
         value={userPrompt}
         onChange={setUserPrompt}
         rows={8}
         mono
-        hint="The retrieved context is appended when a run executes."
+        hint="Leave empty to use the generic prompt built from the description and value type. The retrieved context is appended when a run executes."
       />
       <TextInput
         label="Expansion queries"
@@ -149,7 +163,7 @@ function FieldForm({ fieldSet, initial, onDone }: { fieldSet: CatalogFieldSet; i
         label={initial ? 'Save field' : 'Add field'}
         pending={write.isPending}
         error={write.error}
-        disabled={!label.trim() || !userPrompt.trim() || (!initial && !key.trim())}
+        disabled={!label.trim() || (!initial && !key.trim())}
         onSubmit={submit}
       />
     </div>

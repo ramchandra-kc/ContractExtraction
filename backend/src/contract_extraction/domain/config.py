@@ -14,7 +14,17 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
-from .enums import DecompositionMethod, Distance, ModelKind, PromptRole, ProviderKind, TextFormat, ValueType, VectorStore
+from .enums import (
+    DecompositionMethod,
+    Distance,
+    ModelKind,
+    Priority,
+    PromptRole,
+    ProviderKind,
+    TextFormat,
+    ValueType,
+    VectorStore,
+)
 
 
 class _Frozen(BaseModel):
@@ -104,9 +114,30 @@ class Field(_Frozen):
     label: str
     description: str | None = None
     value_type: ValueType
-    user_prompt: str
+    # Catalogue type, e.g. "object: rate, cap", and its JSON Schema ({} = any value).
+    type_spec: str | None = None
+    value_schema: dict[str, Any] = {}
+    priority: Priority = Priority.P2
+    # Hand-written instructions; None uses the generic template (extraction.prompts).
+    user_prompt: str | None = None
     position: int
     queries: tuple[str, ...] = ()
+
+
+class ContractTypeField(_Frozen):
+    key: str
+    # Group the field is listed under for this type: core, commercial, ..., or specific.
+    group: str
+    priority: Priority
+
+
+class ContractType(_Frozen):
+    id: uuid.UUID
+    key: str
+    label: str
+    description: str
+    is_fallback: bool = False
+    fields: tuple[ContractTypeField, ...]
 
 
 class FieldSet(_Frozen):
@@ -114,6 +145,31 @@ class FieldSet(_Frozen):
     name: str
     version: int
     fields: tuple[Field, ...]
+    contract_types: tuple[ContractType, ...] = ()
+
+    @property
+    def fallback_type(self) -> ContractType | None:
+        return next((t for t in self.contract_types if t.is_fallback), None)
+
+    def fields_for_types(self, type_keys: list[str] | tuple[str, ...]) -> tuple[Field, ...]:
+        """The union of the fields the given contract types expect, most important first.
+
+        No types: the fallback type's fields, or every field when the set defines no types.
+        A field's priority is the highest it has among the given types; ties keep the field-set order.
+        """
+        types = {t.key: t for t in self.contract_types}
+        unknown = [k for k in type_keys if k not in types]
+        if unknown:
+            raise ValueError(f"Unknown contract type(s) {unknown}; known: {sorted(types)}")
+        chosen = [types[k] for k in type_keys] or ([self.fallback_type] if self.fallback_type else [])
+        if not chosen:
+            return self.fields
+        priority: dict[str, Priority] = {}
+        for t in chosen:
+            for member in t.fields:
+                priority[member.key] = min(priority.get(member.key, member.priority), member.priority)
+        selected = [f for f in self.fields if f.key in priority]
+        return tuple(sorted(selected, key=lambda f: (priority[f.key], f.position)))
 
 
 class PipelineConfig(_Frozen):

@@ -211,6 +211,7 @@ class FieldSet(Base):
     updated_at: Mapped[datetime] = _updated()
 
     fields: Mapped[list[Field]] = relationship(back_populates="field_set", order_by="Field.position")
+    contract_types: Mapped[list[ContractType]] = relationship(back_populates="field_set", order_by="ContractType.position")
 
 
 class Field(Base):
@@ -223,7 +224,10 @@ class Field(Base):
     label: Mapped[str]
     description: Mapped[str | None]
     value_type: Mapped[str] = mapped_column(server_default=_db())
-    user_prompt: Mapped[str]
+    type_spec: Mapped[str | None]
+    value_schema: Mapped[dict[str, Any]] = _json()
+    priority: Mapped[str] = mapped_column(server_default=_db())
+    user_prompt: Mapped[str | None]
     position: Mapped[int]
     is_enabled: Mapped[bool] = mapped_column(server_default=_db())
     created_at: Mapped[datetime] = _created()
@@ -241,6 +245,37 @@ class FieldQuery(Base):
     field_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("fields.id", ondelete="CASCADE"))
     position: Mapped[int]
     query: Mapped[str]
+
+
+class ContractType(Base):
+    __tablename__ = "contract_types"
+    __table_args__ = (UniqueConstraint("field_set_id", "key"), UniqueConstraint("field_set_id", "position"))
+
+    id: Mapped[uuid.UUID] = _pk()
+    field_set_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("field_sets.id", ondelete="CASCADE"))
+    key: Mapped[str]
+    label: Mapped[str]
+    description: Mapped[str]
+    is_fallback: Mapped[bool] = mapped_column(server_default=_db())
+    position: Mapped[int]
+    created_at: Mapped[datetime] = _created()
+    updated_at: Mapped[datetime] = _updated()
+
+    field_set: Mapped[FieldSet] = relationship(back_populates="contract_types")
+    members: Mapped[list[ContractTypeField]] = relationship(order_by="ContractTypeField.position")
+
+
+class ContractTypeField(Base):
+    __tablename__ = "contract_type_fields"
+    __table_args__ = (UniqueConstraint("contract_type_id", "position"),)
+
+    contract_type_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("contract_types.id", ondelete="CASCADE"), primary_key=True)
+    field_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("fields.id", ondelete="CASCADE"), primary_key=True)
+    field_group: Mapped[str]
+    priority: Mapped[str]
+    position: Mapped[int]
+
+    field: Mapped[Field] = relationship()
 
 
 class PipelineConfig(Base):

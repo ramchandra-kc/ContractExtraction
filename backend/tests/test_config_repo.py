@@ -14,9 +14,15 @@ def test_default_pipeline_resolves(session):
 
     assert p.name == "default"
     assert [r.name for r in p.retrievals] == [f"RAG0{i}" for i in range(1, 8)]
-    assert len(p.field_set.fields) == 12
-    assert p.field_set.fields[0].key == "customer_name"
-    assert all(len(f.queries) == 30 for f in p.field_set.fields)
+    assert len(p.field_set.fields) == 286
+    assert p.field_set.fields[0].key == "title"
+    assert all(f.queries and f.user_prompt is None and f.value_schema for f in p.field_set.fields)
+    types = {t.key: t for t in p.field_set.contract_types}
+    assert len(types) == 19 and p.field_set.fallback_type.key == "other"
+    assert len(types["msa"].fields) == 66 and len(types["other"].fields) == 44
+    sla = next(f for f in types["saas"].fields if f.key == "service_levels")
+    assert (sla.group, sla.priority) == ("specific", "P2"), "priority is per contract type"
+    assert next(f for f in p.field_set.fields if f.key == "service_levels").priority == "P1", "field keeps its highest"
     assert p.extraction_profile.model.name == "llama3.1:8b"
     assert p.extraction_profile.model.provider.key == "ollama-local"
     assert p.index.embedding_model.embedding_dimension == 768
@@ -33,9 +39,16 @@ def test_snapshot_is_json_and_secret_free(session):
 
 
 def test_disabled_fields_are_skipped(session):
-    session.execute(update(m.Field).where(m.Field.key == "penalties").values(is_enabled=False))
+    session.execute(update(m.Field).where(m.Field.key == "payment_terms").values(is_enabled=False))
     p = ConfigRepo(session).resolve_pipeline()
-    assert "penalties" not in [f.key for f in p.field_set.fields]
+    assert "payment_terms" not in [f.key for f in p.field_set.fields]
+    assert all("payment_terms" not in [f.key for f in t.fields] for t in p.field_set.contract_types)
+
+
+def test_contract_types_need_a_fallback(session):
+    session.execute(update(m.ContractType).values(is_fallback=False))
+    with pytest.raises(InvalidConfig, match="no fallback type"):
+        ConfigRepo(session).resolve_pipeline()
 
 
 def test_disabled_provider_is_rejected(session):

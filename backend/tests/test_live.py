@@ -49,7 +49,7 @@ def test_extraction_with_real_models(db, storage, tmp_path):
     from contract_extraction.pipeline.options import RunOptions, narrow
 
     settings = load_settings("test")
-    options = RunOptions(fields=["customer_name"], retrievals=["RAG02"])
+    options = RunOptions(fields=["parties"], retrievals=["RAG02"])
     with db.session() as s:
         pipeline = narrow(ConfigRepo(s).resolve_pipeline(), options)
     pdf = make_pdf(tmp_path / "live-run.pdf", pages=[b + " Live run." for b in BODY])

@@ -2230,9 +2230,38 @@
             "type": "string",
             "title": "Value Type"
           },
+          "type_spec": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Type Spec",
+            "description": "Catalogue type, e.g. 'object: rate, cap' (null: not from the catalogue)"
+          },
+          "value_schema": {
+            "additionalProperties": true,
+            "type": "object",
+            "title": "Value Schema",
+            "description": "JSON Schema of the value ({} = any)"
+          },
+          "priority": {
+            "$ref": "#/components/schemas/Priority"
+          },
           "user_prompt": {
-            "type": "string",
-            "title": "User Prompt"
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Prompt",
+            "description": "Hand-written instructions; null uses the generic template"
           },
           "position": {
             "type": "integer",
@@ -2257,6 +2286,9 @@
           "label",
           "description",
           "value_type",
+          "type_spec",
+          "value_schema",
+          "priority",
           "user_prompt",
           "position",
           "is_enabled",
@@ -3257,10 +3289,22 @@
             "$ref": "#/components/schemas/ValueType",
             "default": "text"
           },
+          "priority": {
+            "$ref": "#/components/schemas/Priority",
+            "default": "P2"
+          },
           "user_prompt": {
-            "type": "string",
-            "minLength": 1,
-            "title": "User Prompt"
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Prompt",
+            "description": "Omit or null to use the generic template"
           },
           "is_enabled": {
             "type": "boolean",
@@ -3281,8 +3325,7 @@
         "type": "object",
         "required": [
           "key",
-          "label",
-          "user_prompt"
+          "label"
         ],
         "title": "FieldCreate"
       },
@@ -3604,10 +3647,21 @@
           "value_type": {
             "$ref": "#/components/schemas/ValueType"
           },
+          "priority": {
+            "$ref": "#/components/schemas/Priority"
+          },
           "user_prompt": {
-            "type": "string",
-            "minLength": 1,
-            "title": "User Prompt"
+            "anyOf": [
+              {
+                "type": "string",
+                "minLength": 1
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "User Prompt",
+            "description": "null switches back to the generic template"
           },
           "is_enabled": {
             "type": "boolean",
@@ -4726,6 +4780,16 @@
         "additionalProperties": false,
         "type": "object",
         "title": "PipelineUpdate"
+      },
+      "Priority": {
+        "type": "string",
+        "enum": [
+          "P1",
+          "P2",
+          "P3"
+        ],
+        "title": "Priority",
+        "description": "Field priority from the catalogue: P1 = direct financial, time or exit exposure; P3 = informational.\nValues sort by importance (P1 < P2 < P3)."
       },
       "ProfileCreate": {
         "properties": {
