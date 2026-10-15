@@ -73,7 +73,8 @@ uv run contract-extraction providers set openrouter --enable                    
 ### Extraction runs
 
 ```bash
-uv run contract-extraction run contract.pdf                                    # the contract type's fields x every RAG config
+uv run contract-extraction run contract.pdf                                    # detect the type, then its fields x every RAG config
+uv run contract-extraction run contract.pdf --contract-types msa,sow           # skip detection: these types' fields
 uv run contract-extraction run contract.pdf --fields parties,payment_terms --retrievals RAG02
 uv run contract-extraction run contract.pdf --no-judge --no-reuse --pipeline my-pipeline
 ```
@@ -82,11 +83,16 @@ uv run contract-extraction run contract.pdf --no-judge --no-reuse --pipeline my-
 inline and prints the best value per field. Ctrl-C marks the run cancelled. Every call, its evidence and the verdicts are in the
 database (`field_results`, `retrieval_hits`, `llm_calls`, `judgements`, `run_events`, view `v_best_values`).
 
-**Which fields:** `--fields` extracts exactly those. Without it, a run extracts the fields of the document's contract type(s),
-most important (P1) first; until type detection lands, that is the fallback type **Other** (44 fields: Core, Commercial,
-Risk & Liability).
+**Which fields:** `--fields` extracts exactly those. Otherwise the run first **classifies** the document (one LLM call on its
+first pages, stage `classifying`) and extracts the union of the detected types' fields, most important (P1) first. A type is
+used when its confidence reaches the pipeline's `classification_min_confidence` (0.5); with none, or when classification is
+off, the fallback type **Other** is used (44 fields: Core, Commercial, Risk & Liability). `--contract-types` skips detection.
+The pipeline's `min_priority` (P3 = all) can limit runs to P1 or P1–P2 fields. What was decided is in `run_classifications`
+and the run's events. Answers that do not fit the field's type (wrong JSON type, value outside an enum) are recorded as
+`error` results; enum spellings such as "One Way" are normalised to `one_way` first.
 
-**Speed:** a default run is 44 fields × 7 RAG configs × 2 calls at most. With native Ollama on the Apple GPU, a call takes
+**Speed:** a default run is one classification call plus up to 70 fields × 7 RAG configs × 2 calls (an MSA has 66 fields).
+With native Ollama on the Apple GPU, a call takes
 about 7–15 s. Ollama in Docker on macOS is CPU-only and takes about 90–150 s per call. Reuse of repeated evidence cuts the number
 of calls a lot on short documents. Narrow runs with `--fields` / `--retrievals` while experimenting.
 

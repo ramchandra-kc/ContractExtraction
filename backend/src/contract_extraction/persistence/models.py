@@ -293,6 +293,12 @@ class PipelineConfig(Base):
     judge_profile_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("model_profiles.id"))
     judge_prompt_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("prompt_templates.id"))
     judge_parallel: Mapped[bool] = mapped_column(server_default=_db())
+    classification_enabled: Mapped[bool] = mapped_column(server_default=_db())
+    classification_profile_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("model_profiles.id"))
+    classification_prompt_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("prompt_templates.id"))
+    classification_pages: Mapped[int] = mapped_column(server_default=_db())
+    classification_min_confidence: Mapped[Decimal] = mapped_column(Numeric(4, 3), server_default=_db())
+    min_priority: Mapped[str] = mapped_column(server_default=_db())
     is_default: Mapped[bool] = mapped_column(server_default=_db())
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = _updated()
@@ -304,6 +310,8 @@ class PipelineConfig(Base):
     extraction_prompt: Mapped[PromptTemplate] = relationship(foreign_keys=[extraction_prompt_id])
     judge_profile: Mapped[ModelProfile | None] = relationship(foreign_keys=[judge_profile_id])
     judge_prompt: Mapped[PromptTemplate | None] = relationship(foreign_keys=[judge_prompt_id])
+    classification_profile: Mapped[ModelProfile | None] = relationship(foreign_keys=[classification_profile_id])
+    classification_prompt: Mapped[PromptTemplate | None] = relationship(foreign_keys=[classification_prompt_id])
     retrievals: Mapped[list[PipelineConfigRetrieval]] = relationship(
         order_by="PipelineConfigRetrieval.position", cascade="all, delete-orphan")
 
@@ -541,6 +549,21 @@ class Judgement(Base):
     explanation: Mapped[str | None]
     llm_call_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("llm_calls.id", ondelete="SET NULL"))
     created_at: Mapped[datetime] = _created()
+
+
+class RunClassification(Base):
+    __tablename__ = "run_classifications"
+
+    run_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("runs.id", ondelete="CASCADE"), primary_key=True)
+    contract_type_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("contract_types.id"), primary_key=True)
+    source: Mapped[str]
+    selected: Mapped[bool]
+    confidence: Mapped[Decimal | None] = mapped_column(Numeric(4, 3))
+    evidence: Mapped[str | None]
+    llm_call_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("llm_calls.id", ondelete="SET NULL"))
+    created_at: Mapped[datetime] = _created()
+
+    contract_type: Mapped[ContractType] = relationship()
 
 
 # =====================================================================================================

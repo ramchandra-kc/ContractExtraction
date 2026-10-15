@@ -31,15 +31,27 @@ from typing import Any
 
 from ..core.settings import Settings
 from ..domain.config import Field, Model, ModelProfile, PipelineConfig, RetrievalConfig
-from ..domain.enums import EventLevel, FieldResultStatus, LlmCallPurpose, RunKind, RunStage, RunState, Verdict
+from ..domain.enums import (
+    ClassificationSource,
+    EventLevel,
+    FieldResultStatus,
+    LlmCallPurpose,
+    RunKind,
+    RunStage,
+    RunState,
+    Verdict,
+)
+from ..extraction import classify
 from ..extraction.judge import JudgeOutcome, parse_verdict
 from ..extraction.parsing import field_value
 from ..extraction.prompts import build_context, extraction_prompt, judge_prompt
 from ..extraction.retrieval import Hit, Retriever
+from ..extraction.validation import conform
 from ..indexing.indexer import build_index
 from ..ingestion import ensure_decomposition
 from ..persistence.db import Database
 from ..persistence.repositories import RunRepo
+from ..persistence.repositories.artifacts import IndexRepo
 from ..persistence.repositories.results import ResultRepo
 from ..providers import factory
 from ..providers.base import ChatClient, ChatResult, Embedder, ProviderError, VectorStore
@@ -183,7 +195,9 @@ class RunExecutor:
 
             if kind != RunKind.DECOMPOSE:
                 self.check_continue(run_id)
-                fields = select_fields(pipeline, options, ())
+                type_keys = self._contract_types(run_id, pipeline, options, idx.vector_index_id)
+                fields = select_fields(pipeline, options, type_keys)
+                self.check_continue(run_id)
                 self._stage(run_id, RunStage.EXTRACTING)
                 self.event(run_id, f"Extracting {len(fields)} fields x {len(pipeline.retrievals)} RAG configs",
                            stage=RunStage.EXTRACTING, fields=[f.key for f in fields])
@@ -204,6 +218,84 @@ class RunExecutor:
             return self._finish(run_id, RunState.FAILED, message)
 
 
+    # ---- contract types ------------------------------------------------------------------------
+
+    def _contract_types(self, run_id: uuid.UUID, pipeline: PipelineConfig, options: RunOptions,
+                        index_id: uuid.UUID) -> tuple[str, ...]:
+        """The contract types whose fields the run extracts, recorded in run_classifications.
+
+        Empty when the run's fields were chosen explicitly or the field set defines no types.
+        """
+        fs = pipeline.field_set
+        if options.fields is not None or not fs.contract_types:
+            return ()
+        types = {t.key: t for t in fs.contract_types}
+        fallback = fs.fallback_type
+        if options.contract_types:
+            with self.db.session() as s:
+                for key in options.contract_types:
+                    ResultRepo(s).add_classification(run_id, types[key].id, ClassificationSource.OVERRIDE, True)
+            self.event(run_id, "Contract type from the run options: " + ", ".join(types[k].label for k in options.contract_types),
+                       contract_types=list(options.contract_types))
+            return tuple(options.contract_types)
+        if not pipeline.classification_enabled:
+            with self.db.session() as s:
+                ResultRepo(s).add_classification(run_id, fallback.id, ClassificationSource.FALLBACK, True)
+            self.event(run_id, f"Contract type: {fallback.label} (classification is off for this pipeline)",
+                       contract_types=[fallback.key])
+            return (fallback.key,)
+
+        self._stage(run_id, RunStage.CLASSIFYING)
+        candidates, call_id = self._classify(run_id, pipeline, index_id)
+        chosen = classify.select(candidates, pipeline.classification_min_confidence, fallback.key)
+        said_fallback = next((c for c in candidates if c.key in (classify.OTHER, fallback.key)), None)
+        with self.db.session() as s:
+            repo = ResultRepo(s)
+            for c in candidates:
+                if c.key in types and c.key != fallback.key:
+                    repo.add_classification(run_id, types[c.key].id, ClassificationSource.CLASSIFIER, c.key in chosen,
+                                            c.confidence, c.evidence, call_id)
+            if not chosen:
+                repo.add_classification(run_id, fallback.id, ClassificationSource.FALLBACK, True,
+                                        said_fallback.confidence if said_fallback else None,
+                                        said_fallback.evidence if said_fallback else None, call_id)
+        if chosen:
+            labels = ", ".join(f"{types[c.key].label} ({c.confidence})" for c in candidates if c.key in chosen)
+            self.event(run_id, f"Contract type: {labels}", stage=RunStage.CLASSIFYING, contract_types=chosen)
+            return tuple(chosen)
+        reason = (f"no type reached confidence {pipeline.classification_min_confidence}" if candidates
+                  else "the classifier proposed no known type")
+        self.event(run_id, f"Contract type: {fallback.label} (fallback: {reason})", stage=RunStage.CLASSIFYING,
+                   contract_types=[fallback.key])
+        return (fallback.key,)
+
+    def _classify(self, run_id: uuid.UUID, pipeline: PipelineConfig,
+                  index_id: uuid.UUID) -> tuple[list[classify.Candidate], uuid.UUID]:
+        """Ask the classification model about the document's first pages; a failed call proposes nothing."""
+        profile, system = pipeline.classification_profile, pipeline.classification_prompt.body
+        with self.db.session() as s:
+            chunks = [(c.page_start, c.text) for c in IndexRepo(s).chunks(index_id)]
+        text = classify.opening_text(chunks, pipeline.classification_pages)
+        user = classify.classification_prompt(pipeline.field_set.contract_types, text)
+        result, error, timeout, candidates = None, None, False, []
+        try:
+            result = self.providers.chat(profile).complete(system, user, profile)
+            candidates = classify.parse_classification(result.text, {t.key for t in pipeline.field_set.contract_types})
+        except ProviderError as exc:
+            error, timeout = str(exc), exc.timeout
+        with self.db.session() as s:
+            call_id = ResultRepo(s).add_llm_call(run_id=run_id, field_result_id=None, purpose=LlmCallPurpose.CLASSIFICATION,
+                                                 profile=profile, system_prompt=system, user_prompt=user, result=result,
+                                                 error=error, timeout=timeout)
+        if error:
+            self.event(run_id, f"Classification failed: {error}", EventLevel.WARNING, RunStage.CLASSIFYING,
+                       llm_call_id=str(call_id))
+        elif not candidates:
+            self.event(run_id, f"Classifier answer names no known contract type: {(result.text or '')[:200]}",
+                       EventLevel.WARNING, RunStage.CLASSIFYING, llm_call_id=str(call_id))
+        return candidates, call_id
+
+
 @dataclass
 class _Answer:
     """An extraction outcome, kept so identical evidence later in the run can reuse it."""
@@ -220,11 +312,11 @@ class _Answer:
 
 
 def select_fields(pipeline: PipelineConfig, options: RunOptions, type_keys: tuple[str, ...]) -> tuple[Field, ...]:
-    """Fields a run extracts: the ones chosen in the run options, else those of the given contract types
-    (the fallback type when none are given)."""
+    """Fields a run extracts: exactly the ones chosen in the run options, else those of the given contract
+    types (the fallback type when none are given) down to the pipeline's minimum priority."""
     if options.fields is not None:
         return pipeline.field_set.fields  # already narrowed to the chosen fields
-    return pipeline.field_set.fields_for_types(type_keys)
+    return pipeline.field_set.fields_for_types(type_keys, pipeline.min_priority)
 
 
 class _Extraction:
@@ -305,6 +397,10 @@ class _Extraction:
         try:
             result = self.chat.complete(system, user, profile)
             status, value = field_value(result.text, f.key)
+            if status == FieldResultStatus.EXTRACTED:
+                value, problems = conform(value, f.value_schema)
+                if problems:
+                    status, value, error = FieldResultStatus.ERROR, None, "Answer does not fit the field's type: " + "; ".join(problems[:3])
         except ProviderError as exc:
             status, value, error, timeout = FieldResultStatus.ERROR, None, str(exc), exc.timeout
         self._count_call()

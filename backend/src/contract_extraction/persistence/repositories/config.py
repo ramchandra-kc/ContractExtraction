@@ -79,6 +79,13 @@ class ConfigRepo:
         if row.judge_enabled:
             judge_profile = _profile(row.judge_profile, ModelKind.CHAT, "judge")
             judge_prompt = _prompt(row.judge_prompt, PromptRole.JUDGE_SYSTEM)
+        classification_profile = classification_prompt = None
+        if row.classification_enabled:
+            if not row.field_set.contract_types:
+                raise InvalidConfig(f"Pipeline config {row.name!r} classifies contracts, but field set "
+                                    f"{row.field_set.name!r} v{row.field_set.version} defines no contract types")
+            classification_profile = _profile(row.classification_profile, ModelKind.CHAT, "classification")
+            classification_prompt = _prompt(row.classification_prompt, PromptRole.CLASSIFICATION_SYSTEM)
 
         fields = tuple(_field(f) for f in row.field_set.fields if f.is_enabled)
         if not fields:
@@ -104,6 +111,12 @@ class ConfigRepo:
             judge_profile=judge_profile,
             judge_prompt=judge_prompt,
             judge_parallel=row.judge_parallel,
+            classification_enabled=row.classification_enabled,
+            classification_profile=classification_profile,
+            classification_prompt=classification_prompt,
+            classification_pages=row.classification_pages,
+            classification_min_confidence=row.classification_min_confidence,
+            min_priority=row.min_priority,
             retrievals=tuple(_retrieval(r.retrieval_config) for r in row.retrievals),
         )
 

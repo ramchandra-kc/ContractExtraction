@@ -189,15 +189,18 @@ class RunCreate(BaseModel):
 
     pipeline: str | None = Field(None, description="Pipeline config name; default pipeline when omitted")
     kind: RunKind = RunKind.FULL
-    fields: list[str] | None = Field(None, description="Field keys to extract (default: all)")
+    fields: list[str] | None = Field(None, description="Exactly these field keys (default: the fields of the "
+                                                       "document's contract types)")
+    contract_types: list[str] | None = Field(None, description="Treat the document as these contract types instead of "
+                                                               "detecting them (ignored when fields is set)")
     retrievals: list[str] | None = Field(None, description="RAG config names (default: all of the pipeline)")
     judge: bool | None = Field(None, description="false skips the judge for this run")
     reuse_calls: bool = True
     redecompose: bool = False
 
     def options(self) -> RunOptions:
-        return RunOptions(fields=self.fields, retrievals=self.retrievals, judge=self.judge,
-                          reuse_calls=self.reuse_calls, redecompose=self.redecompose)
+        return RunOptions(fields=self.fields, contract_types=self.contract_types, retrievals=self.retrievals,
+                          judge=self.judge, reuse_calls=self.reuse_calls, redecompose=self.redecompose)
 
 
 class EventOut(_Out):

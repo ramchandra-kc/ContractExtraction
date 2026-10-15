@@ -115,10 +115,14 @@ def run(pdf: Path, pipeline_name: str | None, kind: str, options: RunOptions, qu
             # Inline runs start in the same transaction, so a worker can never claim them.
             run_id = RunRepo(s).enqueue(document_id, pipeline, RunKind(kind), options.model_dump(exclude_defaults=True),
                                         start_as=None if queue else worker_id).id
-        n_fields = len(select_fields(pipeline, options, ()))
-        calls = n_fields * len(pipeline.retrievals) * (2 if pipeline.judge_enabled else 1)
-        print(f"run {run_id}: {code}, {n_fields} fields x {len(pipeline.retrievals)} RAG configs "
-              f"(up to {calls} LLM calls)", flush=True)
+        if options.fields is not None or options.contract_types:
+            n_fields = len(select_fields(pipeline, options, tuple(options.contract_types or ())))
+            calls = n_fields * len(pipeline.retrievals) * (2 if pipeline.judge_enabled else 1)
+            print(f"run {run_id}: {code}, {n_fields} fields x {len(pipeline.retrievals)} RAG configs "
+                  f"(up to {calls} LLM calls)", flush=True)
+        else:
+            detect = "detecting the contract type" if pipeline.classification_enabled else "fallback contract type"
+            print(f"run {run_id}: {code}, {detect}, then its fields x {len(pipeline.retrievals)} RAG configs", flush=True)
         if queue:
             print("queued; a worker will run it. Follow it with: contract-extraction status " + str(run_id))
             return 0
@@ -337,7 +341,8 @@ def main(argv: list[str] | None = None) -> int:
     p_run.add_argument("pdf", type=Path)
     p_run.add_argument("--pipeline", help="pipeline config name (default: the default pipeline)")
     p_run.add_argument("--kind", choices=[k.value for k in RunKind], default=RunKind.FULL.value)
-    p_run.add_argument("--fields", help="comma-separated field keys (default: all)")
+    p_run.add_argument("--fields", help="comma-separated field keys (default: those of the detected contract types)")
+    p_run.add_argument("--contract-types", help="comma-separated contract type keys, e.g. msa,sow (default: detect them)")
     p_run.add_argument("--retrievals", help="comma-separated RAG config names (default: all of the pipeline)")
     p_run.add_argument("--no-judge", action="store_true", help="skip the judge for this run")
     p_run.add_argument("--no-reuse", action="store_true", help="call the models even when evidence repeats")
@@ -388,7 +393,8 @@ def main(argv: list[str] | None = None) -> int:
         return ingest(args.pdf, args.pipeline, args.redecompose)
     if args.command == "run":
         split = lambda v: [x.strip() for x in v.split(",") if x.strip()] if v else None  # noqa: E731
-        options = RunOptions(fields=split(args.fields), retrievals=split(args.retrievals),
+        options = RunOptions(fields=split(args.fields), contract_types=split(args.contract_types),
+                             retrievals=split(args.retrievals),
                              judge=False if args.no_judge else None, reuse_calls=not args.no_reuse,
                              redecompose=args.redecompose)
         return run(args.pdf, args.pipeline, args.kind, options, queue=args.queue)

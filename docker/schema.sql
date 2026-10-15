@@ -132,7 +132,7 @@ CREATE TABLE prompt_templates (
     created_at timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT pk_prompt_templates PRIMARY KEY (id),
     CONSTRAINT uq_prompt_templates_name_version UNIQUE (name, version),
-    CONSTRAINT ck_prompt_templates_role CHECK (role IN ('extraction_system', 'judge_system', 'caption')),
+    CONSTRAINT ck_prompt_templates_role CHECK (role IN ('extraction_system', 'judge_system', 'classification_system', 'caption')),
     CONSTRAINT ck_prompt_templates_version CHECK (version > 0)
 );
 CREATE UNIQUE INDEX uq_prompt_templates_active_name ON prompt_templates (name) WHERE is_active;
@@ -318,6 +318,16 @@ CREATE TABLE pipeline_configs (
     judge_prompt_id         uuid,
     -- Judge calls run concurrently with extraction.
     judge_parallel          boolean     NOT NULL DEFAULT false,
+    -- Detect the contract type(s) first and extract only their fields; off: the fallback type's fields.
+    classification_enabled        boolean      NOT NULL DEFAULT false,
+    classification_profile_id     uuid,
+    classification_prompt_id      uuid,
+    -- The classifier reads the document's first pages (title, parties, recitals).
+    classification_pages          integer      NOT NULL DEFAULT 3,
+    -- A proposed type is used when its confidence reaches this; none reaching it means the fallback type.
+    classification_min_confidence numeric(4, 3) NOT NULL DEFAULT 0.5,
+    -- Lowest field priority extracted: P3 = every field, P1 = only direct financial, time or exit exposure.
+    min_priority                  text         NOT NULL DEFAULT 'P3',
     is_default              boolean     NOT NULL DEFAULT false,
     created_at              timestamptz NOT NULL DEFAULT now(),
     updated_at              timestamptz NOT NULL DEFAULT now(),
@@ -329,8 +339,15 @@ CREATE TABLE pipeline_configs (
     CONSTRAINT fk_pipeline_configs_extraction_prompt_id FOREIGN KEY (extraction_prompt_id) REFERENCES prompt_templates (id),
     CONSTRAINT fk_pipeline_configs_judge_profile_id FOREIGN KEY (judge_profile_id) REFERENCES model_profiles (id),
     CONSTRAINT fk_pipeline_configs_judge_prompt_id FOREIGN KEY (judge_prompt_id) REFERENCES prompt_templates (id),
+    CONSTRAINT fk_pipeline_configs_classification_profile_id FOREIGN KEY (classification_profile_id) REFERENCES model_profiles (id),
+    CONSTRAINT fk_pipeline_configs_classification_prompt_id FOREIGN KEY (classification_prompt_id) REFERENCES prompt_templates (id),
     CONSTRAINT uq_pipeline_configs_name UNIQUE (name),
-    CONSTRAINT ck_pipeline_configs_judge CHECK (NOT judge_enabled OR (judge_profile_id IS NOT NULL AND judge_prompt_id IS NOT NULL))
+    CONSTRAINT ck_pipeline_configs_judge CHECK (NOT judge_enabled OR (judge_profile_id IS NOT NULL AND judge_prompt_id IS NOT NULL)),
+    CONSTRAINT ck_pipeline_configs_classification CHECK (
+        NOT classification_enabled OR (classification_profile_id IS NOT NULL AND classification_prompt_id IS NOT NULL)),
+    CONSTRAINT ck_pipeline_configs_classification_pages CHECK (classification_pages > 0),
+    CONSTRAINT ck_pipeline_configs_classification_min_confidence CHECK (classification_min_confidence BETWEEN 0 AND 1),
+    CONSTRAINT ck_pipeline_configs_min_priority CHECK (min_priority IN ('P1', 'P2', 'P3'))
 );
 CREATE UNIQUE INDEX uq_pipeline_configs_default ON pipeline_configs (is_default) WHERE is_default;
 
@@ -527,7 +544,7 @@ CREATE TABLE runs (
     CONSTRAINT fk_runs_vector_index_id FOREIGN KEY (vector_index_id) REFERENCES vector_indexes (id) ON DELETE SET NULL,
     CONSTRAINT ck_runs_kind CHECK (kind IN ('full', 'decompose', 'extract')),
     CONSTRAINT ck_runs_state CHECK (state IN ('queued', 'running', 'succeeded', 'failed', 'cancelled')),
-    CONSTRAINT ck_runs_stage CHECK (stage IS NULL OR stage IN ('decomposing', 'indexing', 'extracting')),
+    CONSTRAINT ck_runs_stage CHECK (stage IS NULL OR stage IN ('decomposing', 'indexing', 'classifying', 'extracting')),
     CONSTRAINT ck_runs_progress CHECK (progress_done >= 0 AND progress_done <= progress_total),
     CONSTRAINT ck_runs_attempts CHECK (attempts >= 0 AND max_attempts > 0 AND attempts <= max_attempts),
     CONSTRAINT ck_runs_started CHECK (state <> 'running' OR started_at IS NOT NULL),
@@ -624,7 +641,7 @@ CREATE TABLE llm_calls (
     CONSTRAINT fk_llm_calls_run_id FOREIGN KEY (run_id) REFERENCES runs (id) ON DELETE CASCADE,
     CONSTRAINT fk_llm_calls_field_result_id FOREIGN KEY (field_result_id) REFERENCES field_results (id) ON DELETE CASCADE,
     CONSTRAINT fk_llm_calls_model_profile_id FOREIGN KEY (model_profile_id) REFERENCES model_profiles (id) ON DELETE SET NULL,
-    CONSTRAINT ck_llm_calls_purpose CHECK (purpose IN ('extraction', 'judge', 'caption', 'embedding')),
+    CONSTRAINT ck_llm_calls_purpose CHECK (purpose IN ('extraction', 'judge', 'classification', 'caption', 'embedding')),
     CONSTRAINT ck_llm_calls_status CHECK (status IN ('ok', 'error', 'timeout')),
     CONSTRAINT ck_llm_calls_usage CHECK (
         (prompt_tokens IS NULL OR prompt_tokens >= 0) AND (completion_tokens IS NULL OR completion_tokens >= 0)
@@ -652,6 +669,29 @@ CREATE TABLE judgements (
     CONSTRAINT ck_judgements_pass_issue CHECK (verdict <> 'PASS' OR issue IS NULL OR issue = 'NONE')
 );
 CREATE INDEX ix_judgements_field_result_id_created_at ON judgements (field_result_id, created_at DESC);
+
+-- Contract types considered for a run. The selected ones decide which fields the run extracts.
+--   classifier: proposed by the classification LLM (selected when confidence >= the pipeline's minimum)
+--   override:   chosen in the run options (the classifier is not called)
+--   fallback:   the fallback type, used when nothing else was selected
+CREATE TABLE run_classifications (
+    run_id           uuid          NOT NULL,
+    contract_type_id uuid          NOT NULL,
+    source           text          NOT NULL,
+    selected         boolean       NOT NULL,
+    confidence       numeric(4, 3),
+    -- Quote or reason the classifier gave.
+    evidence         text,
+    llm_call_id      uuid,
+    created_at       timestamptz   NOT NULL DEFAULT clock_timestamp(),
+    CONSTRAINT pk_run_classifications PRIMARY KEY (run_id, contract_type_id),
+    CONSTRAINT fk_run_classifications_run_id FOREIGN KEY (run_id) REFERENCES runs (id) ON DELETE CASCADE,
+    CONSTRAINT fk_run_classifications_contract_type_id FOREIGN KEY (contract_type_id) REFERENCES contract_types (id),
+    CONSTRAINT fk_run_classifications_llm_call_id FOREIGN KEY (llm_call_id) REFERENCES llm_calls (id) ON DELETE SET NULL,
+    CONSTRAINT ck_run_classifications_source CHECK (source IN ('classifier', 'override', 'fallback')),
+    CONSTRAINT ck_run_classifications_confidence CHECK (confidence IS NULL OR confidence BETWEEN 0 AND 1)
+);
+CREATE INDEX ix_run_classifications_contract_type_id ON run_classifications (contract_type_id);
 
 -- =====================================================================================================
 -- 4. Evaluation

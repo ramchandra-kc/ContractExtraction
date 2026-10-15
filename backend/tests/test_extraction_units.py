@@ -114,6 +114,53 @@ def test_generic_prompt_json_shapes(spec, expected):
     assert f'{{"late_payment_interest": {expected}}}' in extraction_prompt(f, "")
 
 
+def test_classifier_parsing():
+    from decimal import Decimal
+
+    from contract_extraction.extraction.classify import Candidate, parse_classification, select
+
+    known = {"msa", "sow", "nda", "other"}
+    got = parse_classification('Sure: {"types": [{"key": "SOW", "confidence": "85%", "evidence": "Statement of Work No. 4"},'
+                               ' {"key": "msa", "confidence": 0.4}, {"key": "lease", "confidence": 0.99},'
+                               ' {"key": "sow", "confidence": 0.1}, "nda"]}', known)
+    assert [(c.key, float(c.confidence)) for c in got] == [("nda", 1.0), ("sow", 0.85), ("msa", 0.4)], \
+        "unknown keys dropped, repeats keep the best, best first"
+    assert got[1].evidence == "Statement of Work No. 4"
+    assert [c.key for c in parse_classification('{"key": "msa"}', known)] == ["msa"], "missing confidence = 0.5"
+    assert parse_classification('{"types": [{"key": "msa", "confidence": 7}]}', known)[0].confidence == Decimal("0.07")
+    assert parse_classification("no idea", known) == []
+    cands = [Candidate("msa", Decimal("0.9"), None), Candidate("other", Decimal("0.8"), None), Candidate("sow", Decimal("0.5"), None)]
+    assert select(cands, Decimal("0.5"), "other") == ["msa", "sow"]
+    assert select(cands, Decimal("0.95"), "other") == []
+
+
+def test_opening_text():
+    from contract_extraction.extraction.classify import opening_text
+
+    chunks = [(1, "Title page"), (2, "Recitals"), (4, "Schedule")]
+    assert opening_text(chunks, 2) == "Title page\nRecitals"
+    assert opening_text(chunks, 9, max_chars=12) == "Title page\nR"
+    assert opening_text([(10, "late start")], 3) == "late start"
+
+
+@pytest.mark.parametrize("value, schema, expected, problems", [
+    ("One Way", {"type": "string", "enum": ["mutual", "one_way"]}, "one_way", []),
+    ("both", {"type": "string", "enum": ["mutual", "one_way"]}, "both", ["value: 'both' is not one of ['mutual', 'one_way']"]),
+    ({"amount": "5", "currency": "AUD"}, {"type": "object", "properties": {"amount": {"type": ["number", "null"]}}},
+     {"amount": "5", "currency": "AUD"}, ["value.amount: expected number or null, got str"]),
+    ([{"role": "Dev", "rate": 1}], {"type": "array", "items": {"type": "object", "properties": {"role": {}, "rate": {}}}},
+     [{"role": "Dev", "rate": 1}], []),
+    (101, {"type": "number", "minimum": 0, "maximum": 100}, 101, ["value: 101 is above 100"]),
+    (3.0, {"type": "integer"}, 3.0, []),
+    (True, {"type": "number"}, True, ["value: expected number, got bool"]),
+    ("anything", {}, "anything", []),
+])
+def test_conform(value, schema, expected, problems):
+    from contract_extraction.extraction.validation import conform
+
+    assert conform(value, schema) == (expected, problems)
+
+
 def test_fields_for_types(session):
     fs = ConfigRepo(session).resolve_pipeline().field_set
     nda = fs.fields_for_types(["nda"])
@@ -121,8 +168,20 @@ def test_fields_for_types(session):
     union = fs.fields_for_types(["msa", "sow"])
     assert len({f.key for f in union}) == len(union) == 66 + 10, "SOW adds only its own fields to the MSA's"
     assert [f.key for f in fs.fields_for_types([])] == [f.key for f in fs.fields_for_types(["other"])]
+    p1 = fs.fields_for_types(["saas"], min_priority="P1")
+    assert "service_levels" not in {f.key for f in p1}, "P2 for SaaS, even though it is P1 for an MSA"
+    assert "service_levels" in {f.key for f in fs.fields_for_types(["saas", "msa"], min_priority="P1")}
     with pytest.raises(ValueError, match="Unknown contract type"):
         fs.fields_for_types(["lease"])
+
+
+def test_narrow_checks_contract_types(session):
+    p = ConfigRepo(session).resolve_pipeline()
+    assert narrow(p, RunOptions(contract_types=["msa", "sow"])).field_set == p.field_set, "types are chosen at run time"
+    with pytest.raises(InvalidInput, match="Unknown contract type"):
+        narrow(p, RunOptions(contract_types=["lease"]))
+    with pytest.raises(InvalidInput, match="No contract types"):
+        narrow(p, RunOptions(contract_types=[]))
 
 
 @pytest.mark.parametrize("answer, expected", [

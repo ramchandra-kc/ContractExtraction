@@ -157,6 +157,12 @@ class CatalogPipeline(BaseModel):
     judge_profile: str | None
     judge_prompt: VersionRef | None
     judge_parallel: bool
+    classification_enabled: bool
+    classification_profile: str | None
+    classification_prompt: VersionRef | None
+    classification_pages: int
+    classification_min_confidence: Decimal
+    min_priority: Priority
     retrievals: list[str] = Field(description="RAG config names in priority order")
     error: str | None = Field(None, description="Why the pipeline cannot run right now, if it cannot")
 
@@ -187,12 +193,20 @@ class PipelineCreate(_In):
     judge_profile: str | None = None
     judge_prompt: VersionRef | None = None
     judge_parallel: bool = False
+    classification_enabled: bool = False
+    classification_profile: str | None = None
+    classification_prompt: VersionRef | None = None
+    classification_pages: Positive = 3
+    classification_min_confidence: Score = Decimal("0.5")
+    min_priority: Priority = Priority.P3
     retrievals: list[str] = Field(min_length=1, description="RAG config names in priority order")
 
     @model_validator(mode="after")
     def _judge(self) -> PipelineCreate:
         if self.judge_enabled and (self.judge_profile is None or self.judge_prompt is None):
             raise ValueError("judge_profile and judge_prompt are required when judge_enabled is true")
+        if self.classification_enabled and (self.classification_profile is None or self.classification_prompt is None):
+            raise ValueError("classification_profile and classification_prompt are required when classification_enabled is true")
         return self
 
 
@@ -207,6 +221,12 @@ class PipelineUpdate(_In):
     judge_profile: str | None = None
     judge_prompt: VersionRef | None = None
     judge_parallel: bool = None  # type: ignore[assignment]
+    classification_enabled: bool = None  # type: ignore[assignment]
+    classification_profile: str | None = None
+    classification_prompt: VersionRef | None = None
+    classification_pages: Positive = None  # type: ignore[assignment]
+    classification_min_confidence: Score = None  # type: ignore[assignment]
+    min_priority: Priority = None  # type: ignore[assignment]
     retrievals: list[str] = Field(None, min_length=1)  # type: ignore[assignment]
 
 

@@ -50,6 +50,11 @@ export function PipelinesTab({ catalog }: { catalog: Catalog }) {
               </TableCell>
               <TableCell className="text-xs">
                 {p.field_set.name} v{p.field_set.version}
+                <br />
+                <span className="text-muted-foreground">
+                  {p.classification_enabled ? `detect type (≥ ${p.classification_min_confidence})` : 'fallback type'}
+                  {p.min_priority !== 'P3' && ` · ${p.min_priority === 'P1' ? 'P1 only' : 'P1–P2'}`}
+                </span>
               </TableCell>
               <TableCell className="text-xs">
                 {p.extraction_profile}
@@ -129,6 +134,12 @@ function PipelineForm({
   const [judgeProfile, setJudgeProfile] = useState(initial.judge_profile ?? '')
   const [judgePrompt, setJudgePrompt] = useState(refKey(initial.judge_prompt))
   const [judgeParallel, setJudgeParallel] = useState(initial.judge_parallel)
+  const [classify, setClassify] = useState(initial.classification_enabled)
+  const [classifyProfile, setClassifyProfile] = useState(initial.classification_profile ?? '')
+  const [classifyPrompt, setClassifyPrompt] = useState(refKey(initial.classification_prompt))
+  const [classifyPages, setClassifyPages] = useState(String(initial.classification_pages))
+  const [minConfidence, setMinConfidence] = useState(String(initial.classification_min_confidence))
+  const [minPriority, setMinPriority] = useState<CatalogPipeline['min_priority']>(initial.min_priority)
   const [retrievals, setRetrievals] = useState<string[]>(initial.retrievals)
 
   const prompts = (role: string) =>
@@ -155,6 +166,12 @@ function PipelineForm({
     judge_profile: judgeEnabled ? judgeProfile || null : null,
     judge_prompt: judgeEnabled ? parseRef(judgePrompt) : null,
     judge_parallel: judgeParallel,
+    classification_enabled: classify,
+    classification_profile: classify ? classifyProfile || null : null,
+    classification_prompt: classify ? parseRef(classifyPrompt) : null,
+    classification_pages: Number(classifyPages),
+    classification_min_confidence: minConfidence.trim(),
+    min_priority: minPriority,
     retrievals,
   }
   const submit = () => {
@@ -188,6 +205,35 @@ function PipelineForm({
         <div />
         <SelectInput label="Extraction profile" value={extractionProfile} onChange={setExtractionProfile} options={profiles} />
         <SelectInput label="Extraction prompt" value={extractionPrompt} onChange={setExtractionPrompt} options={prompts('extraction_system')} />
+      </div>
+
+      <div className="space-y-3 rounded-md border p-3">
+        <SwitchInput label="Detect the contract type first and extract only its fields" checked={classify} onChange={setClassify} />
+        {classify ? (
+          <div className="grid gap-3 sm:grid-cols-2">
+            <SelectInput label="Classification profile" value={classifyProfile} onChange={setClassifyProfile} options={profiles} />
+            <SelectInput label="Classification prompt" value={classifyPrompt} onChange={setClassifyPrompt} options={prompts('classification_system')} />
+            <TextInput label="Pages read" value={classifyPages} onChange={setClassifyPages} hint="The classifier reads the document's first pages." />
+            <TextInput
+              label="Minimum confidence"
+              value={minConfidence}
+              onChange={setMinConfidence}
+              hint="0–1. A type below this is not used; with none above it, the fallback type is."
+            />
+          </div>
+        ) : (
+          <p className="text-xs text-muted-foreground">Runs extract the fallback type's fields unless a run names its contract type.</p>
+        )}
+        <SelectInput
+          label="Fields to extract"
+          value={minPriority}
+          onChange={(v) => setMinPriority(v as CatalogPipeline['min_priority'])}
+          options={[
+            { value: 'P3', label: 'All of the contract type (P1–P3)' },
+            { value: 'P2', label: 'P1 and P2 (skip informational)' },
+            { value: 'P1', label: 'P1 only (financial, time or exit exposure)' },
+          ]}
+        />
       </div>
 
       <div className="space-y-3 rounded-md border p-3">

@@ -125,6 +125,10 @@ def _pipeline(row: m.PipelineConfig, repo: ConfigRepo) -> CatalogPipeline:
         extraction_prompt=_ref(row.extraction_prompt),  # type: ignore[arg-type]
         judge_enabled=row.judge_enabled, judge_profile=row.judge_profile.name if row.judge_profile else None,
         judge_prompt=_ref(row.judge_prompt), judge_parallel=row.judge_parallel,
+        classification_enabled=row.classification_enabled,
+        classification_profile=row.classification_profile.name if row.classification_profile else None,
+        classification_prompt=_ref(row.classification_prompt), classification_pages=row.classification_pages,
+        classification_min_confidence=row.classification_min_confidence, min_priority=row.min_priority,
         retrievals=[r.retrieval_config.name for r in row.retrievals], error=error,
     )
 

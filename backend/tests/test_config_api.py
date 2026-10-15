@@ -104,6 +104,19 @@ def test_pipelines(client):
     problem(new_pipeline(client, "nojudge", judge_profile=None), 422, "judge_profile")
     assert new_pipeline(client, "nojudge", judge_enabled=False, judge_profile=None, judge_prompt=None).status_code == 201
 
+    assert not r.json()["classification_enabled"] and r.json()["min_priority"] == "P3"
+    problem(new_pipeline(client, "cls", classification_enabled=True), 422, "classification_profile")
+    default = pipeline(client)
+    assert default["classification_enabled"] and default["classification_profile"] == "classification-default"
+    r = client.patch(f"{C}/pipelines/trial", json={
+        "classification_enabled": True, "classification_profile": "classification-default",
+        "classification_prompt": default["classification_prompt"], "classification_min_confidence": "0.7",
+        "classification_pages": 2, "min_priority": "P1"})
+    assert r.status_code == 200, r.text
+    assert (r.json()["classification_min_confidence"], r.json()["classification_pages"], r.json()["min_priority"]) == ("0.700", 2, "P1")
+    problem(client.patch(f"{C}/pipelines/trial", json={"classification_prompt": default["extraction_prompt"]}), 422, "cannot run")
+    problem(client.patch(f"{C}/pipelines/trial", json={"min_priority": "P4"}), 422)
+
     r = client.post(f"{C}/pipelines/trial/default")
     assert r.status_code == 200 and r.json()["is_default"]
     assert [p["name"] for p in catalog(client)["pipelines"] if p["is_default"]] == ["trial"]

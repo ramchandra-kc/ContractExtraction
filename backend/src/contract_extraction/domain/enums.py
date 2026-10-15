@@ -18,6 +18,7 @@ class ModelKind(StrEnum):
 class PromptRole(StrEnum):
     EXTRACTION_SYSTEM = "extraction_system"
     JUDGE_SYSTEM = "judge_system"
+    CLASSIFICATION_SYSTEM = "classification_system"
     CAPTION = "caption"
 
 
@@ -93,6 +94,7 @@ class RunState(StrEnum):
 class RunStage(StrEnum):
     DECOMPOSING = "decomposing"
     INDEXING = "indexing"
+    CLASSIFYING = "classifying"
     EXTRACTING = "extracting"
 
 
@@ -126,8 +128,15 @@ class JudgeIssue(StrEnum):
 class LlmCallPurpose(StrEnum):
     EXTRACTION = "extraction"
     JUDGE = "judge"
+    CLASSIFICATION = "classification"
     CAPTION = "caption"
     EMBEDDING = "embedding"
+
+
+class ClassificationSource(StrEnum):
+    CLASSIFIER = "classifier"
+    OVERRIDE = "override"
+    FALLBACK = "fallback"
 
 
 class LlmCallStatus(StrEnum):

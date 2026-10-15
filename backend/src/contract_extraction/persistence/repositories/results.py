@@ -11,11 +11,11 @@ from typing import Any
 from sqlalchemy import and_, select
 from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.engine import RowMapping
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, selectinload
 
 from ...core.errors import NotFound
 from ...domain.config import ModelProfile
-from ...domain.enums import FieldResultStatus, JudgeIssue, LlmCallPurpose, LlmCallStatus, Verdict
+from ...domain.enums import ClassificationSource, FieldResultStatus, JudgeIssue, LlmCallPurpose, LlmCallStatus, Verdict
 from ...extraction.retrieval import Hit
 from ...providers.base import ChatResult
 from .. import models as m
@@ -86,6 +86,23 @@ class ResultRepo:
         self.session.add(row)
         self.session.flush()
         return row.id
+
+    def add_classification(self, run_id: uuid.UUID, contract_type_id: uuid.UUID, source: ClassificationSource,
+                           selected: bool, confidence: Decimal | None = None, evidence: str | None = None,
+                           llm_call_id: uuid.UUID | None = None) -> None:
+        self.session.add(m.RunClassification(run_id=run_id, contract_type_id=contract_type_id, source=source,
+                                             selected=selected, confidence=confidence, evidence=evidence,
+                                             llm_call_id=llm_call_id))
+        self.session.flush()
+
+    def classifications(self, run_id: uuid.UUID) -> Sequence[m.RunClassification]:
+        """Contract types considered for the run: selected first, then by confidence."""
+        return self.session.scalars(
+            select(m.RunClassification).options(selectinload(m.RunClassification.contract_type))
+            .where(m.RunClassification.run_id == run_id)
+            .order_by(m.RunClassification.selected.desc(), m.RunClassification.confidence.desc().nulls_last(),
+                      m.RunClassification.created_at)
+        ).all()
 
     def field_results(self, run_id: uuid.UUID) -> Sequence[m.FieldResult]:
         return self.session.scalars(

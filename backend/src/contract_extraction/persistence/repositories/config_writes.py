@@ -99,7 +99,14 @@ class ConfigWriter:
         if "judge_prompt" in values:
             ref = values["judge_prompt"]
             out["judge_prompt_id"] = self._versioned(m.PromptTemplate, ref, "Prompt").id if ref else None
-        for key in ("description", "judge_enabled", "judge_parallel"):
+        if "classification_profile" in values:
+            ref = values["classification_profile"]
+            out["classification_profile_id"] = self._named(m.ModelProfile, ref, "Model profile").id if ref else None
+        if "classification_prompt" in values:
+            ref = values["classification_prompt"]
+            out["classification_prompt_id"] = self._versioned(m.PromptTemplate, ref, "Prompt").id if ref else None
+        for key in ("description", "judge_enabled", "judge_parallel", "classification_enabled", "classification_pages",
+                    "classification_min_confidence", "min_priority"):
             if key in values:
                 out[key] = values[key]
         return out

@@ -14,8 +14,11 @@ from ..domain.config import PipelineConfig
 class RunOptions(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    # Subset of field keys / RAG config names (None = all from the pipeline).
+    # Exactly these field keys (None = the fields of the document's contract types).
     fields: list[str] | None = None
+    # Treat the document as these contract types instead of detecting them (ignored when fields is set).
+    contract_types: list[str] | None = None
+    # Subset of RAG config names (None = all from the pipeline).
     retrievals: list[str] | None = None
     # False turns the judge off for this run; None keeps the pipeline's setting.
     judge: bool | None = None
@@ -37,6 +40,13 @@ def narrow(pipeline: PipelineConfig, options: RunOptions) -> PipelineConfig:
                                f"({len(known)} fields){hint}")
         keep = [f for f in pipeline.field_set.fields if f.key in set(options.fields)]
         update["field_set"] = pipeline.field_set.model_copy(update={"fields": tuple(keep)})
+    if options.contract_types is not None:
+        known_types = {t.key for t in pipeline.field_set.contract_types}
+        unknown = [k for k in options.contract_types if k not in known_types]
+        if unknown:
+            raise InvalidInput(f"Unknown contract type(s) {unknown}; known: {sorted(known_types)}")
+        if not options.contract_types:
+            raise InvalidInput("No contract types selected")
     if options.retrievals is not None:
         known = {r.name for r in pipeline.retrievals}
         unknown = [n for n in options.retrievals if n not in known]

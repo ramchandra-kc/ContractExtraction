@@ -151,24 +151,26 @@ class FieldSet(_Frozen):
     def fallback_type(self) -> ContractType | None:
         return next((t for t in self.contract_types if t.is_fallback), None)
 
-    def fields_for_types(self, type_keys: list[str] | tuple[str, ...]) -> tuple[Field, ...]:
+    def fields_for_types(self, type_keys: list[str] | tuple[str, ...], min_priority: Priority = Priority.P3) -> tuple[Field, ...]:
         """The union of the fields the given contract types expect, most important first.
 
         No types: the fallback type's fields, or every field when the set defines no types.
         A field's priority is the highest it has among the given types; ties keep the field-set order.
+        Fields less important than ``min_priority`` are left out.
         """
         types = {t.key: t for t in self.contract_types}
         unknown = [k for k in type_keys if k not in types]
         if unknown:
             raise ValueError(f"Unknown contract type(s) {unknown}; known: {sorted(types)}")
         chosen = [types[k] for k in type_keys] or ([self.fallback_type] if self.fallback_type else [])
-        if not chosen:
-            return self.fields
-        priority: dict[str, Priority] = {}
-        for t in chosen:
-            for member in t.fields:
-                priority[member.key] = min(priority.get(member.key, member.priority), member.priority)
-        selected = [f for f in self.fields if f.key in priority]
+        if chosen:
+            priority: dict[str, Priority] = {}
+            for t in chosen:
+                for member in t.fields:
+                    priority[member.key] = min(priority.get(member.key, member.priority), member.priority)
+        else:
+            priority = {f.key: f.priority for f in self.fields}
+        selected = [f for f in self.fields if f.key in priority and priority[f.key] <= min_priority]
         return tuple(sorted(selected, key=lambda f: (priority[f.key], f.position)))
 
 
@@ -184,6 +186,14 @@ class PipelineConfig(_Frozen):
     judge_profile: ModelProfile | None = None
     judge_prompt: Prompt | None = None
     judge_parallel: bool = False
+    # Detect the contract type(s) first and extract only their fields (off: the fallback type's fields).
+    classification_enabled: bool = False
+    classification_profile: ModelProfile | None = None
+    classification_prompt: Prompt | None = None
+    classification_pages: int = 3
+    classification_min_confidence: Decimal = Decimal("0.5")
+    # Lowest field priority extracted (P3 = all fields).
+    min_priority: Priority = Priority.P3
     # In priority order: the first entry's answer is preferred.
     retrievals: tuple[RetrievalConfig, ...]
 

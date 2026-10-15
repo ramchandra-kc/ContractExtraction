@@ -923,6 +923,16 @@ export interface components {
             judge_prompt: components["schemas"]["VersionRef"] | null;
             /** Judge Parallel */
             judge_parallel: boolean;
+            /** Classification Enabled */
+            classification_enabled: boolean;
+            /** Classification Profile */
+            classification_profile: string | null;
+            classification_prompt: components["schemas"]["VersionRef"] | null;
+            /** Classification Pages */
+            classification_pages: number;
+            /** Classification Min Confidence */
+            classification_min_confidence: string;
+            min_priority: components["schemas"]["Priority"];
             /**
              * Retrievals
              * @description RAG config names in priority order
@@ -1634,6 +1644,26 @@ export interface components {
              */
             judge_parallel: boolean;
             /**
+             * Classification Enabled
+             * @default false
+             */
+            classification_enabled: boolean;
+            /** Classification Profile */
+            classification_profile?: string | null;
+            classification_prompt?: components["schemas"]["VersionRef"] | null;
+            /**
+             * Classification Pages
+             * @default 3
+             */
+            classification_pages: number;
+            /**
+             * Classification Min Confidence
+             * @default 0.5
+             */
+            classification_min_confidence: number | string;
+            /** @default P3 */
+            min_priority: components["schemas"]["Priority"];
+            /**
              * Retrievals
              * @description RAG config names in priority order
              */
@@ -1687,6 +1717,16 @@ export interface components {
             judge_prompt?: components["schemas"]["VersionRef"] | null;
             /** Judge Parallel */
             judge_parallel?: boolean;
+            /** Classification Enabled */
+            classification_enabled?: boolean;
+            /** Classification Profile */
+            classification_profile?: string | null;
+            classification_prompt?: components["schemas"]["VersionRef"] | null;
+            /** Classification Pages */
+            classification_pages?: number;
+            /** Classification Min Confidence */
+            classification_min_confidence?: number | string;
+            min_priority?: components["schemas"]["Priority"];
             /** Retrievals */
             retrievals?: string[];
         };
@@ -1787,7 +1827,7 @@ export interface components {
          * PromptRole
          * @enum {string}
          */
-        PromptRole: "extraction_system" | "judge_system" | "caption";
+        PromptRole: "extraction_system" | "judge_system" | "classification_system" | "caption";
         /** PromptVersionCreate */
         PromptVersionCreate: {
             /** Body */
@@ -1890,9 +1930,14 @@ export interface components {
             kind: components["schemas"]["RunKind"];
             /**
              * Fields
-             * @description Field keys to extract (default: all)
+             * @description Exactly these field keys (default: the fields of the document's contract types)
              */
             fields?: string[] | null;
+            /**
+             * Contract Types
+             * @description Treat the document as these contract types instead of detecting them (ignored when fields is set)
+             */
+            contract_types?: string[] | null;
             /**
              * Retrievals
              * @description RAG config names (default: all of the pipeline)

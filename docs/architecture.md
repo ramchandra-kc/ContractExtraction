@@ -139,9 +139,16 @@ queries. A **pipeline config** bundles them into a recipe. Every run stores the 
 `duration`, `object: rate, cap`), turned into a JSON Schema, a priority (P1 = direct financial, time or exit exposure …
 P3 = informational) and a description. Shared groups (Core, Commercial, Risk & Liability, Restrictive Covenants, IP & Data)
 are defined once; each type adds its own fields. `contract-extraction gen-catalogue` parses the document and writes
-`docker/seed_catalogue.sql`. A run extracts the fields of the document's contract type(s), P1 first, or exactly the fields
-chosen in its options. Catalogue fields have no hand-written prompt: the extraction prompt is built from the field's
+`docker/seed_catalogue.sql`. Catalogue fields have no hand-written prompt: the extraction prompt is built from the field's
 description and value type.
+
+**Classification** (before extraction, stage `classifying`): one LLM call reads the document's first pages
+(`classification_pages`, from the chunk rows) and names the contract type(s), each with a confidence and a quote. Types
+reaching `classification_min_confidence` are used, several at once when the document holds several agreements; none, or
+classification off, means the fallback type. A run can name its types instead (`contract_types`), or its exact fields
+(`fields`). The run then extracts the union of the types' fields down to the pipeline's `min_priority`, P1 first. Every
+decision is stored in `run_classifications` (source `classifier`, `override` or `fallback`), including proposals below
+the threshold. Extracted values are checked against the field's JSON Schema (types and enums; formats are not enforced).
 
 **Retrieval** (per field and RAG config):
 1. Use the field's expansion queries when `query_expansion` is on, otherwise the field label.
@@ -178,7 +185,7 @@ stateDiagram-v2
   If the original process was only slow, its heartbeat notices it lost the run and stops at the next field without overwriting the outcome.
 - There are **no automatic retries** (`max_attempts` = 1). A failed run is simply run again.
 
-- While `running`, the run reports a **stage** (`decomposing` → `indexing` → `extracting`) and **progress** (done/total).
+- While `running`, the run reports a **stage** (`decomposing` → `indexing` → `classifying` → `extracting`) and **progress** (done/total).
 - At most one active (queued or running) run per document.
 - Each run stores the **options** chosen by the caller and a **snapshot of the resolved pipeline config**, narrowed by those options.
   The executor runs **from the snapshot**, so later config edits never change what a queued or past run does.
@@ -189,7 +196,7 @@ stateDiagram-v2
 
 ## 7. Data model
 
-The full definition is in [`docker/schema.sql`](../docker/schema.sql): 28 tables and 2 views in four groups. The default
+The full definition is in [`docker/schema.sql`](../docker/schema.sql): 29 tables and 2 views in four groups. The default
 configuration is in [`docker/seed.sql`](../docker/seed.sql); the fields and contract types in the generated
 [`docker/seed_catalogue.sql`](../docker/seed_catalogue.sql).
 
@@ -261,6 +268,7 @@ documents 1──* decompositions 1──* pages 1──* page_images
 
 ```
 experiments 1──* runs 1──* run_events
+                   ├──* run_classifications *──1 contract_types
                    └──* field_results 1──* retrieval_hits *──1 chunks
                               ├──* llm_calls
                               └──* judgements
@@ -268,6 +276,7 @@ experiments 1──* runs 1──* run_events
 
 - **runs**: the job queue (state, stage, progress, attempts, heartbeat), the pipeline config, and a `config_snapshot` with the resolved recipe.
 - **run_events**: the run's timeline and log.
+- **run_classifications**: the contract types considered for the run (classifier proposals with confidence and quote, an override, or the fallback) and which were selected.
 - **field_results**: one outcome per run × RAG config × field (`extracted` / `not_found` / `error`).
 - **retrieval_hits**: the chunks used as evidence, with score and matching query.
 - **llm_calls**: every LLM call, with prompts, response, token usage, latency and cost.

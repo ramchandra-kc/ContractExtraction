@@ -8,6 +8,7 @@ identical evidence three times: with reuse only the first config calls the model
 
 from __future__ import annotations
 
+import json
 import re
 from decimal import Decimal
 
@@ -15,7 +16,7 @@ import pytest
 from sqlalchemy import func, select, update
 
 from contract_extraction.core.settings import load_settings
-from contract_extraction.domain.enums import RunKind, RunState
+from contract_extraction.domain.enums import Priority, RunKind, RunState
 from contract_extraction.ingestion import register_file
 from contract_extraction.persistence import models as m
 from contract_extraction.persistence.repositories import ConfigRepo, RunRepo
@@ -30,18 +31,29 @@ FIELDS = ["title", "payment_terms"]
 _KEY = re.compile(r"extract the following fields?:\s*\n\s*([a-z_]+)")
 
 
-class ScriptedChat:
-    """Extraction: finds Acme for title, nothing else. Judge: PASS when the answer names Acme."""
+MSA = '{"types": [{"key": "msa", "confidence": 0.92, "evidence": "This Master Services Agreement"}]}'
 
-    def __init__(self, judge: bool, fail_on: str | None = None, on_call=None):
+
+class ScriptedChat:
+    """Extraction: finds Acme for title, nothing else (or the scripted ``answers``). Judge: PASS when the
+    answer names Acme. Classifier: answers ``classification`` (an MSA by default)."""
+
+    def __init__(self, judge: bool, fail_on: str | None = None, on_call=None, answers: dict | None = None,
+                 classification: str | Exception = MSA):
         self.judge, self.fail_on, self.on_call = judge, fail_on, on_call
+        self.answers = {"title": "Acme Pty Ltd", **(answers or {})}
+        self.classification = classification
         self.calls: list[str] = []
 
     def complete(self, system, user, profile):
         self.calls.append(user)
         if self.on_call:
             self.on_call(len(self.calls))
-        if self.judge:
+        if user.startswith("Contract types:"):
+            if isinstance(self.classification, Exception):
+                raise self.classification
+            text = self.classification
+        elif self.judge:
             ok = "Acme" in user.split("Answer:", 1)[1]
             text = ('{"status": "PASS", "issue": "NONE", "explanation": "Stated in the preamble."}' if ok
                     else '{"status": "FAIL", "issue": "NO_CONTEXT", "explanation": "Not in the context."}')
@@ -49,17 +61,19 @@ class ScriptedChat:
             key = _KEY.search(user).group(1)
             if key == self.fail_on:
                 raise ProviderError("model crashed")
-            text = '{"%s": "%s"}' % (key, "Acme Pty Ltd" if key == "title" else "")
+            text = json.dumps({key: self.answers.get(key, "")})
         return ChatResult(text=text, latency_ms=12, prompt_tokens=200, completion_tokens=10, params={"model": profile.model.name})
 
 
 class Harness:
-    def __init__(self, db, storage, tmp_path, name: str, **chat_kwargs):
+    def __init__(self, db, storage, tmp_path, name: str, classification: str | Exception = MSA, **chat_kwargs):
         self.db, self.storage, self.settings = db, storage, load_settings("test")
         self.extractor = ScriptedChat(judge=False, **chat_kwargs)
         self.judge = ScriptedChat(judge=True)
+        self.classifier = ScriptedChat(judge=False, classification=classification)
         self.embedder, self.store = HashEmbedder(), MemoryStore()
-        self.providers = Providers(chat=lambda p: self.judge if p.name.startswith("judge") else self.extractor,
+        chats = {"judge-default": self.judge, "classification-default": self.classifier}
+        self.providers = Providers(chat=lambda p: chats.get(p.name, self.extractor),
                                    embedder=lambda model: self.embedder, store=lambda kind: self.store)
         self.pdf = make_pdf(tmp_path / f"{name}.pdf", pages=[f"{b} {name}." for b in BODY])
 
@@ -116,16 +130,102 @@ def test_full_run_records_everything(db, storage, tmp_path):
         assert call.status == "ok" and call.provider_key == "ollama-local"
 
 
-def test_without_chosen_fields_the_fallback_type_is_extracted(db, storage, tmp_path):
-    h = Harness(db, storage, tmp_path, "fallback")
-    run_id = h.enqueue(RunOptions(retrievals=["RAG01"], judge=False))
+def _classifications(db, run_id) -> list[tuple]:
+    with db.session() as s:
+        return [(c.contract_type.key, c.source, c.selected, c.confidence and float(c.confidence))
+                for c in ResultRepo(s).classifications(run_id)]
+
+
+TYPED = RunOptions(retrievals=["RAG01"], judge=False)
+
+
+def test_detected_contract_type_decides_the_fields(db, storage, tmp_path):
+    h = Harness(db, storage, tmp_path, "classify")
+    run_id = h.enqueue(TYPED)
     assert h.execute(run_id) == RunState.SUCCEEDED
-    run, best, results, _, _, _, events = _summary(db, run_id)
-    assert results == 44 and run.progress_total == 44, "Other = Core + Commercial + Risk & Liability"
-    assert "Extracting 44 fields x 1 RAG configs" in events
-    assert {"title", "payment_terms", "liability_cap"} <= set(best) and "nda_direction" not in best
+    run, best, results, calls, _, _, events = _summary(db, run_id)
+    assert results == 66 and run.progress_total == 66 and calls == 1 + 66, "MSA fields; one classification call"
+    assert {"rate_card", "liability_cap", "title"} <= set(best) and "nda_direction" not in best
+    assert _classifications(db, run_id) == [("msa", "classifier", True, 0.92)]
+    assert "Contract type: MSA (0.920)" in events and any("Stage classifying" in e for e in events)
+    assert "Master Services Agreement" in h.classifier.calls[0], "the classifier reads the document's first pages"
     keys = [_KEY.search(c).group(1) for c in h.extractor.calls]
     assert keys[0] == "document_status", "P1 fields first, then field-set order"
+    with db.session() as s:
+        purposes = s.scalars(select(m.LlmCall.purpose).where(m.LlmCall.run_id == run_id)).all()
+    assert purposes.count("classification") == 1
+
+
+def test_several_types_extract_the_union(db, storage, tmp_path):
+    answer = '{"types": [{"key": "msa", "confidence": 0.9}, {"key": "sow", "confidence": "80%"}, {"key": "nda", "confidence": 0.2}]}'
+    h = Harness(db, storage, tmp_path, "union", classification=answer)
+    run_id = h.enqueue(TYPED)
+    assert h.execute(run_id) == RunState.SUCCEEDED
+    run, best, *_ = _summary(db, run_id)
+    assert run.progress_total == 76 and {"rate_card", "sow_number"} <= set(best)
+    assert _classifications(db, run_id) == [("msa", "classifier", True, 0.9), ("sow", "classifier", True, 0.8),
+                                            ("nda", "classifier", False, 0.2)]
+
+
+@pytest.mark.parametrize("answer", [
+    '{"types": [{"key": "msa", "confidence": 0.3}]}',
+    '{"types": [{"key": "other", "confidence": 0.9, "evidence": "a letter"}]}',
+    "I am not sure.",
+    ProviderError("model crashed"),
+])
+def test_unsure_or_failed_classification_uses_the_fallback(db, storage, tmp_path, answer):
+    h = Harness(db, storage, tmp_path, "unsure", classification=answer)
+    run_id = h.enqueue(TYPED)
+    assert h.execute(run_id) == RunState.SUCCEEDED
+    run, best, _, _, _, _, events = _summary(db, run_id)
+    assert run.progress_total == 44, "Other = Core + Commercial + Risk & Liability"
+    assert ("other", "fallback", True) in [c[:3] for c in _classifications(db, run_id)]
+    assert any(e.startswith("Contract type: Other (fallback") for e in events)
+
+
+def test_contract_type_override_skips_the_classifier(db, storage, tmp_path):
+    h = Harness(db, storage, tmp_path, "override")
+    run_id = h.enqueue(RunOptions(contract_types=["nda"], retrievals=["RAG01"], judge=False))
+    assert h.execute(run_id) == RunState.SUCCEEDED
+    run, best, *_ = _summary(db, run_id)
+    assert run.progress_total == 42 and "nda_direction" in best and not h.classifier.calls
+    assert _classifications(db, run_id) == [("nda", "override", True, None)]
+
+
+def test_classification_off_uses_the_fallback(db, storage, tmp_path):
+    h = Harness(db, storage, tmp_path, "classify-off")
+    run_id = h.enqueue(TYPED, classification_enabled=False, classification_profile=None, classification_prompt=None)
+    assert h.execute(run_id) == RunState.SUCCEEDED
+    run, *_ = _summary(db, run_id)
+    assert run.progress_total == 44 and not h.classifier.calls
+    assert _classifications(db, run_id) == [("other", "fallback", True, None)]
+
+
+def test_min_priority_drops_less_important_fields(db, storage, tmp_path):
+    h = Harness(db, storage, tmp_path, "priority")
+    run_id = h.enqueue(TYPED, min_priority=Priority.P1)
+    assert h.execute(run_id) == RunState.SUCCEEDED
+    with db.session() as s:
+        snapshot_fields = {f["key"]: f for f in RunRepo(s).get(run_id).config_snapshot["field_set"]["fields"]}
+        msa = next(t for t in RunRepo(s).get(run_id).config_snapshot["field_set"]["contract_types"] if t["key"] == "msa")
+    expected = {mb["key"] for mb in msa["fields"] if mb["priority"] == "P1"}
+    _, best, *_ = _summary(db, run_id)
+    assert set(best) == expected and "title" not in best and len(expected) < 66 and set(best) <= set(snapshot_fields)
+
+
+def test_answers_must_fit_the_field_type(db, storage, tmp_path):
+    h = Harness(db, storage, tmp_path, "schema", answers={"document_status": "Executed", "nda_direction": "maybe",
+                                                          "trade_secrets_indefinite": "yes"})
+    run_id = h.enqueue(RunOptions(fields=["document_status", "nda_direction", "trade_secrets_indefinite"],
+                                  retrievals=["RAG01"], judge=False))
+    assert h.execute(run_id) == RunState.SUCCEEDED
+    with db.session() as s:
+        rows = {k: (st, v, e) for k, st, v, e in s.execute(
+            select(m.Field.key, m.FieldResult.status, m.FieldResult.value, m.FieldResult.error)
+            .join(m.Field).where(m.FieldResult.run_id == run_id))}
+    assert rows["document_status"][:2] == ("extracted", "executed"), "enum values are normalised"
+    assert rows["nda_direction"][0] == "error" and "'maybe' is not one of" in rows["nda_direction"][2]
+    assert rows["trade_secrets_indefinite"][0] == "error" and "expected boolean" in rows["trade_secrets_indefinite"][2]
 
 
 def test_reuse_can_be_turned_off(db, storage, tmp_path):

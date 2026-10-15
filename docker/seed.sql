@@ -25,13 +25,22 @@ WHERE p.key = 'ollama-local';
 INSERT INTO model_profiles (name, description, model_id, temperature, top_p, top_k, num_ctx, json_mode, timeout_seconds)
 SELECT v.name, v.description, m.id, v.temperature, v.top_p, v.top_k, 8192, true, 600
 FROM (VALUES
-    ('extraction-default', 'Field extraction with llama3.1:8b', 0.2, 0.2, 20),
-    ('judge-default',      'LLM judge with llama3.1:8b',        0.1, 0.8, 100)
+    ('extraction-default',     'Field extraction with llama3.1:8b',       0.2, 0.2, 20),
+    ('judge-default',          'LLM judge with llama3.1:8b',              0.1, 0.8, 100),
+    ('classification-default', 'Contract type detection with llama3.1:8b', 0.0, 0.2, 20)
 ) AS v (name, description, temperature, top_p, top_k)
 JOIN llm_models m ON m.name = 'llama3.1:8b' AND m.kind = 'chat';
 
 -- System prompts
 INSERT INTO prompt_templates (name, version, role, body) VALUES
+    ('classification_system', 1, 'classification_system', 'You identify what kind of contract a document is.
+Always follow these rules:
+1. Decide from the document text only: its title, the parties, the recitals and what the document itself does.
+2. List a type only if the document itself is that kind of contract, not when it merely mentions or refers to one
+   (an SOW that refers to its master agreement is an SOW, not an MSA).
+3. A document can be several types when it contains several agreements (e.g. an MSA with an SOW attached).
+4. Confidence is between 0 and 1. Use the key "other" when no listed type fits.
+5. Return output strictly in JSON format with no extra commentary.'),
     ('extraction_system', 1, 'extraction_system', 'You are a precise information extraction assistant.
 Always follow these rules:
 1. Only extract values exactly as they appear in the text.
@@ -92,10 +101,11 @@ INSERT INTO retrieval_configs (name, description, top_k, score_threshold, query_
 INSERT INTO field_sets (name, version, description)
 VALUES ('contract_fields', 1, 'Contract types and their fields (docs/contract_types_and_fields.md)');
 
--- Default pipeline: all RAG configs in order, judge on
+-- Default pipeline: detect the contract type, then its fields under all RAG configs in order, judge on
 INSERT INTO pipeline_configs (name, description, decomposition_config_id, index_config_id, field_set_id,
-                              extraction_profile_id, extraction_prompt_id, judge_enabled, judge_profile_id, judge_prompt_id, is_default)
-SELECT 'default', 'Prototype setup: RAG01-RAG07, llama3.1:8b extraction and judge',
+                              extraction_profile_id, extraction_prompt_id, judge_enabled, judge_profile_id, judge_prompt_id,
+                              classification_enabled, classification_profile_id, classification_prompt_id, is_default)
+SELECT 'default', 'Contract type detection, then RAG01-RAG07, llama3.1:8b extraction and judge',
        (SELECT id FROM decomposition_configs WHERE name = 'default'),
        (SELECT id FROM index_configs WHERE name = 'default'),
        (SELECT id FROM field_sets WHERE name = 'contract_fields' AND version = 1),
@@ -104,6 +114,9 @@ SELECT 'default', 'Prototype setup: RAG01-RAG07, llama3.1:8b extraction and judg
        true,
        (SELECT id FROM model_profiles WHERE name = 'judge-default'),
        (SELECT id FROM prompt_templates WHERE name = 'judge_system' AND version = 1),
+       true,
+       (SELECT id FROM model_profiles WHERE name = 'classification-default'),
+       (SELECT id FROM prompt_templates WHERE name = 'classification_system' AND version = 1),
        true;
 
 INSERT INTO pipeline_config_retrievals (pipeline_config_id, retrieval_config_id, position)

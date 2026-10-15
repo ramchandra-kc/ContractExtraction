@@ -2540,6 +2540,42 @@
             "type": "boolean",
             "title": "Judge Parallel"
           },
+          "classification_enabled": {
+            "type": "boolean",
+            "title": "Classification Enabled"
+          },
+          "classification_profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Classification Profile"
+          },
+          "classification_prompt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VersionRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "classification_pages": {
+            "type": "integer",
+            "title": "Classification Pages"
+          },
+          "classification_min_confidence": {
+            "type": "string",
+            "title": "Classification Min Confidence"
+          },
+          "min_priority": {
+            "$ref": "#/components/schemas/Priority"
+          },
           "retrievals": {
             "items": {
               "type": "string"
@@ -2575,6 +2611,12 @@
           "judge_profile",
           "judge_prompt",
           "judge_parallel",
+          "classification_enabled",
+          "classification_profile",
+          "classification_prompt",
+          "classification_pages",
+          "classification_min_confidence",
+          "min_priority",
           "retrievals"
         ],
         "title": "CatalogPipeline"
@@ -4576,6 +4618,56 @@
             "title": "Judge Parallel",
             "default": false
           },
+          "classification_enabled": {
+            "type": "boolean",
+            "title": "Classification Enabled",
+            "default": false
+          },
+          "classification_profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Classification Profile"
+          },
+          "classification_prompt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VersionRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "classification_pages": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Classification Pages",
+            "default": 3
+          },
+          "classification_min_confidence": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Classification Min Confidence",
+            "default": "0.5"
+          },
+          "min_priority": {
+            "$ref": "#/components/schemas/Priority",
+            "default": "P3"
+          },
           "retrievals": {
             "items": {
               "type": "string"
@@ -4767,6 +4859,52 @@
           "judge_parallel": {
             "type": "boolean",
             "title": "Judge Parallel"
+          },
+          "classification_enabled": {
+            "type": "boolean",
+            "title": "Classification Enabled"
+          },
+          "classification_profile": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Classification Profile"
+          },
+          "classification_prompt": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/VersionRef"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          },
+          "classification_pages": {
+            "type": "integer",
+            "exclusiveMinimum": 0.0,
+            "title": "Classification Pages"
+          },
+          "classification_min_confidence": {
+            "anyOf": [
+              {
+                "type": "number",
+                "maximum": 1.0,
+                "minimum": 0.0
+              },
+              {
+                "type": "string"
+              }
+            ],
+            "title": "Classification Min Confidence"
+          },
+          "min_priority": {
+            "$ref": "#/components/schemas/Priority"
           },
           "retrievals": {
             "items": {
@@ -5072,6 +5210,7 @@
         "enum": [
           "extraction_system",
           "judge_system",
+          "classification_system",
           "caption"
         ],
         "title": "PromptRole"
@@ -5367,7 +5506,22 @@
               }
             ],
             "title": "Fields",
-            "description": "Field keys to extract (default: all)"
+            "description": "Exactly these field keys (default: the fields of the document's contract types)"
+          },
+          "contract_types": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "string"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Contract Types",
+            "description": "Treat the document as these contract types instead of detecting them (ignored when fields is set)"
           },
           "retrievals": {
             "anyOf": [
