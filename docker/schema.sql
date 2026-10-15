@@ -492,6 +492,10 @@ CREATE TABLE chunks (
     char_start      integer,
     char_end        integer,
     text            text    NOT NULL,
+    -- Embedded and keyword-indexed instead of text: Markdown removed, tables as rows, section in front.
+    search_text     text    NOT NULL,
+    -- The chunk's section and the headings inside it, one per line (weighted up in keyword search).
+    headings        text    NOT NULL DEFAULT '',
     CONSTRAINT pk_chunks PRIMARY KEY (id),
     CONSTRAINT fk_chunks_vector_index_id FOREIGN KEY (vector_index_id) REFERENCES vector_indexes (id) ON DELETE CASCADE,
     CONSTRAINT uq_chunks_vector_index_id_chunk_index UNIQUE (vector_index_id, chunk_index),

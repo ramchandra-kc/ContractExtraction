@@ -1,5 +1,8 @@
 """Indexing stage: pages → chunks → embeddings → vector collection, with chunk rows as the record.
 
+Chunks are embedded by their search text (``chunking.search_text``); the payload keeps the original
+text, which is what the extraction model reads.
+
 ``chunks`` rows are the source of truth (``chunks.id`` is the point id in the store), so a
 ready index whose collection has disappeared (e.g. Qdrant volume wiped) is rebuilt from its
 rows with the same ids, keeping retrieval evidence of earlier runs valid.
@@ -13,15 +16,17 @@ from __future__ import annotations
 import logging
 import re
 import uuid
+from collections.abc import Iterable
 from dataclasses import dataclass
 
 from ..core.errors import InvalidConfig
 from ..domain.config import IndexConfig
 from ..domain.enums import IndexStatus
+from ..persistence import models as m
 from ..persistence.db import Database
 from ..persistence.repositories.artifacts import DecompositionRepo, IndexRepo, NewChunk
 from ..providers.base import Embedder, Point, VectorStore
-from .chunking import chunk_page
+from .chunking import TextChunk, chunk_page, page_section
 
 log = logging.getLogger(__name__)
 _UNSAFE = re.compile(r"[^a-z0-9_-]+")
@@ -50,6 +55,16 @@ def _embed_all(embedder: Embedder, texts: list[str], batch_size: int, dimension:
     return vectors
 
 
+def _chunk_pages(pages: Iterable[m.Page], size: int, overlap: int) -> list[TextChunk]:
+    """Chunks of every page, each page starting in the section the previous one ended in."""
+    out: list[TextChunk] = []
+    section: str | None = None
+    for p in pages:
+        out += chunk_page(p.page_number, p.text, p.text_format, size, overlap, section)
+        section = page_section(p.text, p.text_format, section)
+    return out
+
+
 def _payload(document_code: str, decomposition_id: uuid.UUID, c: NewChunk) -> dict:
     return {"document_code": document_code, "decomposition_id": str(decomposition_id), "chunk_index": c.chunk_index,
             "page": c.page_start, "text": c.text}
@@ -70,7 +85,8 @@ def build_index(db: Database, decomposition_id: uuid.UUID, document_code: str, c
                 return IndexOutcome(existing.id, existing.collection_name, existing.chunk_count, reused=True)
             # Ready in the database but gone from the store: re-embed the stored chunks under the same ids.
             index_id, name, from_rows = existing.id, existing.collection_name, True
-            chunks = [NewChunk(c.id, c.chunk_index, c.page_start, c.page_end, c.char_start, c.char_end, c.text)
+            chunks = [NewChunk(c.id, c.chunk_index, c.page_start, c.page_end, c.char_start, c.char_end, c.text,
+                               c.search_text, c.headings)
                       for c in repo.chunks(existing.id)]
             log.warning("Collection %s is missing; rebuilding it from %d stored chunks", name, len(chunks))
         else:
@@ -79,13 +95,13 @@ def build_index(db: Database, decomposition_id: uuid.UUID, document_code: str, c
                 s.flush()
             name, from_rows = collection_name(document_code, decomposition_id, cfg.name), False
             index_id = repo.create(decomposition_id, cfg.id, cfg.vector_store, name, cfg.embedding_model.id, dimension).id
-            pieces = [c for p in DecompositionRepo(s).pages(decomposition_id)
-                      for c in chunk_page(p.page_number, p.text, p.text_format, cfg.chunk_size, cfg.chunk_overlap)]
-            chunks = [NewChunk(uuid.uuid4(), i, c.page_number, c.page_number, c.char_start, c.char_end, c.text)
+            pieces = _chunk_pages(DecompositionRepo(s).pages(decomposition_id), cfg.chunk_size, cfg.chunk_overlap)
+            chunks = [NewChunk(uuid.uuid4(), i, c.page_number, c.page_number, c.char_start, c.char_end, c.text,
+                               c.search_text, c.headings)
                       for i, c in enumerate(pieces)]
 
     try:
-        vectors = _embed_all(embedder, [c.text for c in chunks], cfg.batch_size, dimension)
+        vectors = _embed_all(embedder, [c.search_text for c in chunks], cfg.batch_size, dimension)
         if not from_rows and store.exists(name):
             store.delete_collection(name)  # leftover of an earlier failed attempt
         store.ensure_collection(name, dimension, cfg.distance)

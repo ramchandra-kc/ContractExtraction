@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from contract_extraction.indexing.chunking import chunk_page, normalize, pack, units
+from contract_extraction.indexing.chunking import chunk_page, normalize, pack, page_section, search_text, table_rows, units
 
 SENTENCES = " ".join(f"Sentence number {i} explains a contract term in some detail." for i in range(60))
 
@@ -52,3 +52,62 @@ def test_html_is_stripped():
 def test_empty_page():
     assert chunk_page(1, "   \n\n ", "md", 100, 10) == []
     assert pack([], 100, 10) == []
+
+
+# The layout a PDF converter produces for a cover-page parties block: a key/value table whose first
+# row is marked as the header and whose role lines continue the row above.
+PARTIES = """## **Parties:**
+
+|Name|**Acme Rail Pty Ltd ACN 111 111 111**|
+|---|---|
+||(**Acme**)|
+|Address|1 Sample Street, Exampleton NSW 2000|
+|Name|**Widget Services Pty Ltd ACN 222 222 222**|
+||**(Service Provider)**|"""
+
+
+def test_search_text_turns_a_key_value_table_into_rows():
+    assert search_text(PARTIES) == (
+        "Parties\n"
+        "Name: Acme Rail Pty Ltd ACN 111 111 111 (Acme)\n"
+        "Address: 1 Sample Street, Exampleton NSW 2000\n"
+        "Name: Widget Services Pty Ltd ACN 222 222 222 (Service Provider)")
+
+
+def test_table_with_named_columns_labels_each_value():
+    assert table_rows(["| Item | Rate | Cap |", "|---|---|---|", "| Fees | 5% | $10 |", "| Late | | 2% |"]) == [
+        "Item: Fees; Rate: 5%; Cap: $10", "Item: Late; Cap: 2%"]
+
+
+def test_form_table_lists_cells_and_drops_empty_columns():
+    rows = ["|**#**|**ITEM**|**DESCRIPTION**|||", "|---|---|---|---|---|",
+            "|||Representative:<br>Jane Sample||Email: jane@example.com|", "|**2**|**Commencement**|The date signed|||"]
+    assert table_rows(rows) == ["#; ITEM; DESCRIPTION", "Representative: Jane Sample; Email: jane@example.com",
+                                "2; Commencement; The date signed"]
+
+
+def test_search_text_removes_markdown_and_puts_the_section_first():
+    assert search_text("- **Pay** within `30` days<br>of invoice", "Payment") == "Payment\nPay within 30 days of invoice"
+
+
+def test_chunks_carry_their_section():
+    text = f"# Payment\n\n{SENTENCES}"
+    chunks = chunk_page(1, text, "md", size=300, overlap=0)
+    assert chunks[0].headings == "Payment" and chunks[0].search_text.startswith("Payment\nSentence number 0")
+    assert all(c.headings == "Payment" and c.search_text.startswith("Payment\nSentence") for c in chunks[1:])
+    assert all(c.text == normalize(text, "md")[c.char_start:c.char_end] for c in chunks)
+
+
+def test_section_continues_onto_the_next_page():
+    section = page_section("# Term\n\nThe term is two years.", "md", None)
+    assert section == "Term"
+    [chunk] = chunk_page(2, "It renews automatically.", "md", 300, 0, section)
+    assert chunk.search_text == "Term\nIt renews automatically." and chunk.headings == "Term"
+    assert page_section("No headings here.", "md", section) == "Term"
+
+
+def test_heading_never_ends_a_chunk():
+    text = "First paragraph sentence.\n\n## Next section\n\n" + "Body text goes on here. " * 20
+    chunks = chunk_page(1, text, "md", size=60, overlap=0)
+    assert not any(c.text.endswith("Next section") for c in chunks)
+    assert any(c.text.startswith("## Next section") for c in chunks)

@@ -45,6 +45,8 @@ class NewChunk:
     char_start: int | None
     char_end: int | None
     text: str
+    search_text: str
+    headings: str = ""
 
 
 class DecompositionRepo:
@@ -125,7 +127,8 @@ class IndexRepo:
     def add_chunks(self, index_id: uuid.UUID, chunks: list[NewChunk]) -> None:
         self.session.add_all(
             m.Chunk(id=c.id, vector_index_id=index_id, chunk_index=c.chunk_index, page_start=c.page_start,
-                    page_end=c.page_end, char_start=c.char_start, char_end=c.char_end, text=c.text)
+                    page_end=c.page_end, char_start=c.char_start, char_end=c.char_end, text=c.text,
+                    search_text=c.search_text, headings=c.headings)
             for c in chunks
         )
         self.session.flush()

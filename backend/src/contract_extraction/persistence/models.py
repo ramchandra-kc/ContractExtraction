@@ -429,6 +429,8 @@ class Chunk(Base):
     char_start: Mapped[int | None]
     char_end: Mapped[int | None]
     text: Mapped[str]
+    search_text: Mapped[str]
+    headings: Mapped[str] = mapped_column(server_default=_db())
 
 
 # =====================================================================================================
