@@ -8,7 +8,7 @@ from pydantic import ValidationError
 
 from contract_extraction.core.errors import InvalidInput
 from contract_extraction.domain.config import Field, RetrievalConfig
-from contract_extraction.domain.enums import FieldResultStatus, HitSource, JudgeIssue, Verdict
+from contract_extraction.domain.enums import Anchor, FieldResultStatus, HitSource, JudgeIssue, Verdict
 from contract_extraction.extraction.judge import parse_verdict
 from contract_extraction.extraction.parsing import field_value, parse_json_lenient
 from contract_extraction.extraction.prompts import build_context, extraction_prompt, judge_prompt
@@ -22,10 +22,11 @@ FIELD = Field(id=uuid.uuid4(), key="payment_terms", label="Payment Terms", value
               user_prompt="Extract payment_terms as JSON.\n", position=1, queries=("payment terms", "invoice due"))
 
 
-def rc(top_k=5, threshold="0.5", expansion=True, per_query_top=3, min_score="0.3", keyword=False) -> RetrievalConfig:
+def rc(top_k=5, threshold="0.5", expansion=True, per_query_top=3, min_score="0.3", keyword=False,
+       anchors=0) -> RetrievalConfig:
     return RetrievalConfig(id=uuid.uuid4(), name="RAGX", top_k=top_k, score_threshold=Decimal(threshold),
                            query_expansion=expansion, per_query_top=per_query_top, min_score=Decimal(min_score),
-                           keyword_search=keyword)
+                           keyword_search=keyword, anchor_chunks=anchors)
 
 
 class FakeStore:
@@ -102,6 +103,44 @@ def test_keyword_search_is_fused_with_dense_hits():
     assert (b.source, b.score, b.keyword_score, b.matched_query) == (HitSource.BOTH, 0.6, 5.0, "payment terms")
     assert (a.source, a.score, a.keyword_score) == (HitSource.DENSE, 0.9, None)
     assert [h.text for h in retriever.retrieve(FIELD, rc(keyword=True, top_k=2))] == ["text of d", "text of b"]
+
+
+def _document(store: FakeStore, names: list[str]) -> list[Hit]:
+    return [Hit(store.ids.setdefault(n, uuid.uuid4()), None, i, f"text of {n}", None, source=HitSource.ANCHOR)
+            for i, n in enumerate(names, start=1)]
+
+
+@pytest.mark.parametrize("anchor, expected", [
+    (None, ["c3", "c1"]),
+    (Anchor.START, ["c1", "c2", "c3"]),
+    (Anchor.END, ["c3", "c1", "c4", "c5"]),
+    (Anchor.BOTH, ["c1", "c2", "c3", "c4", "c5"]),
+])
+def test_anchored_fields_get_opening_and_closing_chunks(anchor, expected):
+    store = FakeStore({0: [("c3", 0.9), ("c1", 0.8)]})
+    retriever = Retriever(store, "col", IndexEmbedder(), _document(store, ["c1", "c2", "c3", "c4", "c5"]))
+    field = FIELD.model_copy(update={"anchor": anchor, "queries": ("payment terms",)})
+
+    hits = retriever.retrieve(field, rc(top_k=2, anchors=2))
+    assert [h.text.removeprefix("text of ") for h in hits] == expected, "anchors come on top of top_k, without repeats"
+    by_name = {h.text.removeprefix("text of "): h for h in hits}
+    assert by_name["c1"].source == HitSource.DENSE and by_name["c1"].score == 0.8, "a retrieved anchor keeps its scores"
+    if "c2" in by_name:
+        assert by_name["c2"].source == HitSource.ANCHOR and by_name["c2"].score is None
+    assert [h.text for h in retriever.retrieve(field, rc(top_k=2))] == ["text of c3", "text of c1"], "anchor_chunks=0: off"
+
+
+def test_anchors_in_a_group_and_on_a_short_document():
+    store = FakeStore({0: [("c2", 0.9)]})
+    retriever = Retriever(store, "col", IndexEmbedder(), _document(store, ["c1", "c2"]))
+    plain = FIELD.model_copy(update={"queries": ("payment terms",)})
+    signed = FIELD.model_copy(update={"id": uuid.uuid4(), "anchor": Anchor.END, "queries": ("payment terms",)})
+    both = FIELD.model_copy(update={"anchor": Anchor.BOTH, "queries": ("payment terms",)})
+
+    assert [h.text for h in retriever.retrieve_group((plain, signed), rc(anchors=1))] == ["text of c2"], \
+        "any field's anchor applies to the group; c2 is retrieved and the closing chunk"
+    assert [h.text for h in retriever.retrieve(both, rc(anchors=5))] == ["text of c1", "text of c2"], \
+        "start and end overlap on a short document: each chunk once"
 
 
 def test_prompts():

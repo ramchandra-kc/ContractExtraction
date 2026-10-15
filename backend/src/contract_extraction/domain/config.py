@@ -15,6 +15,7 @@ from typing import Any
 from pydantic import BaseModel, ConfigDict
 
 from .enums import (
+    Anchor,
     DecompositionMethod,
     Distance,
     Granularity,
@@ -109,6 +110,8 @@ class RetrievalConfig(_Frozen):
     min_score: Decimal
     # Also search by keyword (BM25) and fuse the rankings (extraction.retrieval).
     keyword_search: bool = False
+    # Opening/closing chunks added for fields with an anchor (0 = off).
+    anchor_chunks: int = 0
 
 
 class Field(_Frozen):
@@ -125,6 +128,8 @@ class Field(_Frozen):
     user_prompt: str | None = None
     position: int
     queries: tuple[str, ...] = ()
+    # Evidence always includes the document's opening/closing chunks (RetrievalConfig.anchor_chunks).
+    anchor: Anchor | None = None
 
 
 class ContractTypeField(_Frozen):

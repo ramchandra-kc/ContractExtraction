@@ -174,13 +174,15 @@ def _index(row: m.IndexConfig) -> d.IndexConfig:
 def _retrieval(row: m.RetrievalConfig) -> d.RetrievalConfig:
     return d.RetrievalConfig(id=row.id, name=row.name, top_k=row.top_k, score_threshold=row.score_threshold,
                              query_expansion=row.query_expansion, per_query_top=row.per_query_top,
-                             min_score=row.min_score, keyword_search=row.keyword_search)
+                             min_score=row.min_score, keyword_search=row.keyword_search,
+                             anchor_chunks=row.anchor_chunks)
 
 
 def _field(row: m.Field) -> d.Field:
     return d.Field(id=row.id, key=row.key, label=row.label, description=row.description, value_type=row.value_type,
                    type_spec=row.type_spec, value_schema=row.value_schema, priority=row.priority,
-                   user_prompt=row.user_prompt, position=row.position, queries=tuple(q.query for q in row.queries))
+                   user_prompt=row.user_prompt, position=row.position, queries=tuple(q.query for q in row.queries),
+                   anchor=row.anchor)
 
 
 def _contract_type(row: m.ContractType, enabled: set[str]) -> d.ContractType:

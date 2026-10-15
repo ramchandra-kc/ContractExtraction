@@ -8,6 +8,9 @@
 4. Hits are merged by chunk. Without keyword search they are ranked by their best dense score; with it,
    by reciprocal rank fusion (each chunk scores Σ 1/(RRF_K + rank) over every list it appears in), so a
    chunk both searches find comes first. The best ``top_k`` remain.
+5. With ``anchor_chunks``, a field with an anchor (in a group: any of its fields) also gets the
+   document's first and/or last ``anchor_chunks`` chunks, beyond ``top_k``: opening chunks first, then
+   the retrieved ones, then closing chunks. A retrieved chunk that is also an anchor keeps its scores.
 
 Query embeddings are cached for the retriever's lifetime (one run), so configs sharing
 queries embed them once.
@@ -16,10 +19,11 @@ queries embed them once.
 from __future__ import annotations
 
 import uuid
+from collections.abc import Sequence
 from dataclasses import dataclass, replace
 
 from ..domain.config import Field, RetrievalConfig
-from ..domain.enums import HitSource
+from ..domain.enums import Anchor, HitSource
 from ..indexing import keywords
 from ..providers.base import Embedder, SearchHit, VectorStore
 
@@ -41,10 +45,12 @@ class Hit:
 
 
 class Retriever:
-    def __init__(self, store: VectorStore, collection: str, embedder: Embedder):
+    def __init__(self, store: VectorStore, collection: str, embedder: Embedder, document: Sequence[Hit] = ()):
+        """``document``: the index's chunks in order, as ``anchor`` hits (needed when a config sets anchor_chunks)."""
         self.store = store
         self.collection = collection
         self.embedder = embedder
+        self.document = list(document)
         self._vectors: dict[str, list[float]] = {}
 
     def _embed(self, queries: list[str]) -> list[list[float]]:
@@ -55,14 +61,31 @@ class Retriever:
 
     def retrieve(self, field: Field, rc: RetrievalConfig) -> list[Hit]:
         expanded = rc.query_expansion and bool(field.queries)
-        return self._search(list(field.queries) if expanded else [field.label], expanded, rc)
+        return self._anchored(self._search(list(field.queries) if expanded else [field.label], expanded, rc),
+                              {field.anchor}, rc)
 
     def retrieve_group(self, fields: tuple[Field, ...], rc: RetrievalConfig) -> list[Hit]:
         """Evidence for several fields answered by one call: every field's queries, merged the same way."""
         queries: list[str] = []
         for f in fields:
             queries += list(f.queries) if rc.query_expansion and f.queries else [f.label]
-        return self._search(list(dict.fromkeys(queries)), rc.query_expansion, rc)
+        return self._anchored(self._search(list(dict.fromkeys(queries)), rc.query_expansion, rc),
+                              {f.anchor for f in fields}, rc)
+
+    def _anchored(self, hits: list[Hit], anchors: set[Anchor | None], rc: RetrievalConfig) -> list[Hit]:
+        n = rc.anchor_chunks
+        if not n or not self.document:
+            return hits
+        start = self.document[:n] if anchors & {Anchor.START, Anchor.BOTH} else []
+        end = self.document[-n:] if anchors & {Anchor.END, Anchor.BOTH} else []
+        if not start and not end:
+            return hits
+        pinned = {h.chunk_id for h in start}
+        end = [h for h in end if h.chunk_id not in pinned]  # a short document: start and end overlap
+        pinned |= {h.chunk_id for h in end}
+        retrieved = {h.chunk_id: h for h in hits}
+        return ([retrieved.get(h.chunk_id, h) for h in start] + [h for h in hits if h.chunk_id not in pinned]
+                + [retrieved.get(h.chunk_id, h) for h in end])
 
     def _search(self, queries: list[str], expanded: bool, rc: RetrievalConfig) -> list[Hit]:
         threshold, floor = float(rc.score_threshold), float(rc.min_score)

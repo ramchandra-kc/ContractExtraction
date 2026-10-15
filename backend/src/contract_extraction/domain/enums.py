@@ -70,6 +70,14 @@ class Granularity(StrEnum):
     GROUP = "group"
 
 
+class Anchor(StrEnum):
+    """Where in the document a field's evidence always comes from, besides retrieval."""
+
+    START = "start"
+    END = "end"
+    BOTH = "both"
+
+
 class HitSource(StrEnum):
     """How a retrieved chunk was found."""
 

@@ -200,12 +200,15 @@ CREATE TABLE retrieval_configs (
     min_score       numeric(4, 3) NOT NULL DEFAULT 0.30,
     -- Also search by keyword (BM25) and fuse the rankings with the dense ones (reciprocal rank fusion).
     keyword_search  boolean      NOT NULL DEFAULT false,
+    -- Opening/closing chunks added (beyond top_k) for fields with an anchor; 0 = off.
+    anchor_chunks   integer      NOT NULL DEFAULT 0,
     created_at      timestamptz  NOT NULL DEFAULT now(),
     updated_at      timestamptz  NOT NULL DEFAULT now(),
     CONSTRAINT pk_retrieval_configs PRIMARY KEY (id),
     CONSTRAINT uq_retrieval_configs_name UNIQUE (name),
     CONSTRAINT ck_retrieval_configs_top_k CHECK (top_k > 0),
     CONSTRAINT ck_retrieval_configs_per_query_top CHECK (per_query_top > 0),
+    CONSTRAINT ck_retrieval_configs_anchor_chunks CHECK (anchor_chunks >= 0),
     CONSTRAINT ck_retrieval_configs_scores CHECK (score_threshold BETWEEN 0 AND 1 AND min_score BETWEEN 0 AND 1)
 );
 
@@ -240,6 +243,9 @@ CREATE TABLE fields (
     user_prompt  text,
     position     integer     NOT NULL,
     is_enabled   boolean     NOT NULL DEFAULT true,
+    -- Evidence always includes the document's opening (start) and/or closing (end) chunks when the RAG
+    -- config sets anchor_chunks: for fields stated on the cover page or signature page.
+    anchor       text,
     created_at   timestamptz NOT NULL DEFAULT now(),
     updated_at   timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT pk_fields PRIMARY KEY (id),
@@ -250,7 +256,8 @@ CREATE TABLE fields (
     CONSTRAINT ck_fields_value_type CHECK (value_type IN ('text', 'date', 'number', 'money', 'list', 'boolean', 'json')),
     CONSTRAINT ck_fields_priority CHECK (priority IN ('P1', 'P2', 'P3')),
     CONSTRAINT ck_fields_value_schema CHECK (jsonb_typeof(value_schema) = 'object'),
-    CONSTRAINT ck_fields_user_prompt CHECK (user_prompt IS NULL OR length(trim(user_prompt)) > 0)
+    CONSTRAINT ck_fields_user_prompt CHECK (user_prompt IS NULL OR length(trim(user_prompt)) > 0),
+    CONSTRAINT ck_fields_anchor CHECK (anchor IN ('start', 'end', 'both'))
 );
 
 -- Semantic-search queries used for a field when query expansion is on.

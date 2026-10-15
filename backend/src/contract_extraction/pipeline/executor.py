@@ -45,6 +45,7 @@ from ..domain.enums import (
     EventLevel,
     FieldResultStatus,
     Granularity,
+    HitSource,
     LlmCallPurpose,
     RunKind,
     RunStage,
@@ -232,7 +233,8 @@ class RunExecutor:
                 self.event(run_id, f"Extracting {len(fields)} fields{grouped} x {len(pipeline.retrievals)} RAG configs",
                            stage=RunStage.EXTRACTING, fields=[f.key for f in fields],
                            **({"groups": {n: [f.key for f in b] for n, b in batches}} if batches is not None else {}))
-                summary = _Extraction(self, run_id, pipeline, options, fields, batches, store, idx.collection_name).run()
+                summary = _Extraction(self, run_id, pipeline, options, fields, batches, store, idx.collection_name,
+                                      idx.vector_index_id).run()
                 self.event(run_id, "Extraction finished", stage=RunStage.EXTRACTING, **summary)
             return self._finish(run_id, RunState.SUCCEEDED)
         except RunLost:
@@ -363,11 +365,16 @@ def select_fields(pipeline: PipelineConfig, options: RunOptions, type_keys: tupl
 class _Extraction:
     def __init__(self, ex: RunExecutor, run_id: uuid.UUID, pipeline: PipelineConfig, options: RunOptions,
                  fields: tuple[Field, ...], batches: list[tuple[str, tuple[Field, ...]]] | None,
-                 store: VectorStore, collection: str):
+                 store: VectorStore, collection: str, index_id: uuid.UUID):
         self.ex, self.db, self.run_id, self.p, self.options = ex, ex.db, run_id, pipeline, options
         # batches: group extraction (one call per batch); None: one call per field.
         self.fields, self.batches = fields, batches
-        self.retriever = Retriever(store, collection, ex.providers.embedder(pipeline.index.embedding_model))
+        document: list[Hit] = []
+        if any(rc.anchor_chunks for rc in pipeline.retrievals):
+            with self.db.session() as s:
+                document = [Hit(c.id, None, c.page_start, c.text, None, source=HitSource.ANCHOR)
+                            for c in IndexRepo(s).chunks(index_id)]
+        self.retriever = Retriever(store, collection, ex.providers.embedder(pipeline.index.embedding_model), document)
         self.chat = ex.providers.chat(pipeline.extraction_profile)
         self.judge_chat = ex.providers.chat(pipeline.judge_profile) if pipeline.judge_enabled and pipeline.judge_profile else None
         self.checkpoint = ex.checkpoint(run_id)  # shared by the judge threads: a late or extra check is harmless

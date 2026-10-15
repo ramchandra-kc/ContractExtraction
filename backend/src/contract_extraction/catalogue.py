@@ -16,9 +16,16 @@ Document shape (one section per contract type)::
     **Identify by:** ...
     **Includes:** Core, Commercial, Risk & Liability   ← the fallback type: shared groups by name
 
+Anywhere in the document, anchor lines name fields whose evidence always includes the document's
+opening and/or closing chunks (``fields.anchor``)::
+
+    - **Anchor start:** title, parties
+    - **Anchor end:** signatories
+    - **Anchor both:** document_status
+
 Checks: every type spec is known, a key repeated anywhere has the same spec and description
 (priority may differ per type), shared groups are identical in every section, exactly one
-fallback type exists.
+fallback type exists, every anchored field exists and is anchored once.
 """
 
 from __future__ import annotations
@@ -30,7 +37,7 @@ from pathlib import Path
 from typing import Any
 
 from .core.errors import AppError
-from .domain.enums import Priority, ValueType
+from .domain.enums import Anchor, Priority, ValueType
 
 FIELD_SET = ("contract_fields", 1)
 
@@ -39,6 +46,7 @@ _GROUP = re.compile(r"^### (.+?)\s*$")
 _ROW = re.compile(r"^\| `([a-z][a-z0-9_]*)` \| (.+?) \| (P[123]) \| (.+?) \|\s*$")
 _IDENTIFY = re.compile(r"^\*\*Identify by:\*\*\s*(.+?)\s*$")
 _INCLUDES = re.compile(r"^\*\*Includes:\*\*\s*(.+?)\s*$")
+_ANCHOR = re.compile(r"^- \*\*Anchor (start|end|both):\*\*\s*(.+?)\s*$")
 
 _JURISDICTION = "^[A-Z]{2}(-[A-Z0-9]{1,3})?$"
 _CURRENCY = "^[A-Z]{3}$"
@@ -56,6 +64,7 @@ class FieldDef:
     description: str
     priority: Priority  # highest priority across the types that use the field
     position: int
+    anchor: Anchor | None = None
 
     @property
     def label(self) -> str:
@@ -197,10 +206,16 @@ def group_key(heading: str) -> str:
 
 def parse(text: str) -> Catalogue:
     sections: list[dict[str, Any]] = []
+    anchors: dict[str, Anchor] = {}
     current: dict[str, Any] | None = None
     group: str | None = None
     for n, line in enumerate(text.splitlines(), start=1):
-        if m := _TYPE.match(line):
+        if m := _ANCHOR.match(line):
+            for key in _split(m.group(2)):
+                if key in anchors:
+                    raise CatalogueError(f"Line {n}: {key!r} is anchored twice")
+                anchors[key] = Anchor(m.group(1))
+        elif m := _TYPE.match(line):
             current = {"label": m.group(1), "identify": None, "includes": None, "groups": {}, "line": n}
             sections.append(current)
             group = None
@@ -275,6 +290,11 @@ def parse(text: str) -> Catalogue:
         raise CatalogueError(f"Exactly one fallback type (a section with **Includes:**) is required; found {fallbacks}")
     if len({t.key for t in types}) != len(types):
         raise CatalogueError("Two contract types have the same key")
+    unknown = sorted(set(anchors) - set(fields))
+    if unknown:
+        raise CatalogueError(f"Anchored fields that no contract type lists: {unknown}")
+    for key, anchor in anchors.items():
+        fields[key].anchor = anchor
     return Catalogue(types=types, fields=fields)
 
 
@@ -345,13 +365,15 @@ def to_sql(cat: Catalogue, queries: dict[str, list[str]] | None = None, source: 
         "BEGIN;",
         "",
         f"-- {len(cat.fields)} fields",
-        "INSERT INTO fields (field_set_id, key, label, description, value_type, type_spec, value_schema, priority, position)",
-        f"SELECT {fs}, v.key, v.label, v.description, v.value_type, v.type_spec, v.value_schema::jsonb, v.priority, v.position",
+        "INSERT INTO fields (field_set_id, key, label, description, value_type, type_spec, value_schema, priority, position, anchor)",
+        f"SELECT {fs}, v.key, v.label, v.description, v.value_type, v.type_spec, v.value_schema::jsonb, v.priority, v.position, "
+        "v.anchor",
         "FROM (VALUES",
         _rows([f"({_q(f.key)}, {_q(f.label)}, {_q(f.description)}, {_q(f.value_type.value)}, {_q(f.type_spec)}, "
-               f"{_q(json.dumps(f.value_schema, separators=(',', ':')))}, {_q(f.priority.value)}, {f.position})"
+               f"{_q(json.dumps(f.value_schema, separators=(',', ':')))}, {_q(f.priority.value)}, {f.position}, "
+               f"{_q(f.anchor.value if f.anchor else None)})"
                for f in cat.fields.values()]),
-        ") AS v (key, label, description, value_type, type_spec, value_schema, priority, position);",
+        ") AS v (key, label, description, value_type, type_spec, value_schema, priority, position, anchor);",
         "",
         "-- Search queries (query expansion)",
         "INSERT INTO field_queries (field_id, position, query)",

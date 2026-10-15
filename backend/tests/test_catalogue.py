@@ -6,7 +6,7 @@ import pytest
 
 from contract_extraction import catalogue as c
 from contract_extraction.core.settings import BACKEND_ROOT
-from contract_extraction.domain.enums import Priority, ValueType
+from contract_extraction.domain.enums import Anchor, Priority, ValueType
 
 ROOT = BACKEND_ROOT.parent
 DOC = ROOT / "docs" / "contract_types_and_fields.md"
@@ -106,6 +106,19 @@ def test_parse_minimal_document():
     assert [mb.key for mb in cat.fallback.members] == ["title"]
     sql = c.to_sql(cat, {"purpose": ["what may it be used for"]})
     assert "('purpose', 1, 'what may it be used for')" in sql and "('title', 1, 'Title')" in sql
+    assert cat.fields["title"].anchor is None and "'P3', 1, NULL)" in sql
+
+
+def test_parse_anchors():
+    cat = c.parse(_doc("- **Anchor start:** title\n- **Anchor end:** purpose", NDA, OTHER))
+    assert (cat.fields["title"].anchor, cat.fields["purpose"].anchor) == (Anchor.START, Anchor.END)
+    assert "'P3', 1, 'start')" in c.to_sql(cat)
+
+
+def test_document_anchors(cat):
+    anchored = {k: f.anchor for k, f in cat.fields.items() if f.anchor}
+    assert anchored["parties"] == Anchor.START and anchored["signatories"] == Anchor.END
+    assert anchored["document_status"] == Anchor.BOTH and len(anchored) == 14
 
 
 @pytest.mark.parametrize("doc, error", [
@@ -117,6 +130,8 @@ def test_parse_minimal_document():
     (_doc(NDA, NDA.replace("## 1. NDA", "## 2. DPA").replace("NDA-Specific", "DPA-Specific")
           .replace("| text | P1 | Permitted purpose", "| strings | P1 | Purposes"), OTHER), "'purpose' in 'DPA' is defined as"),
     (_doc(NDA.replace("| `title` | string", "| `title` | string | P3 | Again |\n| `title` | string"), OTHER), "twice"),
+    (_doc("- **Anchor start:** title, salary", NDA, OTHER), "no contract type lists: .'salary'"),
+    (_doc("- **Anchor start:** title\n- **Anchor end:** title", NDA, OTHER), "'title' is anchored twice"),
 ])
 def test_parse_rejects_inconsistent_documents(doc, error):
     with pytest.raises(c.CatalogueError, match=error.replace("*", r"\*").replace("(", r"\(")):

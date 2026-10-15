@@ -60,7 +60,7 @@ def new_pipeline(client, name="trial", **changes) -> dict:
 def test_catalog_lists_everything(client):
     cat = catalog(client)
     default = next(p for p in cat["pipelines"] if p["is_default"])
-    assert default["retrievals"] == [f"RAG0{i}" for i in range(1, 7)] and default["error"] is None
+    assert default["retrievals"] == [f"RAG0{i}" for i in range(1, 8)] and default["error"] is None
     assert default["extraction_prompt"] == {"name": "extraction_system", "version": 1}
     assert {"extraction_system", "judge_system"} <= {p["name"] for p in cat["prompts"] if p["is_active"]}
     fields = cat["field_sets"][0]["fields"]

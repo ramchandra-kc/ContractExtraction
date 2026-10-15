@@ -283,6 +283,29 @@ def test_reuse_can_be_turned_off(db, storage, tmp_path):
     assert best["title"][2] == "PASS"
 
 
+def test_keyword_search_and_anchors_are_recorded(db, storage, tmp_path):
+    """RAG07: keyword search fused with dense, and the opening chunk for the anchored 'title' field."""
+    h = Harness(db, storage, tmp_path, "hybrid")
+    options = RunOptions(fields=FIELDS, retrievals=["RAG07"])
+    rag07 = h.pipeline(options).retrievals[0].model_copy(update={"top_k": 1, "per_query_top": 1, "anchor_chunks": 2})
+    run_id = h.enqueue(options, retrievals=(rag07,))
+    assert h.execute(run_id) == RunState.SUCCEEDED
+
+    with db.session() as s:
+        rows = s.execute(select(m.Field.key, m.Chunk.chunk_index, m.RetrievalHit.source)
+                         .join(m.FieldResult, m.FieldResult.field_id == m.Field.id)
+                         .join(m.RetrievalHit, m.RetrievalHit.field_result_id == m.FieldResult.id)
+                         .join(m.Chunk, m.Chunk.id == m.RetrievalHit.chunk_id)
+                         .where(m.FieldResult.run_id == run_id).order_by(m.Field.key, m.RetrievalHit.rank)).all()
+    hits: dict[str, list[tuple[int, str]]] = {}
+    for key, index, source in rows:
+        hits.setdefault(key, []).append((index, source))
+    assert [i for i, _ in hits["title"][:2]] == [0, 1], "title is anchored to the start: the opening chunks come first"
+    assert "anchor" in {src for _, src in hits["title"]}, "an opening chunk retrieval did not find is added"
+    assert len(hits["payment_terms"]) == 1 and hits["payment_terms"][0][1] != "anchor", "no anchor: top_k only"
+    assert {src for v in hits.values() for _, src in v} & {"keyword", "both"}, "keyword search ran"
+
+
 def test_parallel_judge_matches_sequential(db, storage, tmp_path):
     h = Harness(db, storage, tmp_path, "parallel")
     run_id = h.enqueue(judge_parallel=True)

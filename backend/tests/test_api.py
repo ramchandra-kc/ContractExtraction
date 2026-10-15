@@ -184,7 +184,7 @@ def test_health(client, harness, monkeypatch):
 def test_config_endpoints(client):
     pipelines = client.get("/api/v1/config/pipelines").json()
     default = next(p for p in pipelines if p["is_default"])
-    assert [r["name"] for r in default["retrievals"]] == [f"RAG0{i}" for i in range(1, 7)]
+    assert [r["name"] for r in default["retrievals"]] == [f"RAG0{i}" for i in range(1, 8)]
     assert len(default["fields"]) == 286 and default["judge"]["temperature"] == "0.100"
     types = {t["key"]: t for t in default["contract_types"]}
     assert default["classification_enabled"] and len(types) == 19 and types["other"]["is_fallback"]

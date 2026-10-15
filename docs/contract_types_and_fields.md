@@ -34,6 +34,12 @@ This file is the source of truth for the field catalogue: after editing it, run 
 
 A field key means the same thing in every contract type; only its priority may differ between types.
 
+**Anchors:** fields that are almost always stated on the cover page or in the preamble (start), or on the signature page (end). Their evidence always includes the document's opening or closing chunks, besides the retrieved ones, when the RAG config enables anchors (`anchor_chunks`).
+
+- **Anchor start:** title, parties, parent_agreement_ref, effective_date, language, amendment_number, sow_number, nda_direction, disclosing_party_refs, receiving_party_refs, guarantor_refs
+- **Anchor end:** signatories, execution_date
+- **Anchor both:** document_status
+
 ## Contents
 
 1. [NDA](#1-nda)
