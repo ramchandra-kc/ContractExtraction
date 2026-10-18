@@ -1,6 +1,6 @@
 # ContractExtraction
 
-A research project that extracts structured data points from contracts (PDF, HTML or plain text), such as customer name,
+A research project that extracts structured data points from contracts (PDF, Word, HTML, plain text or scanned images), such as customer name,
 payment terms, project dates, penalties and force majeure provisions. It combines document decomposition,
 retrieval-augmented generation with a local LLM, and an LLM judge that grades every answer.
 

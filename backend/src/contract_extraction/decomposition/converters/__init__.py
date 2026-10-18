@@ -10,13 +10,14 @@ from __future__ import annotations
 from pathlib import Path
 
 from ...core.errors import InvalidInput
-from . import html, pdf, text
-from .base import ConvertResult, DecompositionError, FormatSpec, RawPage
+from . import docx, html, image, pdf, text
+from .base import ConvertResult, DecompositionError, Detected, FormatSpec, RawPage
 
-__all__ = ["REGISTRY", "ConvertResult", "DecompositionError", "FormatSpec", "RawPage", "accepted", "detect", "spec_for"]
+__all__ = ["REGISTRY", "ConvertResult", "DecompositionError", "Detected", "FormatSpec", "RawPage", "accepted", "detect",
+           "spec_for"]
 
 # Sniff order: binary signatures first, then text formats; plain text is the last resort.
-REGISTRY: tuple[FormatSpec, ...] = (pdf.SPEC, html.SPEC, text.SPEC)
+REGISTRY: tuple[FormatSpec, ...] = (pdf.SPEC, image.SPEC, docx.SPEC, html.SPEC, text.SPEC)
 
 _HEAD_BYTES = 8192
 
@@ -25,8 +26,8 @@ def accepted() -> str:
     return ", ".join(ext for spec in REGISTRY for ext in spec.extensions)
 
 
-def detect(path: Path, filename: str) -> FormatSpec:
-    """The format of a stored file, from its content and (for text formats) its extension."""
+def detect(path: Path, filename: str) -> Detected:
+    """The format and mime type of a stored file, from its content and (for text formats) its extension."""
     with path.open("rb") as fh:
         head = fh.read(_HEAD_BYTES)
     if not head:
@@ -34,7 +35,9 @@ def detect(path: Path, filename: str) -> FormatSpec:
     ext = Path(filename).suffix.lower()
     for spec in REGISTRY:
         if spec.sniff(head, ext):
-            return spec
+            if spec.verify is not None:
+                spec.verify(path)
+            return Detected(spec, spec.mime_of(head) if spec.mime_of else spec.mime_type)
     raise InvalidInput(f"Unsupported file type; accepted: {accepted()}")
 
 

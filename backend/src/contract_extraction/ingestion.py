@@ -53,11 +53,11 @@ def register_file(db: Database, storage: FileStorage, settings: Settings, source
 def register_detected(repo: DocumentRepo, storage: FileStorage, staged: StagedFile) -> tuple[m.Document, bool]:
     """Detect the staged file's format and register it; an unsupported file is discarded (``InvalidInput``)."""
     try:
-        spec = detect(staged.path, staged.filename)
+        detected = detect(staged.path, staged.filename)
     except InvalidInput:
         storage.discard(staged)
         raise
-    return repo.register(staged, storage, fmt=spec.format, mime_type=spec.mime_type)
+    return repo.register(staged, storage, fmt=detected.format, mime_type=detected.mime_type)
 
 
 def ingest(

@@ -20,7 +20,7 @@ uv run pytest
 unless you pass `--redecompose`. A ready index is reused, and it's rebuilt from its stored chunk rows if the Qdrant collection was lost.
 Use `--pipeline NAME` for a non-default pipeline config.
 
-OCR and hybrid decomposition (`decomposition_configs` rows `ocr` and `hybrid`) need Tesseract (`brew install tesseract`).
+OCR and hybrid decomposition (`decomposition_configs` rows `ocr` and `hybrid`) and image documents need Tesseract (`brew install tesseract`).
 
 Supported source formats come from the converter registry in `decomposition/converters/` (`GET /config/formats` lists them).
 The format is detected from the file's content (and, for text formats, its extension), not from the upload's content type.

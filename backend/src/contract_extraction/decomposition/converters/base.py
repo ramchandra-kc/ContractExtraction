@@ -52,10 +52,24 @@ class FormatSpec:
     # (first bytes of the file, lower-case extension with the dot) → is it this format?
     sniff: Callable[[bytes, str], bool]
     convert: Callable[[Path, Path, DecompositionConfig], ConvertResult]
+    # After a sniff matched: a check that needs the whole file (e.g. a zip's entry list); raises InvalidInput.
+    verify: Callable[[Path], None] | None = None
+    # The mime type to store, from the first bytes; default: the first of ``mime_types``.
+    mime_of: Callable[[bytes], str] | None = None
 
     @property
     def mime_type(self) -> str:
         return self.mime_types[0]
+
+
+@dataclass(frozen=True)
+class Detected:
+    spec: FormatSpec
+    mime_type: str
+
+    @property
+    def format(self) -> DocumentFormat:
+        return self.spec.format
 
 
 def page_indexes(cfg: DecompositionConfig, total: int) -> list[int]:

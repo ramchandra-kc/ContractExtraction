@@ -1,17 +1,20 @@
-"""Converters for non-PDF formats, on small synthetic files (no database)."""
+"""Converters for non-PDF formats, on small synthetic files (no database; OCR tests need Tesseract)."""
 
 from __future__ import annotations
 
 import base64
+import shutil
 import uuid
+import zipfile
 
 import pytest
 
 from contract_extraction.core.errors import InvalidInput
-from contract_extraction.decomposition.converters import html, text
+from contract_extraction.decomposition.converters import docx, html, image, text
 from contract_extraction.decomposition.converters.base import RawPage, select_pages
 from contract_extraction.domain.config import DecompositionConfig
 from contract_extraction.domain.enums import DecompositionMethod, TextFormat
+from helpers import docx_paragraph, make_docx, make_scan
 
 # A 1×1 transparent PNG.
 PNG = base64.b64decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==")
@@ -163,6 +166,101 @@ def test_html_without_breaks_is_split_by_length(tmp_path):
     doc = "<html><body>" + "".join(f"<p>Clause {i}. {'Text. ' * 100}</p>" for i in range(10)) + "</body></html>"
     result, _ = _convert(html, tmp_path, doc, "a.html", _cfg(page_chars=1500))
     assert result.paged_by == "size" and len(result.pages) >= 5
+
+
+# ---- images -----------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("fmt, mime", [("PNG", "image/png"), ("JPEG", "image/jpeg"), ("TIFF", "image/tiff"),
+                                       ("GIF", "image/gif"), ("BMP", "image/bmp"), ("WEBP", "image/webp")])
+def test_image_mime_from_signature(tmp_path, fmt, mime):
+    path = make_scan(tmp_path / "scan", ["Acme Rail"], fmt=fmt, dpi=30)
+    assert image.mime_of(path.read_bytes()[:64]) == mime
+
+
+@pytest.mark.parametrize("head", [b"BMW Supply Agreement between Acme Rail", b"BM", b"GIF8", b"RIFF1234WAVE"])
+def test_text_is_not_an_image(head):
+    assert image.mime_of(head) is None
+
+
+def test_image_to_pdf_pages_upright_and_sized(tmp_path):
+    import pymupdf
+    from PIL import Image
+
+    tiff = make_scan(tmp_path / "scan.tiff", ["Acme Rail"], fmt="TIFF", frames=3, dpi=100)
+    pixels = Image.open(tiff).width
+    image.to_pdf(tiff, tmp_path / "a.pdf", dpi=200)
+    with pymupdf.open(tmp_path / "a.pdf") as doc:
+        assert doc.page_count == 3
+        # Rendering at the OCR DPI gives the image's own pixels, whatever DPI the file claims (here 100).
+        assert doc[0].get_pixmap(dpi=200).width == pixels
+
+    # A phone photo stored sideways with EXIF orientation 6 (rotate 90° clockwise to view).
+    photo = Image.new("RGB", (400, 300), "white")
+    exif = photo.getexif()
+    exif[0x0112] = 6
+    photo.save(tmp_path / "photo.jpg", "JPEG", exif=exif)
+    image.to_pdf(tmp_path / "photo.jpg", tmp_path / "b.pdf", dpi=200)
+    with pymupdf.open(tmp_path / "b.pdf") as doc:
+        assert doc[0].rect.width < doc[0].rect.height  # upright: portrait
+
+
+def test_unreadable_image(tmp_path):
+    (tmp_path / "bad.png").write_bytes(b"\x89PNG\r\n\x1a\n not really")
+    with pytest.raises(image.DecompositionError, match="Cannot read the image"):
+        image.to_pdf(tmp_path / "bad.png", tmp_path / "x.pdf", 200)
+
+
+@pytest.mark.ocr
+def test_image_ocr(tmp_path):
+    if not shutil.which("tesseract"):
+        pytest.skip("Tesseract is not installed")
+    scan = make_scan(tmp_path / "scan.tiff", ["SUPPLY AGREEMENT", "Acme Rail Pty Ltd supplies sleepers to Jane Sample."],
+                     fmt="TIFF", frames=2)
+    result, out = _convert(image, tmp_path, scan.read_bytes(), "scan.tiff", _cfg())  # the config's method is pymupdf
+    assert (result.converter, result.paged_by) == ("image:ocr", "source")
+    assert [p.page_number for p in result.pages] == [1, 2] and sorted(result.page_sizes) == [1, 2]
+    assert "Acme Rail" in result.pages[0].text and "Jane Sample" in result.pages[1].text
+    assert (out / "source.pdf").is_file()
+
+
+# ---- docx ------------------------------------------------------------------------------------------
+
+
+def test_docx_pages_at_rendered_and_explicit_breaks(tmp_path):
+    path = make_docx(tmp_path / "msa.docx", [
+        docx_paragraph("Services Agreement", style="Heading1"),
+        docx_paragraph("Between Acme Rail Pty Ltd and Jane Sample."),
+        docx_paragraph("The fee is $5,000.", before="<w:lastRenderedPageBreak/>"),
+        docx_paragraph("Signed by the parties.", before='<w:br w:type="page"/>'),
+    ])
+    result, _ = _convert(docx, tmp_path, path.read_bytes(), "msa.docx")
+    assert (result.converter, result.paged_by) == ("docx", "marker")
+    assert [p.text for p in result.pages] == ["# Services Agreement\n\nBetween Acme Rail Pty Ltd and Jane Sample.",
+                                              "The fee is $5,000.", "Signed by the parties."]
+    with zipfile.ZipFile(path) as z:  # the stored original is not changed
+        assert b"lastRenderedPageBreak" in z.read("word/document.xml")
+
+
+def test_docx_without_breaks_is_split_by_length(tmp_path):
+    path = make_docx(tmp_path / "a.docx", [docx_paragraph(f"Clause {i}. " + "Text. " * 80) for i in range(10)])
+    result, _ = _convert(docx, tmp_path, path.read_bytes(), "a.docx", _cfg(page_chars=1200))
+    assert result.paged_by == "size" and len(result.pages) >= 4
+
+
+def test_docx_verify(tmp_path, monkeypatch):
+    good = make_docx(tmp_path / "a.docx", [docx_paragraph("Text")])
+    docx.verify(good)
+    with zipfile.ZipFile(tmp_path / "other.docx", "w") as z:
+        z.writestr("readme.txt", "not Word")
+    with pytest.raises(InvalidInput, match="not a Word document"):
+        docx.verify(tmp_path / "other.docx")
+    (tmp_path / "broken.docx").write_bytes(b"PK\x03\x04 truncated")
+    with pytest.raises(InvalidInput, match="not a valid Word document"):
+        docx.verify(tmp_path / "broken.docx")
+    monkeypatch.setattr(docx, "MAX_UNCOMPRESSED_BYTES", 100)
+    with pytest.raises(InvalidInput, match="expands"):
+        docx.verify(good)
 
 
 def test_select_pages():

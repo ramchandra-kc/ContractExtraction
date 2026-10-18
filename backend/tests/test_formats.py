@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import zipfile
+
 import pytest
 
 from contract_extraction.core.errors import InvalidInput
 from contract_extraction.decomposition.converters import REGISTRY, accepted, detect, spec_for
 from contract_extraction.domain.enums import DocumentFormat
+from helpers import docx_paragraph, make_docx, make_scan
 
 
 def _file(tmp_path, name: str, content: bytes):
@@ -48,13 +51,32 @@ def test_binary_is_not_text(tmp_path, name):
         detect(*_file(tmp_path, name, b"PK\x03\x04\x00\x00 binary"))
 
 
+@pytest.mark.parametrize("name", ["scan.png", "scan.txt", "scan"])
+def test_images_by_signature(tmp_path, name):
+    path = make_scan(tmp_path / "src.png", ["Acme Rail"], dpi=30)
+    detected = detect(path, name)
+    assert (detected.format, detected.mime_type) == (DocumentFormat.IMAGE, "image/png")
+
+
+def test_docx(tmp_path):
+    path = make_docx(tmp_path / "a.docx", [docx_paragraph("Services Agreement")])
+    detected = detect(path, "msa.DOCX")
+    assert detected.format == DocumentFormat.DOCX and detected.mime_type.endswith("wordprocessingml.document")
+    with pytest.raises(InvalidInput, match="Unsupported"):  # a Word document needs its extension
+        detect(path, "msa.zip")
+    with zipfile.ZipFile(tmp_path / "b.docx", "w") as z:
+        z.writestr("readme.txt", "x")
+    with pytest.raises(InvalidInput, match="not a Word document"):
+        detect(tmp_path / "b.docx", "b.docx")
+
+
 def test_empty_file(tmp_path):
     with pytest.raises(InvalidInput, match="empty"):
         detect(*_file(tmp_path, "a.pdf", b""))
 
 
 def test_unsupported_content(tmp_path):
-    with pytest.raises(InvalidInput, match=r"Unsupported file type; accepted: \.pdf, \.htm, \.html, \.txt"):
+    with pytest.raises(InvalidInput, match=r"Unsupported file type; accepted: \.pdf, \.png, .*\.docx, \.htm, \.html, \.txt"):
         detect(*_file(tmp_path, "a.pdf", b"\x00\x01\x02 not a document"))
     with pytest.raises(InvalidInput, match="Unsupported"):  # text with an unknown extension
         detect(*_file(tmp_path, "a.csv", b"name,value"))

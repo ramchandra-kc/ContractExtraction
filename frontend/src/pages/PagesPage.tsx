@@ -1,7 +1,7 @@
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Link, useParams, useSearchParams } from 'react-router'
-import { documentFileUrl, type DocumentFormat, type PageOut, type PagesOut } from '@/api/client'
+import { documentFileUrl, type DocumentFormat, type DocumentOut, type PageOut, type PagesOut } from '@/api/client'
 import { useDocument, usePages } from '@/api/hooks'
 import { ProblemAlert } from '@/components/ProblemAlert'
 import { Card, CardContent } from '@/components/ui/card'
@@ -35,7 +35,7 @@ export function PagesPage() {
       {pages.data && (
         <Viewer
           documentId={id}
-          format={document.data?.format}
+          original={document.data && originalKind(document.data)}
           data={pages.data}
           requested={Number(params.get('page')) || 1}
           onPage={goTo}
@@ -45,15 +45,24 @@ export function PagesPage() {
   )
 }
 
+/** How the original can be shown: browsers render PDFs and most images, but not TIFF scans, HTML (only sandboxed downloads) or Word. */
+type OriginalKind = { show: 'pdf' | 'image' | 'download'; format: DocumentFormat }
+
+function originalKind(doc: DocumentOut): OriginalKind {
+  if (doc.format === 'pdf') return { show: 'pdf', format: doc.format }
+  if (doc.format === 'image' && doc.mime_type !== 'image/tiff') return { show: 'image', format: doc.format }
+  return { show: 'download', format: doc.format }
+}
+
 function Viewer({
   documentId,
-  format,
+  original,
   data,
   requested,
   onPage,
 }: {
   documentId: string
-  format: DocumentFormat | undefined
+  original: OriginalKind | undefined
   data: PagesOut
   requested: number
   onPage: (n: number) => void
@@ -113,15 +122,15 @@ function Viewer({
         </CardContent>
       </Card>
 
-      <Original documentId={documentId} format={format} page={page} />
+      <Original documentId={documentId} original={original} page={page} />
     </div>
   )
 }
 
 /** The original next to the extracted text: the PDF at the same page, the image, or a download for other formats. */
-function Original({ documentId, format, page }: { documentId: string; format: DocumentFormat | undefined; page: PageOut }) {
+function Original({ documentId, original, page }: { documentId: string; original: OriginalKind | undefined; page: PageOut }) {
   const url = documentFileUrl(documentId)
-  if (format === 'pdf') {
+  if (original?.show === 'pdf') {
     // Keyed by page: changing only the #page fragment does not move every browser's PDF viewer.
     return (
       <iframe
@@ -132,14 +141,14 @@ function Original({ documentId, format, page }: { documentId: string; format: Do
       />
     )
   }
-  if (format === 'image') {
+  if (original?.show === 'image') {
     return <img src={url} alt="Original" className="max-h-[80vh] w-full rounded-lg border object-contain" />
   }
   return (
     <Card>
       <CardContent className="space-y-2 pt-6 text-sm text-muted-foreground">
         {page.source_part && <p>Source: {page.source_part}</p>}
-        <p>The original ({format ?? 'file'}) can't be shown here; the extracted text is what the models read.</p>
+        <p>The original ({original?.format ?? 'file'}) can't be shown here; the extracted text is what the models read.</p>
         <a href={url} className="text-foreground underline underline-offset-4">
           Open original
         </a>

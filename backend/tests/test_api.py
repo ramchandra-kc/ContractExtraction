@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import io
+import zipfile
 
 import pytest
 from fastapi.testclient import TestClient
@@ -170,6 +171,24 @@ def test_upload_and_decompose_html(client, db, storage, harness, tmp_path):
     pages = client.get(f"/api/v1/documents/{doc['id']}/pages").json()["pages"]
     assert [p["text"] for p in pages] == ["# Services Agreement", "The fee is $5,000 per month."]
     assert pages[0]["width"] is None and pages[0]["source_part"] is None
+
+
+def test_upload_and_decompose_docx(client, db, storage, harness, tmp_path):
+    from helpers import docx_paragraph, make_docx
+
+    source = make_docx(tmp_path / "msa.docx", [docx_paragraph("Services Agreement", style="Heading1"),
+                                               docx_paragraph("The fee is $5,000.", before='<w:br w:type="page"/>')])
+    r = _upload(client, source, "msa.docx")
+    assert r.status_code == 201 and r.json()["format"] == "docx"
+    client.post(f"/api/v1/documents/{r.json()['id']}/runs", json=_run_options(kind="decompose"))
+    _process(db, storage, harness)
+    detail = client.get(f"/api/v1/documents/{r.json()['id']}").json()
+    assert detail["decompositions"][0]["method"] == "docx" and detail["page_count"] == 2
+
+    with zipfile.ZipFile(tmp_path / "fake.docx", "w") as z:
+        z.writestr("readme.txt", "x")
+    bad = _upload(client, tmp_path / "fake.docx", "fake.docx")
+    assert bad.status_code == 422 and "not a Word document" in bad.json()["detail"]
 
 
 def test_html_original_is_download_only(client, db, storage):

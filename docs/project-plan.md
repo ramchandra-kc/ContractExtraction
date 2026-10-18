@@ -27,7 +27,7 @@ One phase is one commit or PR. A phase isn't started before the previous one is 
 | 9 | **Authentication** | Auth in the gateway, frontend login, backend trusts the gateway | Unauthenticated requests are rejected at the gateway | ⬜ planned |
 | 10a | **Formats 1: registry** | Converter registry and format detection; PDF converter behind it (no behaviour change); `documents.format`, `decompositions.converter`; `GET /config/formats`; frontend format awareness (accept list, viewer by format, format badge) | Existing tests pass; `sample.pdf` gives the same pages; the UI accepts only `.pdf` | ✅ done |
 | 10b | **Formats 2: text and HTML** | txt and html converters, page markers (EDGAR `<PAGE>`, `\f`, CSS page breaks) or pages by length, EDGAR wrapper removal | Unit tests pass; every `test_data` `.txt`/`.htm` decomposes; one of each runs end to end in the UI | ✅ done (end to end through the gateway; not clicked through in a browser) |
-| 10c | **Formats 3: images and DOCX** | images (pymupdf → PDF → OCR), docx (mammoth → html converter) | Unit and `ocr` tests pass; every `test_data` `.docx` decomposes | ⬜ planned |
+| 10c | **Formats 3: images and DOCX** | images (pymupdf → PDF → OCR), docx (mammoth → html converter) | Unit and `ocr` tests pass; every `test_data` `.docx` decomposes | ✅ done |
 | 10d | **Formats 4: email** | eml body plus supported attachments as one document, `source_part` per page | Unit tests pass; an eml with a PDF attachment runs end to end with its parts shown | ⬜ planned |
 
 ## Open questions (decided in the phase that needs them)
@@ -152,3 +152,19 @@ One phase is one commit or PR. A phase isn't started before the previous one is 
     - The HTML original is served as a sandboxed attachment.
     - `/config/formats` and the documents list work through the Vite proxy.
     - Not verified: clicking through the UI in a browser (the browser extension wasn't connected).
+- 2026-10-19: Phase 10c completed. `converters/image.py` and `converters/docx.py`.
+  - Images go through Pillow, not pymupdf as planned. pymupdf can't open WEBP, and Pillow also applies EXIF rotation.
+    Pillow and mammoth are direct dependencies.
+  - Page size follows the config's OCR DPI, ignoring the DPI an image claims (often a placeholder of 72, 96 or 1). This way OCR
+    renders each image at its own pixel size.
+  - DOCX pages follow Word's last layout (`w:lastRenderedPageBreak`, found in 15 of the 16 `test_data` files), which the plan didn't foresee.
+    They are rewritten into explicit breaks in an in-memory copy, because mammoth only understands those.
+  - Formats can now declare `verify` (a whole-file check at upload: DOCX must be a zip containing `word/document.xml`) and
+    `mime_of` (the stored mime type per image type). `detect` returns `Detected(spec, mime_type)`.
+  - The DOCX size limit is a fixed 512 MB uncompressed, not 10 × the upload limit, because converters don't see settings.
+  - The BMP signature also checks the header, because `BM` alone would match text such as "BMW …".
+  - The viewer shows TIFF originals as a download, because Chrome and Firefox don't render TIFF.
+  - Verified:
+    - All 16 `test_data` `.docx` files convert: 15 with Word's pages, 1 split by length.
+    - PNG, JPEG and a 2-frame TIFF rendered from the smoke PDF OCR correctly.
+    - Through the gateway, a `.docx` NDA (8 pages) and the JPEG scan ran end to end, and `parties` was extracted from both.

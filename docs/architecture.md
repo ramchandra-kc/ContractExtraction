@@ -144,7 +144,8 @@ supported formats. Upload validation, the error message, `GET /config/formats` a
   `size` (split by length). Images they extract go to the decomposition's `images/` folder.
 - **Config.** A decomposition config's `method` applies to PDFs.
 - **Downstream.** Everything after decomposition works on page rows and doesn't know the format.
-- **Viewer.** The page viewer shows the original next to the text: PDFs at the same page; for other formats, an image or a download link.
+- **Viewer.** The page viewer shows the original next to the text: PDFs at the same page; images (except TIFF, which browsers
+  don't render) as an image; everything else as a download link.
 - **Supported** so far:
   - **PDF**: pdf-converter.
   - **HTML** (`.htm`, `.html`):
@@ -155,6 +156,15 @@ supported formats. Upload validation, the error message, `GET /config/formats` a
   - **Plain text** (`.txt`, or text without a known extension):
     - Page breaks are EDGAR `<PAGE>` and form feeds.
     - Indentation is removed, and line-start `#` / `>` are escaped.
+  - **Images** (PNG, JPEG, TIFF incl. multi-page, GIF, BMP, WEBP):
+    - Pillow writes one PDF page per frame, turned upright from EXIF and sized for the config's OCR DPI.
+    - The PDF converter then always uses OCR. The PDF is kept as the decomposition's `source.pdf`.
+    - Converter: `image:ocr`.
+  - **Word** (`.docx`):
+    - mammoth turns it into HTML, which then goes through the HTML converter.
+    - Pages break where Word last laid them out (`w:lastRenderedPageBreak`) and at explicit page breaks.
+    - Embedded images are kept.
+    - At upload, the file must be a zip containing `word/document.xml` that expands to at most 512 MB.
   - EDGAR's SGML wrapper is removed in both HTML and plain text.
   - Text without page breaks is split at paragraphs near `options.page_chars` (default 3000).
 

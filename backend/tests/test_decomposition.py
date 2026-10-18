@@ -99,6 +99,34 @@ def test_pages_by_length_keep_repeated_lines(session, storage):
     assert all(p.header is None and p.footer is None for p in rows)
 
 
+def test_docx_decomposition(session, storage, tmp_path):
+    from contract_extraction.ingestion import register_detected
+    from helpers import docx_paragraph, make_docx
+
+    path = make_docx(tmp_path / "msa.docx", [docx_paragraph("Services Agreement", style="Heading1"),
+                                             docx_paragraph("The fee is $5,000.", before='<w:br w:type="page"/>')])
+    doc = register_detected(DocumentRepo(session), storage, storage.stage(io.BytesIO(path.read_bytes()), "msa.docx"))[0]
+    dec = decompose(session, doc, ConfigRepo(session).resolve_pipeline().decomposition, storage)
+    rows = DecompositionRepo(session).pages(dec.id)
+    assert doc.format == "docx" and dec.converter == "docx"
+    assert [p.text for p in rows] == ["# Services Agreement", "The fee is $5,000."]
+
+
+@pytest.mark.ocr
+def test_image_decomposition(session, storage, tmp_path):
+    if not shutil.which("tesseract"):
+        pytest.skip("Tesseract is not installed")
+    from contract_extraction.ingestion import register_detected
+    from helpers import make_scan
+
+    scan = make_scan(tmp_path / "scan.jpg", ["Acme Rail Pty Ltd supplies sleepers."], fmt="JPEG")
+    doc = register_detected(DocumentRepo(session), storage, storage.stage(io.BytesIO(scan.read_bytes()), "scan.jpg"))[0]
+    dec = decompose(session, doc, ConfigRepo(session).resolve_pipeline().decomposition, storage)
+    rows = DecompositionRepo(session).pages(dec.id)
+    assert (doc.format, doc.mime_type, dec.converter) == ("image", "image/jpeg", "image:ocr")
+    assert doc.page_count == 1 and "Acme Rail" in rows[0].text and rows[0].width and rows[0].height
+
+
 @pytest.mark.ocr
 @pytest.mark.parametrize("config", ["ocr", "hybrid"])
 def test_ocr_methods(session, storage, sample_pdf, config):
