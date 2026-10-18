@@ -2,7 +2,7 @@
 
 EDGAR filings are unwrapped first (see ``text.unwrap_edgar``). Scripts, styles, frames, form
 controls and web-page navigation are removed, links keep only their text, and layout tables
-(one filled cell per row) become paragraphs. Pages break at CSS ``page-break-before`` /
+(each row one filled cell, or a clause number and its text) become paragraphs. Pages break at CSS ``page-break-before`` /
 ``page-break-after: always``, ``break-before`` / ``break-after: page`` and EDGAR ``<PAGE>``
 elements; without any, the text is split by length. Only images embedded as ``data:`` URIs
 are kept (written to ``images/``); remote or relative images are never fetched and are
@@ -29,6 +29,8 @@ _UNWRAP = ("a", "form", "font", "span")
 _BREAK_BEFORE = re.compile(r"(?:page-)?break-before\s*:\s*(?:always|page)", re.I)
 _BREAK_AFTER = re.compile(r"(?:page-)?break-after\s*:\s*(?:always|page)", re.I)
 _KEEP_ATTRS = {"src", "alt", "colspan", "rowspan"}
+_CLAUSE_NUMBER = re.compile(r"^(?:\(?(?:\d+(?:\.\d+)*|[a-z]{1,2}|[ivxlc]{1,6})[.)]|\((?:\d+|[a-z]{1,2}|[ivxlc]{1,6})\)|\d+(?:\.\d+)+)$",
+                            re.I)
 # Plain letters, so neither Markdown nor HTML output escapes it; unlikely to occur in a contract.
 MARKER = " CEPAGEBREAK7F3A "
 _MARKER_SPLIT = re.compile(r"\s*CEPAGEBREAK7F3A\s*")
@@ -58,21 +60,30 @@ def _cells(row) -> list:
     return row.find_all(["td", "th"], recursive=False)
 
 
+def _is_layout_row(cells: list) -> bool:
+    """One filled cell, or a clause number ("1.", "(e)", "2.1", "iv)") followed by one more cell."""
+    return len(cells) <= 1 or (len(cells) == 2 and bool(_CLAUSE_NUMBER.match(cells[0].get_text(strip=True))))
+
+
 def _flatten_layout_tables(soup) -> None:
-    """Tables used for layout (at most one non-empty cell per row) become paragraphs; empty rows are dropped.
+    """Tables used for layout become paragraphs (a row's cells joined by a space); empty rows are dropped.
 
     Innermost tables first, so a layout table nested in a real table is flattened inside its cell.
     """
     for table in reversed(soup.find_all("table")):
         rows = [r for r in table.find_all("tr") if r.find_parent("table") is table]
         filled = [[c for c in _cells(r) if c.get_text(strip=True) or c.find("img")] for r in rows]
-        if all(len(cells) <= 1 for cells in filled):
+        if all(_is_layout_row(cells) for cells in filled):
             paragraphs = []
             for cells in filled:
-                for cell in cells:
-                    p = soup.new_tag("p")
+                if not cells:
+                    continue
+                p = soup.new_tag("p")
+                for i, cell in enumerate(cells):
+                    if i:
+                        p.append(" ")
                     p.extend(list(cell.contents))
-                    paragraphs.append(p)
+                paragraphs.append(p)
             table.replace_with(*paragraphs) if paragraphs else table.decompose()
             continue
         for row, cells in zip(rows, filled, strict=True):

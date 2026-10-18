@@ -127,6 +127,21 @@ def test_html_to_markdown_pages(tmp_path):
     assert f"![signature]({images[0].name})" in second
 
 
+@pytest.mark.parametrize("number", ["1.", "(e)", "2.1", "iv)", "(iii)", "12.3.4", "a."])
+def test_html_numbered_clause_tables_become_paragraphs(tmp_path, number):
+    doc = (f"<table><tr><td></td><td>{number}</td><td>Construction. The parties drafted this jointly.</td></tr>"
+           "<tr><td></td><td></td><td>Continued text of the clause.</td></tr></table>")
+    result, _ = _convert(html, tmp_path, doc, "a.htm")
+    assert result.pages[0].text == f"{number} Construction. The parties drafted this jointly.\n\nContinued text of the clause."
+
+
+@pytest.mark.parametrize("first", ["Hourly", "Item", "2026", "$5"])
+def test_html_two_column_data_tables_stay_tables(tmp_path, first):
+    doc = f"<table><tr><td>{first}</td><td>$200</td></tr><tr><td>Daily</td><td>$1,500</td></tr></table>"
+    result, _ = _convert(html, tmp_path, doc, "a.htm")
+    assert f"| {first} | $200 |" in result.pages[0].text
+
+
 def test_html_text_format_keeps_clean_html(tmp_path):
     result, _ = _convert(html, tmp_path, HTML, "a.htm", _cfg("html"))
     first = result.pages[0].text
