@@ -12,6 +12,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Literal
 
+from ...core.errors import InvalidInput
 from ...domain.config import DecompositionConfig
 from ...domain.enums import DocumentFormat
 
@@ -55,3 +56,18 @@ class FormatSpec:
     @property
     def mime_type(self) -> str:
         return self.mime_types[0]
+
+
+def page_indexes(cfg: DecompositionConfig, total: int) -> list[int]:
+    """0-based page indexes from the optional 1-based ``start_page`` / ``end_page`` options."""
+    start = int(cfg.options.get("start_page") or 1)
+    end = int(cfg.options.get("end_page") or total)
+    end = min(end, total)
+    if total < 1 or not 1 <= start <= end:
+        raise InvalidInput(f"Invalid page range {start}-{end} for a {total}-page document")
+    return list(range(start - 1, end))
+
+
+def select_pages(pages: list[RawPage], cfg: DecompositionConfig) -> list[RawPage]:
+    """The ``start_page`` / ``end_page`` range of pages a converter made itself (PDFs pass the range to pdf-converter)."""
+    return [pages[i] for i in page_indexes(cfg, len(pages))]

@@ -10,13 +10,13 @@ from __future__ import annotations
 from pathlib import Path
 
 from ...core.errors import InvalidInput
-from . import pdf
+from . import html, pdf, text
 from .base import ConvertResult, DecompositionError, FormatSpec, RawPage
 
 __all__ = ["REGISTRY", "ConvertResult", "DecompositionError", "FormatSpec", "RawPage", "accepted", "detect", "spec_for"]
 
-# Sniff order: binary signatures first, then text formats.
-REGISTRY: tuple[FormatSpec, ...] = (pdf.SPEC,)
+# Sniff order: binary signatures first, then text formats; plain text is the last resort.
+REGISTRY: tuple[FormatSpec, ...] = (pdf.SPEC, html.SPEC, text.SPEC)
 
 _HEAD_BYTES = 8192
 

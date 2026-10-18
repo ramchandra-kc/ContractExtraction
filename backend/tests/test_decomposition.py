@@ -66,6 +66,39 @@ def test_each_decomposition_has_its_own_folder(session, storage, sample_pdf):
     assert DecompositionRepo(session).latest_for_document(doc.id).id == second.id
 
 
+def _text_document(session, storage, name: str, content: str):
+    from contract_extraction.ingestion import register_detected
+
+    return register_detected(DocumentRepo(session), storage, storage.stage(io.BytesIO(content.encode()), name))[0]
+
+
+def test_html_decomposition_removes_running_footers(session, storage):
+    # Clause texts differ in words, not only digits: digits are wildcards when looking for repeated lines.
+    clauses = ["Definitions apply.", "Fees are monthly.", "Either party may terminate.", "Notices are written."]
+    pages = [f"<p>{c}</p><p>Acme Rail confidential</p><p>Page {i}</p>" for i, c in enumerate(clauses, start=1)]
+    doc = _text_document(session, storage, "msa.htm",
+                         "<html><body>" + '<div style="page-break-before:always"></div>'.join(pages) + "</body></html>")
+    assert (doc.format, doc.mime_type) == ("html", "text/html")
+    dec = decompose(session, doc, ConfigRepo(session).resolve_pipeline().decomposition, storage)
+
+    rows = DecompositionRepo(session).pages(dec.id)
+    assert dec.converter == "html" and dec.page_count == doc.page_count == 4
+    assert [p.page_number for p in rows] == [1, 2, 3, 4]
+    for clause, p in zip(clauses, rows, strict=True):
+        assert p.text.startswith(clause) and "Page" not in p.text
+        assert "Page" in p.footer and p.width is None and p.metadata_["paged_by"] == "marker"
+
+
+def test_pages_by_length_keep_repeated_lines(session, storage):
+    block = "Acme Rail confidential\n\n" + "The supplier delivers on time. " * 40
+    doc = _text_document(session, storage, "notes.txt", "\n\n".join([block] * 6))
+    cfg = ConfigRepo(session).resolve_pipeline().decomposition.model_copy(update={"options": {"page_chars": 1500}})
+    dec = decompose(session, doc, cfg, storage)
+    rows = DecompositionRepo(session).pages(dec.id)
+    assert dec.converter == "txt" and len(rows) > 2
+    assert all(p.header is None and p.footer is None for p in rows)
+
+
 @pytest.mark.ocr
 @pytest.mark.parametrize("config", ["ocr", "hybrid"])
 def test_ocr_methods(session, storage, sample_pdf, config):

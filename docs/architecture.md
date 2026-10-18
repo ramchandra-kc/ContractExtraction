@@ -145,7 +145,18 @@ supported formats. Upload validation, the error message, `GET /config/formats` a
 - **Config.** A decomposition config's `method` applies to PDFs.
 - **Downstream.** Everything after decomposition works on page rows and doesn't know the format.
 - **Viewer.** The page viewer shows the original next to the text: PDFs at the same page; for other formats, an image or a download link.
-- **Supported** so far: PDF.
+- **Supported** so far:
+  - **PDF**: pdf-converter.
+  - **HTML** (`.htm`, `.html`):
+    - Sanitised with BeautifulSoup and lxml.
+    - Page breaks are CSS `page-break-*` / `break-*` and EDGAR `<PAGE>`.
+    - Layout tables become paragraphs; web-page navigation and remote images are dropped.
+    - Output is Markdown via markdownify, or clean HTML.
+  - **Plain text** (`.txt`, or text without a known extension):
+    - Page breaks are EDGAR `<PAGE>` and form feeds.
+    - Indentation is removed, and line-start `#` / `>` are escaped.
+  - EDGAR's SGML wrapper is removed in both HTML and plain text.
+  - Text without page breaks is split at paragraphs near `options.page_chars` (default 3000).
 
 **Fields and contract types** come from [`contract_types_and_fields.md`](contract_types_and_fields.md), the source of truth:
 18 contract types (NDA, MSA, SOW, SaaS, …) plus a fallback type **Other**, and 286 fields. Each field has a type (e.g.

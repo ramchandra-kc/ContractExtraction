@@ -1,11 +1,11 @@
 # ContractExtraction
 
-A research project that extracts structured data points from contract PDFs, such as customer name, payment terms, project
-dates, penalties and force majeure provisions. It combines PDF decomposition, retrieval-augmented generation with a local LLM,
-and an LLM judge that grades every answer.
+A research project that extracts structured data points from contracts (PDF, HTML or plain text), such as customer name,
+payment terms, project dates, penalties and force majeure provisions. It combines document decomposition,
+retrieval-augmented generation with a local LLM, and an LLM judge that grades every answer.
 
 ```
-PDF ─► decompose ─► chunk + embed ─► vector index ─► retrieve ─► extract (LLM) ─► judge (LLM) ─► results
+file ─► decompose ─► chunk + embed ─► vector index ─► retrieve ─► extract (LLM) ─► judge (LLM) ─► results
 ```
 
 ## Parts

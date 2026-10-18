@@ -21,7 +21,7 @@ from typing import Any
 from ...core.errors import InvalidInput
 from ...domain.config import DecompositionConfig
 from ...domain.enums import DecompositionMethod, DocumentFormat
-from .base import ConvertResult, DecompositionError, FormatSpec, RawPage
+from .base import ConvertResult, DecompositionError, FormatSpec, RawPage, page_indexes
 
 log = logging.getLogger(__name__)
 _library_log = logging.getLogger("pdf_converter")
@@ -103,16 +103,6 @@ def page_count(pdf_path: Path) -> int:
 
     with pymupdf.open(pdf_path) as doc:
         return doc.page_count
-
-
-def page_indexes(cfg: DecompositionConfig, total: int) -> list[int]:
-    """0-based page indexes from the optional 1-based ``start_page`` / ``end_page`` options."""
-    start = int(cfg.options.get("start_page") or 1)
-    end = int(cfg.options.get("end_page") or total)
-    end = min(end, total)
-    if total < 1 or not 1 <= start <= end:
-        raise InvalidInput(f"Invalid page range {start}-{end} for a {total}-page document")
-    return list(range(start - 1, end))
 
 
 def _extract_function(method: str) -> Any:

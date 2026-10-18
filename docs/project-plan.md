@@ -26,7 +26,7 @@ One phase is one commit or PR. A phase isn't started before the previous one is 
 | 8 | **Dev experience** | `scripts/dev.sh` (`up`, `status`, `smoke`, `test`, `down`, `reset`): Docker services, dependencies, check, then API, workers, gateway and frontend in one terminal with prefixed logs, fail-fast and graceful Ctrl-C; end-to-end smoke test through the gateway; docs refresh | One command brings up the full stack; the smoke test passes | ✅ done |
 | 9 | **Authentication** | Auth in the gateway, frontend login, backend trusts the gateway | Unauthenticated requests are rejected at the gateway | ⬜ planned |
 | 10a | **Formats 1: registry** | Converter registry and format detection; PDF converter behind it (no behaviour change); `documents.format`, `decompositions.converter`; `GET /config/formats`; frontend format awareness (accept list, viewer by format, format badge) | Existing tests pass; `sample.pdf` gives the same pages; the UI accepts only `.pdf` | ✅ done |
-| 10b | **Formats 2: text and HTML** | txt and html converters, page markers (EDGAR `<PAGE>`, `\f`, CSS page breaks) or pages by length, EDGAR wrapper removal | Unit tests pass; every `test_data` `.txt`/`.htm` decomposes; one of each runs end to end in the UI | ⬜ planned |
+| 10b | **Formats 2: text and HTML** | txt and html converters, page markers (EDGAR `<PAGE>`, `\f`, CSS page breaks) or pages by length, EDGAR wrapper removal | Unit tests pass; every `test_data` `.txt`/`.htm` decomposes; one of each runs end to end in the UI | ✅ done (UI run pending a dev DB update) |
 | 10c | **Formats 3: images and DOCX** | images (pymupdf → PDF → OCR), docx (mammoth → html converter) | Unit and `ocr` tests pass; every `test_data` `.docx` decomposes | ⬜ planned |
 | 10d | **Formats 4: email** | eml body plus supported attachments as one document, `source_part` per page | Unit tests pass; an eml with a PDF attachment runs end to end with its parts shown | ⬜ planned |
 
@@ -128,3 +128,17 @@ One phase is one commit or PR. A phase isn't started before the previous one is 
     - `GET /documents/{id}/file` sends HTML and email originals as an attachment with `Content-Security-Policy: sandbox`.
     - `PageOut.source_part` is new (set from 10d).
   - Existing dev databases need `scripts/dev.sh reset` (or the two `ALTER TABLE … ADD COLUMN`s), because the schema has no migrations.
+- 2026-10-19: Phase 10b completed. `converters/text.py` (txt plus shared helpers: decoding, EDGAR unwrap, markers, pages by length)
+  and `converters/html.py`.
+  - lxml was added. It's a C extension, which the plan didn't foresee. Python's `html.parser` nests EDGAR's unclosed `<P>`s
+    (800+ in one filing) until recursion fails, and lxml closes them the way browsers do. It's also about 2× faster on 2–3 MB filings.
+  - Added, unplanned, after looking at real output:
+    - Layout tables (at most one filled cell per row) become paragraphs.
+    - Empty table rows are dropped.
+    - Web-page `nav` / `aside` and page-level `header` / `footer` are removed.
+  - Page ranges (`start_page` / `end_page`) now apply to every format (`select_pages`).
+  - Verified with a batch run (converters only, no database) over `test_data/`:
+    - 220 `.htm` and 45 `.txt` all convert, with no empty pages.
+    - 245 split at page markers and 20 by length.
+    - The slowest file takes 1.8 s.
+    - Not verified: a UI run, because the dev database predates the 10a columns.
