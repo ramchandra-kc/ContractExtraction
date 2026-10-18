@@ -2,13 +2,17 @@ import { useRef, useState, type DragEvent } from 'react'
 import { useNavigate } from 'react-router'
 import { toast } from 'sonner'
 import { Upload } from 'lucide-react'
-import { useUploadDocument } from '@/api/hooks'
+import { useFormats, useUploadDocument } from '@/api/hooks'
 import { ProblemAlert } from '@/components/ProblemAlert'
 import { cn } from '@/lib/utils'
 
-/** Drop or pick a PDF. A file stored before (200) opens the existing document. */
+/** Drop or pick a contract file. A file stored before (200) opens the existing document. */
 export function UploadDropzone() {
   const upload = useUploadDocument()
+  const formats = useFormats()
+  // Until the formats load, any file can be picked; the API rejects unsupported ones.
+  const accept = formats.data?.flatMap((f) => [...f.mime_types, ...f.extensions]).join(',')
+  const extensions = formats.data?.flatMap((f) => f.extensions).join(', ')
   const navigate = useNavigate()
   const input = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
@@ -48,14 +52,15 @@ export function UploadDropzone() {
         )}
       >
         <Upload className="size-6" />
-        {upload.isPending ? 'Uploading…' : 'Drop a contract PDF here, or click to choose one'}
+        {upload.isPending ? 'Uploading…' : 'Drop a contract file here, or click to choose one'}
+        {extensions && !upload.isPending && <span className="text-xs">{extensions}</span>}
       </button>
       <input
         ref={input}
         type="file"
-        accept="application/pdf,.pdf"
+        accept={accept}
         className="hidden"
-        aria-label="PDF file"
+        aria-label="Contract file"
         onChange={(e) => {
           send(e.target.files?.[0])
           e.target.value = ''

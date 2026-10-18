@@ -1,6 +1,6 @@
-"""Decomposition stage: stored PDF → converter → header/footer removal → pages and images in the database.
+"""Decomposition stage: stored file → its format's converter → header/footer removal → pages and images in the database.
 
-Files are written to ``<code>/decompositions/<decomposition id>/`` (converter JSON in
+Files are written to ``<code>/decompositions/<decomposition id>/`` (converter output such as
 ``json/``, images in ``images/``, final pages in ``pages.json``); every decomposition has its
 own folder, so earlier rows stay valid.
 """
@@ -22,7 +22,7 @@ from ..domain.enums import TextFormat
 from ..persistence import models as m
 from ..persistence.repositories.artifacts import DecompositionRepo, NewImage, NewPage
 from ..storage import FileStorage
-from .converter import convert
+from .converters import spec_for
 from .headers_footers import PageText, strip_headers_footers
 
 log = logging.getLogger(__name__)
@@ -47,13 +47,6 @@ def relink_images(text: str, text_format: str) -> tuple[str, list[str]]:
     return pattern.sub(repl, text), names
 
 
-def _page_sizes(pdf_path: Path) -> dict[int, tuple[float, float]]:
-    import pymupdf
-
-    with pymupdf.open(pdf_path) as doc:
-        return {i + 1: (page.rect.width, page.rect.height) for i, page in enumerate(doc)}
-
-
 def _image_size(path: Path) -> tuple[int | None, int | None]:
     import pymupdf
 
@@ -68,21 +61,23 @@ def decompose(session: Session, document: m.Document, cfg: DecompositionConfig, 
     decomposition_id = uuid.uuid4()
     out_dir = storage.decomposition_dir(document.code, str(decomposition_id))
     out_dir.mkdir(parents=True, exist_ok=True)
-    pdf_path = storage.resolve(document.storage_path)
+    source = storage.resolve(document.storage_path)
+    spec = spec_for(document.format)
     started = time.perf_counter()
 
     try:
-        raw = convert(pdf_path, out_dir, cfg)
+        result = spec.convert(source, out_dir, cfg)
+        raw, sizes = result.pages, result.page_sizes
         referenced: dict[int, list[str]] = {}
         texts: list[PageText] = []
         for page in raw:
             text, names = relink_images(page.text, page.text_format)
             referenced[page.page_number] = names
             texts.append(PageText(text=text))
-        if cfg.remove_headers_footers:
+        # Pages split by length have no repeating edges to remove.
+        if cfg.remove_headers_footers and result.paged_by != "size":
             strip_headers_footers(texts)
 
-        sizes = _page_sizes(pdf_path)
         pages = [
             NewPage(page_number=p.page_number, text=t.text, text_format=p.text_format, header=t.header, footer=t.footer,
                     width=sizes.get(p.page_number, (None, None))[0], height=sizes.get(p.page_number, (None, None))[1],
@@ -109,9 +104,11 @@ def decompose(session: Session, document: m.Document, cfg: DecompositionConfig, 
     duration_ms = int((time.perf_counter() - started) * 1000)
     dec = DecompositionRepo(session).create(
         decomposition_id=decomposition_id, document_id=document.id, config_id=cfg.id,
-        config_snapshot=cfg.model_dump(mode="json"), storage_dir=out_dir.relative_to(storage.root).as_posix(),
-        duration_ms=duration_ms, pages=pages, images=images,
+        config_snapshot=cfg.model_dump(mode="json"), converter=result.converter,
+        storage_dir=out_dir.relative_to(storage.root).as_posix(), duration_ms=duration_ms, pages=pages, images=images,
     )
-    document.page_count = len(sizes)
-    log.info("Decomposed %s: %d pages, %d images in %d ms", document.code, len(pages), len(images), duration_ms)
+    # Sizes cover the whole source (a page range may decompose fewer); text formats have none.
+    document.page_count = len(sizes) or len(pages)
+    log.info("Decomposed %s with %s: %d pages, %d images in %d ms",
+             document.code, result.converter, len(pages), len(images), duration_ms)
     return dec

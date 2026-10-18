@@ -60,6 +60,7 @@ export function document(over: Partial<DocumentOut> = {}): DocumentOut {
     title: null,
     original_filename: 'sample.pdf',
     mime_type: 'application/pdf',
+    format: 'pdf',
     sha256: 'abc',
     size_bytes: 2048,
     page_count: 3,

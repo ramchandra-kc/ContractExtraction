@@ -27,7 +27,7 @@ _CODE = re.compile(r"^DOC\d{3,}$")
 _CHUNK = 1024 * 1024
 
 
-def safe_filename(name: str, default: str = "document.pdf") -> str:
+def safe_filename(name: str, default: str = "document") -> str:
     """Base name only, with unusual characters replaced."""
     base = Path(name.replace("\\", "/")).name.strip()
     base = _UNSAFE.sub("_", base).strip(". ")

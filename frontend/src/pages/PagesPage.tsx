@@ -1,14 +1,14 @@
 import Markdown from 'react-markdown'
 import remarkGfm from 'remark-gfm'
 import { Link, useParams, useSearchParams } from 'react-router'
-import { documentFileUrl, type PagesOut } from '@/api/client'
+import { documentFileUrl, type DocumentFormat, type PageOut, type PagesOut } from '@/api/client'
 import { useDocument, usePages } from '@/api/hooks'
 import { ProblemAlert } from '@/components/ProblemAlert'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 
-/** Decomposed page text (what the LLM saw) next to the original PDF at the same page. */
+/** Decomposed page text (what the LLM saw) next to the original (for a PDF, at the same page). */
 export function PagesPage() {
   const { id = '' } = useParams()
   const [params, setParams] = useSearchParams()
@@ -32,18 +32,28 @@ export function PagesPage() {
       </p>
       <ProblemAlert error={pages.error} />
       {pages.isPending && <Skeleton className="h-96" />}
-      {pages.data && <Viewer documentId={id} data={pages.data} requested={Number(params.get('page')) || 1} onPage={goTo} />}
+      {pages.data && (
+        <Viewer
+          documentId={id}
+          format={document.data?.format}
+          data={pages.data}
+          requested={Number(params.get('page')) || 1}
+          onPage={goTo}
+        />
+      )}
     </div>
   )
 }
 
 function Viewer({
   documentId,
+  format,
   data,
   requested,
   onPage,
 }: {
   documentId: string
+  format: DocumentFormat | undefined
   data: PagesOut
   requested: number
   onPage: (n: number) => void
@@ -103,13 +113,37 @@ function Viewer({
         </CardContent>
       </Card>
 
-      {/* Keyed by page: changing only the #page fragment does not move every browser's PDF viewer. */}
+      <Original documentId={documentId} format={format} page={page} />
+    </div>
+  )
+}
+
+/** The original next to the extracted text: the PDF at the same page, the image, or a download for other formats. */
+function Original({ documentId, format, page }: { documentId: string; format: DocumentFormat | undefined; page: PageOut }) {
+  const url = documentFileUrl(documentId)
+  if (format === 'pdf') {
+    // Keyed by page: changing only the #page fragment does not move every browser's PDF viewer.
+    return (
       <iframe
         key={page.page_number}
         title="Original PDF"
-        src={`${documentFileUrl(documentId)}#page=${page.page_number}`}
+        src={`${url}#page=${page.page_number}`}
         className="h-[80vh] w-full rounded-lg border"
       />
-    </div>
+    )
+  }
+  if (format === 'image') {
+    return <img src={url} alt="Original" className="max-h-[80vh] w-full rounded-lg border object-contain" />
+  }
+  return (
+    <Card>
+      <CardContent className="space-y-2 pt-6 text-sm text-muted-foreground">
+        {page.source_part && <p>Source: {page.source_part}</p>}
+        <p>The original ({format ?? 'file'}) can't be shown here; the extracted text is what the models read.</p>
+        <a href={url} className="text-foreground underline underline-offset-4">
+          Open original
+        </a>
+      </CardContent>
+    </Card>
   )
 }

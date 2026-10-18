@@ -30,7 +30,7 @@ def test_ingest_with_real_services(db, storage, tmp_path):
         pipeline = ConfigRepo(s).resolve_pipeline()
     pdf = make_pdf(tmp_path / "live.pdf", pages=[b + " Live test." for b in BODY])
 
-    result = ingest(db, storage, settings, pipeline, pdf_path=pdf)
+    result = ingest(db, storage, settings, pipeline, source_path=pdf)
     store = factory.vector_store(pipeline.index.vector_store, settings)
     try:
         query = factory.embedder(pipeline.index.embedding_model, settings).embed(["When are invoices payable?"])[0]

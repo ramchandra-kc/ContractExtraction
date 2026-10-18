@@ -40,7 +40,7 @@ def test_pymupdf_decomposition(session, storage, sample_pdf):
     pages = repo.pages(dec.id)
     assert [p.page_number for p in pages] == [1, 2, 3]
     assert doc.page_count == 3 and dec.page_count == 3
-    assert dec.config_snapshot["method"] == "pymupdf"
+    assert dec.config_snapshot["method"] == "pymupdf" and dec.converter == "pdf:pymupdf"
     # pymupdf4llm's layout analysis already drops running headers/footers for text PDFs;
     # our repeated-line pass (unit-tested separately) catches what remains, e.g. in OCR output.
     for i, p in enumerate(pages, start=1):

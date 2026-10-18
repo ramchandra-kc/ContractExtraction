@@ -25,6 +25,10 @@ One phase is one commit or PR. A phase isn't started before the previous one is 
 | 7c | **Config editing** | Write endpoints and UI for pipelines (compose, RAG order, judge, default), RAG configs, model profiles, fields and expansion queries, prompts (saving creates a new version; pipelines stay pinned), provider URL / enable and models. Decomposition and index configs are create-only (ingestion reuses their outputs by id). Names and keys can't change; deleting a row runs reference → 409 | API and UI tests pass; an edited config is used by the next run and past runs are unchanged | ✅ done |
 | 8 | **Dev experience** | `scripts/dev.sh` (`up`, `status`, `smoke`, `test`, `down`, `reset`): Docker services, dependencies, check, then API, workers, gateway and frontend in one terminal with prefixed logs, fail-fast and graceful Ctrl-C; end-to-end smoke test through the gateway; docs refresh | One command brings up the full stack; the smoke test passes | ✅ done |
 | 9 | **Authentication** | Auth in the gateway, frontend login, backend trusts the gateway | Unauthenticated requests are rejected at the gateway | ⬜ planned |
+| 10a | **Formats 1: registry** | Converter registry and format detection; PDF converter behind it (no behaviour change); `documents.format`, `decompositions.converter`; `GET /config/formats`; frontend format awareness (accept list, viewer by format, format badge) | Existing tests pass; `sample.pdf` gives the same pages; the UI accepts only `.pdf` | ✅ done |
+| 10b | **Formats 2: text and HTML** | txt and html converters, page markers (EDGAR `<PAGE>`, `\f`, CSS page breaks) or pages by length, EDGAR wrapper removal | Unit tests pass; every `test_data` `.txt`/`.htm` decomposes; one of each runs end to end in the UI | ⬜ planned |
+| 10c | **Formats 3: images and DOCX** | images (pymupdf → PDF → OCR), docx (mammoth → html converter) | Unit and `ocr` tests pass; every `test_data` `.docx` decomposes | ⬜ planned |
+| 10d | **Formats 4: email** | eml body plus supported attachments as one document, `source_part` per page | Unit tests pass; an eml with a PDF attachment runs end to end with its parts shown | ⬜ planned |
 
 ## Open questions (decided in the phase that needs them)
 
@@ -106,3 +110,21 @@ One phase is one commit or PR. A phase isn't started before the previous one is 
     ends failed (stale heartbeat) instead of cancelled.
   - Verified on macOS end to end again. On Debian (bash 5, no `lsof` or `pgrep`) only the script's own logic was checked.
     Git Bash on Windows is not tested.
+- 2026-10-18: Phase 10 (multi-format ingestion) planned as 10a–10d.
+  - Text formats are parsed natively rather than rendered to PDF, which avoids a layout round trip and LibreOffice.
+  - Images go through PDF and OCR.
+  - An email is one document: its body, then its supported attachments.
+  - Out of scope: `.msg`, `.rtf`, `.odt`, `.doc` (one converter each, later), and fetching remote resources from HTML or email.
+- 2026-10-18: Phase 10a completed.
+  - `decomposition/converters/` replaces `decomposition/converter.py`. `REGISTRY` is the single list of formats.
+  - `detect` replaces the upload route's `%PDF-` check and is also used by the CLI, which now takes `<file>` instead of `<pdf>`.
+  - `ingest(source_path=…)` replaces `pdf_path`.
+  - Schema:
+    - `documents.format` (CHECK lists every planned format, so 10b–10d need no schema change)
+    - `decompositions.converter`
+  - API:
+    - `DecompositionOut.method` now shows the converter (`pdf:pymupdf`).
+    - Upload errors say "Unsupported file type; accepted: …" or "The file is empty".
+    - `GET /documents/{id}/file` sends HTML and email originals as an attachment with `Content-Security-Policy: sandbox`.
+    - `PageOut.source_part` is new (set from 10d).
+  - Existing dev databases need `scripts/dev.sh reset` (or the two `ALTER TABLE … ADD COLUMN`s), because the schema has no migrations.

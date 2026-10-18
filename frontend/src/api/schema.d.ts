@@ -68,6 +68,26 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/v1/config/formats": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * List Formats
+         * @description File formats that can be uploaded and decomposed.
+         */
+        get: operations["list_formats"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/v1/config/providers": {
         parameters: {
             query?: never;
@@ -454,7 +474,7 @@ export interface paths {
         put?: never;
         /**
          * Upload Document
-         * @description Store a PDF. The same content is stored once: uploading it again returns the existing document (200).
+         * @description Store a contract file. The same content is stored once: uploading it again returns the existing document (200).
          */
         post: operations["upload_document"];
         delete?: never;
@@ -794,7 +814,7 @@ export interface components {
         Body_upload_document: {
             /**
              * File
-             * @description A PDF file
+             * @description A contract file in one of the formats from GET /config/formats
              */
             file: string;
         };
@@ -1180,7 +1200,10 @@ export interface components {
             id: string;
             /** Config */
             config: string | null;
-            /** Method */
+            /**
+             * Method
+             * @description The converter that ran, e.g. pdf:pymupdf, image:ocr, html
+             */
             method: string | null;
             /** Text Format */
             text_format: string | null;
@@ -1214,6 +1237,7 @@ export interface components {
             original_filename: string;
             /** Mime Type */
             mime_type: string;
+            format: components["schemas"]["DocumentFormat"];
             /** Sha256 */
             sha256: string;
             /** Size Bytes */
@@ -1233,6 +1257,12 @@ export interface components {
             /** Runs */
             runs: components["schemas"]["RunSummary"][];
         };
+        /**
+         * DocumentFormat
+         * @description Kind of source file; decides which converter decomposes it.
+         * @enum {string}
+         */
+        DocumentFormat: "pdf" | "image" | "html" | "txt" | "docx" | "eml";
         /** DocumentOut */
         DocumentOut: {
             /**
@@ -1248,6 +1278,7 @@ export interface components {
             original_filename: string;
             /** Mime Type */
             mime_type: string;
+            format: components["schemas"]["DocumentFormat"];
             /** Sha256 */
             sha256: string;
             /** Size Bytes */
@@ -1478,6 +1509,17 @@ export interface components {
             queries?: string[];
             /** @description null removes the anchor */
             anchor?: components["schemas"]["Anchor"] | null;
+        };
+        /** FormatOut */
+        FormatOut: {
+            format: components["schemas"]["DocumentFormat"];
+            /** Mime Types */
+            mime_types: string[];
+            /**
+             * Extensions
+             * @description Lower-case, with the dot, e.g. .pdf
+             */
+            extensions: string[];
         };
         /**
          * Granularity
@@ -1764,6 +1806,11 @@ export interface components {
             width: number | null;
             /** Height */
             height: number | null;
+            /**
+             * Source Part
+             * @description Part of the source the page came from, e.g. an email attachment
+             */
+            source_part?: string | null;
             /** Images */
             images: components["schemas"]["ImageOut"][];
         };
@@ -2474,6 +2521,26 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    list_formats: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["FormatOut"][];
                 };
             };
         };
@@ -3291,13 +3358,13 @@ export interface operations {
         };
         requestBody?: never;
         responses: {
-            /** @description The original file */
+            /** @description The original file, with the document's mime type */
             200: {
                 headers: {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/pdf": unknown;
+                    "application/octet-stream": unknown;
                 };
             };
             /** @description Validation Error */

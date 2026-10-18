@@ -22,6 +22,10 @@ Use `--pipeline NAME` for a non-default pipeline config.
 
 OCR and hybrid decomposition (`decomposition_configs` rows `ocr` and `hybrid`) need Tesseract (`brew install tesseract`).
 
+Supported source formats come from the converter registry in `decomposition/converters/` (`GET /config/formats` lists them).
+The format is detected from the file's content (and, for text formats, its extension), not from the upload's content type.
+To add a format, write a converter module with a `SPEC` and add it to `REGISTRY`.
+
 ### HTTP API
 
 ```bash
@@ -142,7 +146,7 @@ src/contract_extraction/
   domain/        enums mirroring the schema's CHECK values; resolved pipeline config (frozen, snapshot())
   persistence/   db.py (engine, sessions), models.py (ORM mirroring docker/schema.sql), repositories/
   providers/     chat, embedding and vector-store clients: Ollama, OpenAI-compatible (OpenRouter), Qdrant, in-memory
-  decomposition/ pdf-converter wrapper (pymupdf / ocr / hybrid), header/footer removal, decomposition stage
+  decomposition/ converters/ (format registry, detection; pdf-converter wrapper for pymupdf / ocr / hybrid), header/footer removal, decomposition stage
   indexing/      chunking (per page, exact offsets, overlap), indexer (embed, upsert, chunk rows)
   extraction/    retrieval (query expansion, thresholds, merge), prompts, answer parsing, judge
   pipeline/      run options and the executor (stages, progress, events, reuse of repeated evidence)

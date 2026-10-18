@@ -1,4 +1,4 @@
-"""PDF → page objects through the pdf-converter library (pymupdf, ocr or hybrid).
+"""PDF → pages through the pdf-converter library (pymupdf, ocr or hybrid, from the config's method).
 
 The library writes ``<out>/json/*.json`` (page objects with ``text``, ``page_boxes``,
 ``metadata.page_number`` and ``text_format``) and ``<out>/images/``. It prints progress as
@@ -15,30 +15,17 @@ import json
 import logging
 import threading
 from collections.abc import Iterator
-from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from ..core.errors import InvalidInput
-from ..domain.config import DecompositionConfig
-from ..domain.enums import DecompositionMethod
+from ...core.errors import InvalidInput
+from ...domain.config import DecompositionConfig
+from ...domain.enums import DecompositionMethod, DocumentFormat
+from .base import ConvertResult, DecompositionError, FormatSpec, RawPage
 
 log = logging.getLogger(__name__)
 _library_log = logging.getLogger("pdf_converter")
 _LOCK = threading.Lock()
-
-
-class DecompositionError(Exception):
-    """The converter failed on this PDF."""
-
-
-@dataclass
-class RawPage:
-    page_number: int
-    text: str
-    text_format: str
-    metadata: dict[str, Any] = field(default_factory=dict)
-    page_boxes: list[Any] = field(default_factory=list)
 
 
 class _ProgressToLog(io.TextIOBase):
@@ -141,8 +128,20 @@ def _extract_function(method: str) -> Any:
     raise InvalidInput(f"Unknown decomposition method: {method!r}")
 
 
-def convert(pdf_path: Path, out_dir: Path, cfg: DecompositionConfig) -> list[RawPage]:
-    """Run the converter; images land in ``out_dir/images``. Returns pages in page order."""
+def page_sizes(pdf_path: Path) -> dict[int, tuple[float, float]]:
+    import pymupdf
+
+    with pymupdf.open(pdf_path) as doc:
+        return {i + 1: (page.rect.width, page.rect.height) for i, page in enumerate(doc)}
+
+
+def convert(pdf_path: Path, out_dir: Path, cfg: DecompositionConfig) -> ConvertResult:
+    return ConvertResult(pages=extract_pages(pdf_path, out_dir, cfg), converter=f"pdf:{cfg.method}",
+                         paged_by="source", page_sizes=page_sizes(pdf_path))
+
+
+def extract_pages(pdf_path: Path, out_dir: Path, cfg: DecompositionConfig) -> list[RawPage]:
+    """Run pdf-converter with ``cfg.method``; images land in ``out_dir/images``. Returns pages in page order."""
     pages = page_indexes(cfg, page_count(pdf_path))
     kwargs: dict[str, Any] = {
         "input_path": str(pdf_path.resolve()),
@@ -180,3 +179,12 @@ def convert(pdf_path: Path, out_dir: Path, cfg: DecompositionConfig) -> list[Raw
     if not raw:
         raise DecompositionError("The converter produced no pages")
     return sorted(raw, key=lambda p: p.page_number)
+
+
+SPEC = FormatSpec(
+    format=DocumentFormat.PDF,
+    mime_types=("application/pdf",),
+    extensions=(".pdf",),
+    sniff=lambda head, ext: head.startswith(b"%PDF-"),
+    convert=convert,
+)

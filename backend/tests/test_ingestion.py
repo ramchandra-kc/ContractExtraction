@@ -24,7 +24,7 @@ def test_ingest_builds_and_reuses(db, storage, tmp_path):
     pdf = make_pdf(tmp_path / "ingest.pdf", pages=[b + " Ingest test one." for b in BODY])
     settings, pipeline, store, emb = load_settings("test"), _pipeline(db), MemoryStore(), HashEmbedder()
 
-    first = ingest(db, storage, settings, pipeline, pdf_path=pdf, embedder=emb, store=store)
+    first = ingest(db, storage, settings, pipeline, source_path=pdf, embedder=emb, store=store)
     assert first.document_created and not first.decomposition_reused and not first.index.reused
     assert first.page_count == 3 and first.index.chunk_count >= 3
     assert first.index.collection_name.startswith(f"ce-{first.document_code.lower()}-")
@@ -40,7 +40,7 @@ def test_ingest_builds_and_reuses(db, storage, tmp_path):
     assert hits[0].id in {c.id for c in chunks}
 
     calls = emb.calls
-    again = ingest(db, storage, settings, pipeline, pdf_path=pdf, embedder=emb, store=store)
+    again = ingest(db, storage, settings, pipeline, source_path=pdf, embedder=emb, store=store)
     assert not again.document_created and again.document_id == first.document_id
     assert again.decomposition_reused and again.index.reused
     assert emb.calls == calls, "nothing re-embedded"
@@ -50,7 +50,7 @@ def test_missing_collection_is_rebuilt_with_same_ids(db, storage, tmp_path):
     pdf = make_pdf(tmp_path / "rebuild.pdf", pages=[b + " Rebuild test two." for b in BODY])
     settings, pipeline, store = load_settings("test"), _pipeline(db), MemoryStore()
 
-    first = ingest(db, storage, settings, pipeline, pdf_path=pdf, embedder=HashEmbedder(), store=store)
+    first = ingest(db, storage, settings, pipeline, source_path=pdf, embedder=HashEmbedder(), store=store)
     store.delete_collection(first.index.collection_name)
 
     again = ingest(db, storage, settings, pipeline, document_id=first.document_id, embedder=HashEmbedder(), store=store)
@@ -69,7 +69,7 @@ def test_failed_embedding_marks_index_failed(db, storage, tmp_path):
     pdf = make_pdf(tmp_path / "fail.pdf", pages=[b + " Failure test three." for b in BODY])
     settings, pipeline = load_settings("test"), _pipeline(db)
     with pytest.raises(InvalidConfig, match="dimensions"):
-        ingest(db, storage, settings, pipeline, pdf_path=pdf, embedder=HashEmbedder(dimension=8), store=MemoryStore())
+        ingest(db, storage, settings, pipeline, source_path=pdf, embedder=HashEmbedder(dimension=8), store=MemoryStore())
     with db.session() as s:
         from sqlalchemy import select
 

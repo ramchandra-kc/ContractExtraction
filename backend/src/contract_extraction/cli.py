@@ -1,9 +1,9 @@
 """Command line entry point.
 
     contract-extraction check                 settings, database, schema, default pipeline, Qdrant and LLM providers
-    contract-extraction ingest <pdf>          register, decompose and index a PDF with a pipeline config
-    contract-extraction run <pdf> [options]   ingest + extract every field under every RAG config (inline)
-    contract-extraction run <pdf> --queue     only queue it; `contract-extraction worker` executes queued runs
+    contract-extraction ingest <file>         register, decompose and index a contract file with a pipeline config
+    contract-extraction run <file> [options]  ingest + extract every field under every RAG config (inline)
+    contract-extraction run <file> --queue    only queue it; `contract-extraction worker` executes queued runs
     contract-extraction status [RUN_ID]       recent runs, or one run's timeline and best values
     contract-extraction cancel RUN_ID         cancel a queued run / stop a running one
     contract-extraction api                   serve the HTTP API (127.0.0.1:8000, behind the gateway)
@@ -68,7 +68,7 @@ def check() -> int:
     return 0 if ok else 1
 
 
-def ingest(pdf: Path, pipeline_name: str | None, redecompose: bool) -> int:
+def ingest(file: Path, pipeline_name: str | None, redecompose: bool) -> int:
     from .ingestion import ingest as run_ingest
 
     settings = load_settings()
@@ -77,7 +77,7 @@ def ingest(pdf: Path, pipeline_name: str | None, redecompose: bool) -> int:
     try:
         with db.session() as s:
             pipeline = ConfigRepo(s).resolve_pipeline(pipeline_name)
-        r = run_ingest(db, FileStorage(settings.storage_root), settings, pipeline, pdf_path=pdf, redecompose=redecompose)
+        r = run_ingest(db, FileStorage(settings.storage_root), settings, pipeline, source_path=file, redecompose=redecompose)
     except (AppError, ProviderError) as exc:
         print(f"FAIL: {exc}", file=sys.stderr)
         return 1
@@ -95,7 +95,7 @@ def _short(value: object, width: int = 70) -> str:
     return text if len(text) <= width else text[:width - 1] + "…"
 
 
-def run(pdf: Path, pipeline_name: str | None, kind: str, options: RunOptions, queue: bool = False) -> int:
+def run(file: Path, pipeline_name: str | None, kind: str, options: RunOptions, queue: bool = False) -> int:
     from .ingestion import register_file
     from .pipeline.executor import RunExecutor, select_fields
     from .pipeline.options import narrow
@@ -109,7 +109,7 @@ def run(pdf: Path, pipeline_name: str | None, kind: str, options: RunOptions, qu
     try:
         with db.session() as s:
             pipeline = narrow(ConfigRepo(s).resolve_pipeline(pipeline_name), options)
-        document_id, code, _ = register_file(db, storage, settings, pdf)
+        document_id, code, _ = register_file(db, storage, settings, file)
         worker_id = f"cli:{default_worker_id()}"
         with db.session() as s:
             # Inline runs start in the same transaction, so a worker can never claim them.
@@ -332,13 +332,13 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(prog="contract-extraction")
     sub = parser.add_subparsers(dest="command", required=True)
     sub.add_parser("check", help="verify settings, database, default pipeline and services")
-    p_ingest = sub.add_parser("ingest", help="register, decompose and index a PDF")
-    p_ingest.add_argument("pdf", type=Path)
+    p_ingest = sub.add_parser("ingest", help="register, decompose and index a contract file")
+    p_ingest.add_argument("file", type=Path)
     p_ingest.add_argument("--pipeline", help="pipeline config name (default: the default pipeline)")
     p_ingest.add_argument("--redecompose", action="store_true", help="decompose again even if a decomposition exists")
 
-    p_run = sub.add_parser("run", help="ingest a PDF and extract its fields (runs inline)")
-    p_run.add_argument("pdf", type=Path)
+    p_run = sub.add_parser("run", help="ingest a contract file and extract its fields (runs inline)")
+    p_run.add_argument("file", type=Path)
     p_run.add_argument("--pipeline", help="pipeline config name (default: the default pipeline)")
     p_run.add_argument("--kind", choices=[k.value for k in RunKind], default=RunKind.FULL.value)
     p_run.add_argument("--fields", help="comma-separated field keys (default: those of the detected contract types)")
@@ -390,14 +390,14 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "check":
         return check()
     if args.command == "ingest":
-        return ingest(args.pdf, args.pipeline, args.redecompose)
+        return ingest(args.file, args.pipeline, args.redecompose)
     if args.command == "run":
         split = lambda v: [x.strip() for x in v.split(",") if x.strip()] if v else None  # noqa: E731
         options = RunOptions(fields=split(args.fields), contract_types=split(args.contract_types),
                              retrievals=split(args.retrievals),
                              judge=False if args.no_judge else None, reuse_calls=not args.no_reuse,
                              redecompose=args.redecompose)
-        return run(args.pdf, args.pipeline, args.kind, options, queue=args.queue)
+        return run(args.file, args.pipeline, args.kind, options, queue=args.queue)
     if args.command == "worker":
         return worker(args.once)
     if args.command == "status":

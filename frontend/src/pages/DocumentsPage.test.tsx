@@ -22,6 +22,17 @@ describe('DocumentsPage', () => {
     renderApp('/')
     expect(await screen.findByText('DOC001')).toBeInTheDocument()
     expect(screen.getByText('sample.pdf')).toBeInTheDocument()
+    expect(screen.getByText('pdf')).toBeInTheDocument()
+  })
+
+  it('accepts the formats the API supports', async () => {
+    documentsApi(() => HttpResponse.json(document(), { status: 201 }))
+    renderApp('/')
+    expect(await screen.findByText('.pdf, .htm, .html')).toBeInTheDocument()
+    expect(screen.getByLabelText('Contract file')).toHaveAttribute(
+      'accept',
+      'application/pdf,.pdf,text/html,.htm,.html',
+    )
   })
 
   it('opens a newly uploaded document (201)', async () => {
@@ -32,7 +43,7 @@ describe('DocumentsPage', () => {
       return HttpResponse.json(document(), { status: 201 })
     })
     const { router } = renderApp('/')
-    await userEvent.upload(screen.getByLabelText('PDF file'), pdf())
+    await userEvent.upload(screen.getByLabelText('Contract file'), pdf())
 
     await waitFor(() => expect(router.state.location.pathname).toBe(`/documents/${DOC_ID}`))
     expect(contentType).toMatch(/^multipart\/form-data; boundary=/)
@@ -42,7 +53,7 @@ describe('DocumentsPage', () => {
   it('opens the existing document when the file was uploaded before (200)', async () => {
     documentsApi(() => HttpResponse.json(document(), { status: 200 }))
     const { router } = renderApp('/')
-    await userEvent.upload(screen.getByLabelText('PDF file'), pdf())
+    await userEvent.upload(screen.getByLabelText('Contract file'), pdf())
 
     await waitFor(() => expect(router.state.location.pathname).toBe(`/documents/${DOC_ID}`))
     expect(await screen.findByText('Already uploaded as DOC001')).toBeInTheDocument()
@@ -50,11 +61,11 @@ describe('DocumentsPage', () => {
 
   it.each([
     [413, 'Content Too Large', 'The upload is larger than 50 MB'],
-    [422, 'Unprocessable Content', 'The file is empty or not a PDF'],
+    [422, 'Unprocessable Content', 'Unsupported file type; accepted: .pdf'],
   ])('shows the problem of a rejected upload (%i)', async (status, title, detail) => {
     documentsApi(() => problem(status, title, detail))
     const { router } = renderApp('/')
-    await userEvent.upload(screen.getByLabelText('PDF file'), pdf())
+    await userEvent.upload(screen.getByLabelText('Contract file'), pdf())
 
     expect(await screen.findByRole('alert')).toHaveTextContent(`${status} ${title}`)
     expect(screen.getByRole('alert')).toHaveTextContent(detail)

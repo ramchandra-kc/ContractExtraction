@@ -9,8 +9,10 @@ from fastapi import APIRouter, Depends, File, Query, Response, UploadFile, statu
 from fastapi.responses import FileResponse
 from sqlalchemy import select
 
-from ...core.errors import InvalidInput, NotFound
+from ...core.errors import NotFound
 from ...core.settings import Settings
+from ...domain.enums import DocumentFormat
+from ...ingestion import register_detected
 from ...persistence import models as m
 from ...persistence.repositories import ConfigRepo, DocumentRepo, RunRepo
 from ...persistence.repositories.artifacts import DecompositionRepo
@@ -33,7 +35,8 @@ from .runs import run_out
 
 router = APIRouter(prefix="/documents", tags=["documents"])
 
-_PDF_SIGNATURE = b"%PDF-"
+# Originals that a browser would run as a page are only ever downloaded, never shown inline.
+_DOWNLOAD_ONLY = {DocumentFormat.HTML, DocumentFormat.EML}
 
 
 def document_out(doc: m.Document, latest: m.Run | None) -> DocumentOut:
@@ -45,20 +48,15 @@ def document_out(doc: m.Document, latest: m.Run | None) -> DocumentOut:
 @router.post("", response_model=DocumentOut, status_code=status.HTTP_201_CREATED,
              responses={200: {"model": DocumentOut, "description": "The same file was uploaded before"}})
 def upload_document(
-    file: Annotated[UploadFile, File(description="A PDF file")],
+    file: Annotated[UploadFile, File(description="A contract file in one of the formats from GET /config/formats")],
     response: Response,
     session: SessionDep,
     storage: FileStorage = Depends(get_storage),
     settings: Settings = Depends(get_settings),
 ):
-    """Store a PDF. The same content is stored once: uploading it again returns the existing document (200)."""
-    staged = storage.stage(file.file, file.filename or "document.pdf", settings.storage.max_upload_mb * 1024 * 1024)
-    with staged.path.open("rb") as fh:
-        head = fh.read(len(_PDF_SIGNATURE))
-    if staged.size_bytes == 0 or head != _PDF_SIGNATURE:
-        storage.discard(staged)
-        raise InvalidInput("The file is empty or not a PDF")
-    doc, created = DocumentRepo(session).register(staged, storage)
+    """Store a contract file. The same content is stored once: uploading it again returns the existing document (200)."""
+    staged = storage.stage(file.file, file.filename or "document", settings.storage.max_upload_mb * 1024 * 1024)
+    doc, created = register_detected(DocumentRepo(session), storage, staged)
     response.status_code = status.HTTP_201_CREATED if created else status.HTTP_200_OK
     response.headers["Location"] = f"/api/v1/documents/{doc.id}"
     return document_out(doc, RunRepo(session).latest_for_documents([doc.id]).get(doc.id))
@@ -82,7 +80,7 @@ def get_document(document_id: uuid.UUID, session: SessionDep):
     base = document_out(doc, runs[0] if runs else None)
     return DocumentDetail(
         **base.model_dump(),
-        decompositions=[DecompositionOut(id=d.id, config=d.config_snapshot.get("name"), method=d.config_snapshot.get("method"),
+        decompositions=[DecompositionOut(id=d.id, config=d.config_snapshot.get("name"), method=d.converter,
                                          text_format=d.config_snapshot.get("text_format"), page_count=d.page_count,
                                          duration_ms=d.duration_ms, created_at=d.created_at) for d in decompositions],
         runs=[RunSummary.model_validate(r) for r in runs],
@@ -90,13 +88,17 @@ def get_document(document_id: uuid.UUID, session: SessionDep):
 
 
 @router.get("/{document_id}/file", response_class=FileResponse,
-            responses={200: {"content": {"application/pdf": {}}, "description": "The original file"}})
+            responses={200: {"content": {"application/octet-stream": {}},
+                             "description": "The original file, with the document's mime type"}})
 def get_document_file(document_id: uuid.UUID, session: SessionDep,
                       storage: FileStorage = Depends(get_storage)):
     doc = DocumentRepo(session).get(document_id)
     path = storage.resolve(doc.storage_path)
     if not path.is_file():
         raise NotFound(f"The stored file of {doc.code} is missing")
+    if doc.format in _DOWNLOAD_ONLY:
+        return FileResponse(path, media_type=doc.mime_type, filename=doc.original_filename,
+                            content_disposition_type="attachment", headers={"Content-Security-Policy": "sandbox"})
     return FileResponse(path, media_type=doc.mime_type, filename=doc.original_filename, content_disposition_type="inline")
 
 
@@ -115,7 +117,8 @@ def get_pages(document_id: uuid.UUID, session: SessionDep, decomposition_id: uui
             url=f"/api/v1/documents/{doc.id}/images/{img.id}"))
     return PagesOut(decomposition_id=dec.id, pages=[
         PageOut(page_number=p.page_number, text=p.text, text_format=p.text_format, header=p.header, footer=p.footer,
-                width=p.width, height=p.height, images=images.get(p.id, []))
+                width=p.width, height=p.height, source_part=(p.metadata_ or {}).get("source_part"),
+                images=images.get(p.id, []))
         for p in repo.pages(dec.id)
     ])
 

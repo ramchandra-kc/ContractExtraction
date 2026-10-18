@@ -1,14 +1,15 @@
-"""Configuration summaries for running (resolved pipelines, providers). Editing is in config_edit.py."""
+"""Configuration summaries for running (resolved pipelines, providers, file formats). Editing is in config_edit.py."""
 
 from __future__ import annotations
 
 from fastapi import APIRouter
 
 from ...core.errors import AppError
+from ...decomposition.converters import REGISTRY
 from ...domain.config import ModelProfile, PipelineConfig
 from ...persistence.repositories import ConfigRepo
 from ..deps import SessionDep
-from ..schemas import ContractTypeOut, FieldOut, PipelineOut, ProfileOut, ProviderOut, RetrievalOut
+from ..schemas import ContractTypeOut, FieldOut, FormatOut, PipelineOut, ProfileOut, ProviderOut, RetrievalOut
 
 router = APIRouter(prefix="/config", tags=["config"])
 
@@ -46,6 +47,12 @@ def list_pipelines(session: SessionDep):
         except AppError as exc:
             out.append(PipelineOut(name=row.name, is_default=row.is_default, description=row.description, error=str(exc)))
     return out
+
+
+@router.get("/formats", response_model=list[FormatOut])
+def list_formats():
+    """File formats that can be uploaded and decomposed."""
+    return [FormatOut(format=s.format, mime_types=list(s.mime_types), extensions=list(s.extensions)) for s in REGISTRY]
 
 
 @router.get("/providers", response_model=list[ProviderOut])

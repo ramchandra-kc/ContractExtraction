@@ -137,7 +137,7 @@ CREATE TABLE prompt_templates (
 );
 CREATE UNIQUE INDEX uq_prompt_templates_active_name ON prompt_templates (name) WHERE is_active;
 
--- How a PDF is turned into page text.
+-- How a document is turned into page text. method applies to PDFs; images always use OCR.
 CREATE TABLE decomposition_configs (
     id                     uuid        NOT NULL DEFAULT gen_random_uuid(),
     name                   text        NOT NULL,
@@ -388,7 +388,9 @@ CREATE TABLE documents (
     title             text,
     original_filename text        NOT NULL,
     mime_type         text        NOT NULL DEFAULT 'application/pdf',
-    sha256            char(64)    NOT NULL,
+    -- Detected at upload; picks the converter used by decomposition.
+    format            text        NOT NULL DEFAULT 'pdf',
+    sha256           char(64)    NOT NULL,
     size_bytes        bigint      NOT NULL,
     page_count        integer,
     -- Path of the stored source file, relative to the storage root.
@@ -401,6 +403,7 @@ CREATE TABLE documents (
     CONSTRAINT uq_documents_code UNIQUE (code),
     -- The same file is stored once; uploading it again returns the existing document.
     CONSTRAINT uq_documents_sha256 UNIQUE (sha256),
+    CONSTRAINT ck_documents_format CHECK (format IN ('pdf', 'image', 'html', 'txt', 'docx', 'eml')),
     CONSTRAINT ck_documents_sha256 CHECK (sha256 ~ '^[0-9a-f]{64}$'),
     CONSTRAINT ck_documents_size_bytes CHECK (size_bytes >= 0),
     CONSTRAINT ck_documents_page_count CHECK (page_count IS NULL OR page_count >= 0)
@@ -414,6 +417,8 @@ CREATE TABLE decompositions (
     document_id             uuid        NOT NULL,
     decomposition_config_id uuid        NOT NULL,
     config_snapshot         jsonb       NOT NULL DEFAULT '{}',
+    -- What actually ran, e.g. 'pdf:pymupdf', 'image:ocr', 'html'.
+    converter               text        NOT NULL,
     -- Folder with page JSON and images, relative to the storage root.
     storage_dir             text        NOT NULL,
     page_count              integer     NOT NULL,

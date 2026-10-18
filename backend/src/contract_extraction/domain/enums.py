@@ -22,6 +22,17 @@ class PromptRole(StrEnum):
     CAPTION = "caption"
 
 
+class DocumentFormat(StrEnum):
+    """Kind of source file; decides which converter decomposes it."""
+
+    PDF = "pdf"
+    IMAGE = "image"
+    HTML = "html"
+    TXT = "txt"
+    DOCX = "docx"
+    EML = "eml"
+
+
 class DecompositionMethod(StrEnum):
     PYMUPDF = "pymupdf"
     OCR = "ocr"

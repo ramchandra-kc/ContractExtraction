@@ -2,13 +2,17 @@
 
 from __future__ import annotations
 
+import io
+
 import pytest
 from fastapi.testclient import TestClient
 from sqlalchemy import func, update
 
 from contract_extraction.api.app import create_app
 from contract_extraction.core.settings import StorageSettings
+from contract_extraction.domain.enums import DocumentFormat
 from contract_extraction.persistence import models as m
+from contract_extraction.persistence.repositories import DocumentRepo
 from contract_extraction.worker import Worker
 from helpers import BODY, make_pdf
 from test_executor import Harness
@@ -60,22 +64,25 @@ def test_upload_and_dedupe(client, harness):
     doc = first.json()
     assert first.headers["Location"] == f"/api/v1/documents/{doc['id']}"
     assert doc["code"].startswith("DOC") and doc["original_filename"] == "contract.pdf" and doc["latest_run"] is None
+    assert (doc["format"], doc["mime_type"]) == ("pdf", "application/pdf")
     assert "storage_path" not in doc
 
     again = _upload(client, harness.pdf, "copy.pdf")
     assert again.status_code == 200 and again.json()["id"] == doc["id"]
 
 
-def test_upload_rejects_bad_files(client, harness, tmp_path):
+def test_upload_rejects_bad_files(client, storage, tmp_path):
     not_pdf = tmp_path / "notes.pdf"
     not_pdf.write_text("hello")
     r = _upload(client, not_pdf)
     assert r.status_code == 422 and r.headers["content-type"] == PROBLEM
-    assert r.json()["title"] == "Unprocessable Content" and "not a PDF" in r.json()["detail"]
+    assert r.json()["title"] == "Unprocessable Content" and "Unsupported file type; accepted: .pdf" in r.json()["detail"]
 
     empty = tmp_path / "empty.pdf"
     empty.write_bytes(b"")
-    assert _upload(client, empty).status_code == 422
+    r = _upload(client, empty)
+    assert r.status_code == 422 and "empty" in r.json()["detail"]
+    assert not list((storage.root / ".staging").iterdir())  # rejected files are not kept
 
 
 def test_upload_too_large(db, storage, harness, tmp_path):
@@ -135,7 +142,7 @@ def test_document_detail_file_pages_and_images(client, db, storage, harness):
     _process(db, storage, harness)
 
     detail = client.get(f"/api/v1/documents/{doc['id']}").json()
-    assert detail["page_count"] == 3 and len(detail["runs"]) == 1 and detail["decompositions"][0]["method"] == "pymupdf"
+    assert detail["page_count"] == 3 and len(detail["runs"]) == 1 and detail["decompositions"][0]["method"] == "pdf:pymupdf"
 
     pdf = client.get(f"/api/v1/documents/{doc['id']}/file")
     assert pdf.status_code == 200 and pdf.content.startswith(b"%PDF-") and pdf.headers["content-type"] == "application/pdf"
@@ -145,6 +152,15 @@ def test_document_detail_file_pages_and_images(client, db, storage, harness):
     image = pages["pages"][1]["images"][0]
     img = client.get(image["url"])
     assert img.status_code == 200 and img.content
+
+
+def test_html_original_is_download_only(client, db, storage):
+    staged = storage.stage(io.BytesIO(b"<html><script>alert(1)</script></html>"), "offer.htm")
+    with db.session() as s:
+        doc_id = DocumentRepo(s).register(staged, storage, fmt=DocumentFormat.HTML, mime_type="text/html")[0].id
+    r = client.get(f"/api/v1/documents/{doc_id}/file")
+    assert r.status_code == 200 and r.headers["content-type"].startswith("text/html")
+    assert r.headers["content-disposition"].startswith("attachment") and r.headers["content-security-policy"] == "sandbox"
 
 
 def test_cancel(client, harness):
@@ -206,6 +222,8 @@ def test_run_shows_its_contract_types(client, db, storage, harness):
     assert detail["progress_total"] == 42
     bad = client.post(f"/api/v1/documents/{doc['id']}/runs", json={"contract_types": ["lease"]})
     assert bad.status_code == 422 and "Unknown contract type" in bad.json()["detail"]
+    formats = client.get("/api/v1/config/formats").json()
+    assert formats[0] == {"format": "pdf", "mime_types": ["application/pdf"], "extensions": [".pdf"]}
     providers = {p["key"]: p for p in client.get("/api/v1/config/providers").json()}
     assert providers["openrouter"]["api_key_env"] == "OPENROUTER_API_KEY" and providers["ollama-local"]["models"]
 
@@ -218,7 +236,7 @@ def test_request_id_and_openapi(client):
     spec = client.get("/api/v1/openapi.json").json()
     operation_ids = {op["operationId"] for path in spec["paths"].values() for op in path.values()}
     assert operation_ids == {
-        "health", "health_ready", "list_pipelines", "list_providers", "upload_document", "list_documents",
+        "health", "health_ready", "list_pipelines", "list_providers", "list_formats", "upload_document", "list_documents",
         "get_document", "get_document_file", "get_pages", "get_image", "create_run", "list_runs", "get_run",
         "cancel_run", "list_run_events", "get_run_results", "get_field_result",
         "list_ground_truth", "set_ground_truth", "delete_ground_truth", "set_contract_types",

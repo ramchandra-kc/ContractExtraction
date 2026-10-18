@@ -32,6 +32,6 @@ def test_paths_stay_inside_root(storage):
         storage.document_dir("../DOC001")
 
 
-@pytest.mark.parametrize("name, expected", [("a/b/c.pdf", "c.pdf"), ("C:\\x\\y.pdf", "y.pdf"), ("...", "document.pdf")])
+@pytest.mark.parametrize("name, expected", [("a/b/c.pdf", "c.pdf"), ("C:\\x\\y.pdf", "y.pdf"), ("...", "document")])
 def test_safe_filename(name, expected):
     assert safe_filename(name) == expected

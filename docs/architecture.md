@@ -103,7 +103,8 @@ backend/src/contract_extraction/
   domain/         enums mirroring the schema's CHECK values; the resolved pipeline config (frozen, snapshot())
   persistence/    SQLAlchemy models mirroring schema.sql, repositories
   providers/      adapters behind interfaces: chat and embedding (Ollama, OpenAI-compatible), vector store (Qdrant, in-memory)
-  decomposition/  PDF → pages (pymupdf / OCR / hybrid), header and footer removal
+  decomposition/  converters/ (format registry and detection; one converter per format, e.g. PDF via pymupdf / OCR / hybrid),
+                  header and footer removal, the decomposition stage
   indexing/       chunking with exact offsets, embedding and upserting
   extraction/     retrieval, prompts, answer parsing, judge
   pipeline/       run options and the executor (stages, progress, events, reuse)
@@ -123,7 +124,7 @@ Providers sit behind interfaces, so tests can run with fakes and no Docker.
 
 | Stage | Input → output | Notes |
 |---|---|---|
-| **Decompose** | PDF → page Markdown + images | pymupdf4llm; optional OCR or hybrid for scanned PDFs; keep invisible OCR text; remove headers and footers only when a line repeats on 2+ pages and sits in the top or bottom zone |
+| **Decompose** | source file → page Markdown + images | the document's format picks its converter (*Source formats* below); PDFs: pymupdf4llm, optional OCR or hybrid for scans, keep invisible OCR text; remove headers and footers only when a line repeats on 2+ pages and sits in the top or bottom zone (not for pages split by length) |
 | **Index** | pages → chunks → embeddings + keyword vectors → vector index | chunks of 2000 chars with 300 overlap (configurable); **one index per document**; each chunk's *search text* (Markdown removed, tables as rows, its section heading in front) is embedded and turned into a BM25 keyword vector; full chunk text stored in the payload; embedding dimension read from the model |
 | **Retrieve** | field × search config → ranked chunks | query expansion (several queries per field), per-query top-k, score threshold, optional keyword search fused with the dense ranking, optional anchor chunks, merge and deduplicate |
 | **Extract** | field prompt + chunks → value | Ollama in JSON mode; explicit `num_ctx` so long prompts are not silently cut |
@@ -133,6 +134,18 @@ Everything that shapes a run is **configuration stored in the database** (see §
 LLM providers and models, generation settings, system prompts, decomposition and chunking/embedding settings,
 RAG configurations (`RAG01…RAG07`: top-k, threshold, expansion, keyword search and anchor chunks on or off), and fields with their prompts and expansion
 queries. A **pipeline config** bundles them into a recipe. Every run stores the fully resolved recipe as a snapshot.
+
+**Source formats.** `decomposition/converters/` holds one converter per format; its `REGISTRY` is the only list of
+supported formats. Upload validation, the error message, `GET /config/formats` and the frontend's file picker all come from it.
+- **Detection** happens at upload, not from the client's content type. Binary signatures win (e.g. `%PDF-`). Among text formats the extension
+  decides. The format and mime type are stored on the document, and an unsupported file is rejected (422) and not kept.
+- **Converters** return pages, page sizes (for paged sources), the converter that ran (stored as `decompositions.converter`,
+  e.g. `pdf:pymupdf`) and how pages were made: `source` (real pages), `marker` (text split at page-break markers) or
+  `size` (split by length). Images they extract go to the decomposition's `images/` folder.
+- **Config.** A decomposition config's `method` applies to PDFs.
+- **Downstream.** Everything after decomposition works on page rows and doesn't know the format.
+- **Viewer.** The page viewer shows the original next to the text: PDFs at the same page; for other formats, an image or a download link.
+- **Supported** so far: PDF.
 
 **Fields and contract types** come from [`contract_types_and_fields.md`](contract_types_and_fields.md), the source of truth:
 18 contract types (NDA, MSA, SOW, SaaS, …) plus a fallback type **Other**, and 286 fields. Each field has a type (e.g.
@@ -235,7 +248,7 @@ erDiagram
 | `llm_models` | chat, embedding or vision models per provider: context window, embedding dimension, token prices |
 | `model_profiles` | a model plus generation settings (temperature, top_p, top_k, num_ctx, JSON mode, timeout) |
 | `prompt_templates` | versioned system prompts (extraction, judge, caption); one active version per name |
-| `decomposition_configs` | PDF → text settings (method, format, OCR, header/footer removal, optional captioning profile) |
+| `decomposition_configs` | file → text settings (PDF method, text format, OCR, header/footer removal, optional captioning profile, `options` such as a page range) |
 | `index_configs` | chunk size and overlap, embedding model, vector store, distance metric |
 | `retrieval_configs` | RAG settings: top-k, score threshold, query expansion, per-query top, minimum score, keyword search, anchor chunks |
 | `field_sets`, `fields`, `field_queries` | versioned field sets; each field has a key, label, value type, catalogue type and JSON Schema, priority, optional hand-written prompt, and expansion queries |
@@ -266,8 +279,8 @@ documents 1──* decompositions 1──* pages 1──* page_images
                     └──* vector_indexes 1──* chunks
 ```
 
-- **documents**: an uploaded PDF (code `DOC001`…, sha256 unique, so the same file is stored once; tags; metadata).
-- **decompositions**: one per attempt, with its config snapshot. Never overwritten.
+- **documents**: an uploaded contract file (code `DOC001`…, detected `format` and `mime_type`, sha256 unique, so the same file is stored once; tags; metadata).
+- **decompositions**: one per attempt, with its config snapshot and the converter that ran. Never overwritten.
 - **pages**: text, header and footer, size, metadata, and a generated full-text search column.
 - **vector_indexes**: one collection per decomposition × index config, reused by later runs.
 - **chunks**: chunk text with page and character ranges, plus the search text and headings that are embedded and keyword-indexed. `chunks.id` is the vector-store point id, so evidence can be traced exactly.
@@ -319,7 +332,7 @@ are normalised as for answers). Besides `exact_match` (view below), every labell
 ```
 storage/
   <document code>/
-    source/<file>.pdf
+    source/<file>
     decompositions/<decomposition id>/{json,images}/
     logs/<run id>.log
     exports/
@@ -337,9 +350,9 @@ A backend test fails when that copy is stale.
 | Resource | Endpoints |
 |---|---|
 | health | `GET /health` (liveness: process + DB), `GET /health/ready` (schema, default pipeline, Qdrant, model endpoints; 503 when degraded) |
-| config (run) | `GET /config/pipelines` (resolved pipelines for queueing runs), `GET /config/providers` |
+| config (run) | `GET /config/pipelines` (resolved pipelines for queueing runs), `GET /config/providers`, `GET /config/formats` (uploadable formats with mime types and extensions) |
 | config (edit) | `GET /config/catalog` (every config row, for editing); POST/PATCH/DELETE on `/config/pipelines/{name}` (+ `POST …/{name}/default`), `/config/retrievals/{name}`, `/config/profiles/{name}`; POST/DELETE on `/config/decompositions/{name}`, `/config/indexes/{name}`; `POST /config/prompts`, `POST /config/prompts/{name}/versions`; `POST /config/field-sets/{name}/{version}/fields`, `PATCH /config/fields/{id}`; `PATCH /config/providers/{key}`, `POST /config/providers/{key}/models`, `PATCH /config/models/{id}`. Creates answer 201 with the row, updates 200, deletes 204 |
-| documents | `POST /documents` (multipart upload: 201 new / 200 same file already stored), `GET /documents`, `GET /documents/{id}`, `GET /documents/{id}/file`, `GET /documents/{id}/pages`, `GET /documents/{id}/images/{image_id}`, `POST /documents/{id}/runs` (202 + `Location`) |
+| documents | `POST /documents` (multipart upload: 201 new / 200 same file already stored / 422 unsupported), `GET /documents`, `GET /documents/{id}`, `GET /documents/{id}/file` (inline; HTML and email originals as a sandboxed download), `GET /documents/{id}/pages`, `GET /documents/{id}/images/{image_id}`, `POST /documents/{id}/runs` (202 + `Location`) |
 | ground truth | `GET /documents/{id}/ground-truth?field_set_id=` (every enabled field of the default pipeline's field set, labelled or not), `PUT /documents/{id}/ground-truth/{field_id}` (create or replace; 422 for null), `DELETE /documents/{id}/ground-truth/{field_id}` (204) |
 | runs | `GET /runs`, `GET /runs/{id}`, `POST /runs/{id}/cancel`, `GET /runs/{id}/events?after=`, `GET /runs/{id}/results` (best values with expected value and match, evaluation counts, every outcome), `GET /runs/{id}/results/{field_result_id}` |
 

@@ -3,6 +3,7 @@ import { useDocuments } from '@/api/hooks'
 import { Pager } from '@/components/Pager'
 import { ProblemAlert } from '@/components/ProblemAlert'
 import { StateBadge } from '@/components/StateBadge'
+import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table'
@@ -28,7 +29,7 @@ export function DocumentsPage() {
           {documents.isPending ? (
             <Skeleton className="h-24" />
           ) : documents.data?.items.length === 0 ? (
-            <p className="text-sm text-muted-foreground">No documents yet. Upload a PDF to start.</p>
+            <p className="text-sm text-muted-foreground">No documents yet. Upload a contract file to start.</p>
           ) : (
             documents.data && (
               <>
@@ -55,6 +56,9 @@ export function DocumentsPage() {
                           <Link to={`/documents/${d.id}`} className="underline-offset-4 hover:underline">
                             {d.title || d.original_filename}
                           </Link>
+                          <Badge variant="outline" className="ml-2 uppercase">
+                            {d.format}
+                          </Badge>
                         </TableCell>
                         <TableCell className="text-right">{d.page_count ?? '—'}</TableCell>
                         <TableCell className="text-right">{formatBytes(d.size_bytes)}</TableCell>

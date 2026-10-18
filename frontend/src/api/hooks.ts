@@ -18,6 +18,7 @@ export const keys = {
   health: ['health'] as const,
   pipelines: ['pipelines'] as const,
   catalog: ['catalog'] as const,
+  formats: ['formats'] as const,
   documents: (limit: number, offset: number) => ['documents', { limit, offset }] as const,
   documentsAll: ['documents'] as const,
   document: (id: string) => ['document', id] as const,
@@ -59,6 +60,15 @@ export function usePipelines() {
     queryKey: keys.pipelines,
     queryFn: async () => (await unwrap(api.GET('/api/v1/config/pipelines'))).data,
     staleTime: 60_000,
+  })
+}
+
+/** Uploadable file formats; they only change with a backend release. */
+export function useFormats() {
+  return useQuery({
+    queryKey: keys.formats,
+    queryFn: async () => (await unwrap(api.GET('/api/v1/config/formats'))).data,
+    staleTime: Infinity,
   })
 }
 

@@ -54,11 +54,11 @@ class DecompositionRepo:
         self.session = session
 
     def create(self, decomposition_id: uuid.UUID, document_id: uuid.UUID, config_id: uuid.UUID,
-               config_snapshot: dict[str, Any], storage_dir: str, duration_ms: int,
+               config_snapshot: dict[str, Any], converter: str, storage_dir: str, duration_ms: int,
                pages: list[NewPage], images: list[NewImage]) -> m.Decomposition:
         dec = m.Decomposition(id=decomposition_id, document_id=document_id, decomposition_config_id=config_id,
-                              config_snapshot=config_snapshot, storage_dir=storage_dir, page_count=len(pages),
-                              duration_ms=duration_ms)
+                              config_snapshot=config_snapshot, converter=converter, storage_dir=storage_dir,
+                              page_count=len(pages), duration_ms=duration_ms)
         self.session.add(dec)
         page_ids: dict[int, uuid.UUID] = {}
         for p in pages:

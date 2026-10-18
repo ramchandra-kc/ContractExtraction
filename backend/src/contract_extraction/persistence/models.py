@@ -346,6 +346,7 @@ class Document(Base):
     title: Mapped[str | None]
     original_filename: Mapped[str]
     mime_type: Mapped[str] = mapped_column(server_default=_db())
+    format: Mapped[str] = mapped_column(server_default=_db())
     sha256: Mapped[str] = mapped_column(CHAR(64), unique=True)
     size_bytes: Mapped[int] = mapped_column(BigInteger)
     page_count: Mapped[int | None]
@@ -363,6 +364,7 @@ class Decomposition(Base):
     document_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("documents.id", ondelete="CASCADE"))
     decomposition_config_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("decomposition_configs.id"))
     config_snapshot: Mapped[dict[str, Any]] = _json()
+    converter: Mapped[str]
     storage_dir: Mapped[str]
     page_count: Mapped[int]
     duration_ms: Mapped[int]

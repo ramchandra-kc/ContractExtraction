@@ -10,6 +10,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from ...core.errors import NotFound
+from ...domain.enums import DocumentFormat
 from ...storage import FileStorage, StagedFile
 from .. import models as m
 
@@ -18,9 +19,11 @@ class DocumentRepo:
     def __init__(self, session: Session):
         self.session = session
 
-    def register(self, staged: StagedFile, storage: FileStorage, title: str | None = None) -> tuple[m.Document, bool]:
+    def register(self, staged: StagedFile, storage: FileStorage, title: str | None = None, *,
+                 fmt: DocumentFormat = DocumentFormat.PDF, mime_type: str = "application/pdf") -> tuple[m.Document, bool]:
         """Store a staged upload as a document. Returns ``(document, created)``.
 
+        ``fmt`` and ``mime_type`` come from format detection (``decomposition.converters.detect``).
         The same content (sha256) is stored once: uploading it again discards the staged
         file and returns the existing document with ``created=False``.
         """
@@ -30,7 +33,7 @@ class DocumentRepo:
             return existing, False
 
         doc = m.Document(original_filename=staged.filename, title=title, sha256=staged.sha256,
-                         size_bytes=staged.size_bytes, storage_path="")
+                         size_bytes=staged.size_bytes, storage_path="", format=fmt.value, mime_type=mime_type)
         try:
             with self.session.begin_nested():
                 self.session.add(doc)

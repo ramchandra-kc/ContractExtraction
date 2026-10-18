@@ -24,7 +24,7 @@ export function DocumentPage() {
           <p className="font-mono text-sm text-muted-foreground">{doc.code}</p>
           <h1 className="text-2xl font-semibold">{doc.title || doc.original_filename}</h1>
           <p className="text-sm text-muted-foreground">
-            {doc.original_filename} · {formatBytes(doc.size_bytes)} · {doc.page_count ?? '?'} pages · uploaded{' '}
+            {doc.original_filename} · {doc.format.toUpperCase()} · {formatBytes(doc.size_bytes)} · {doc.page_count ?? '?'} pages · uploaded{' '}
             {formatDateTime(doc.created_at)}
           </p>
           {doc.tags.length > 0 && <p className="text-sm text-muted-foreground">Tags: {doc.tags.join(', ')}</p>}
@@ -32,7 +32,7 @@ export function DocumentPage() {
         <div className="flex gap-2">
           <Button variant="outline" asChild>
             <a href={documentFileUrl(doc.id)} target="_blank" rel="noreferrer">
-              Open PDF
+              Open original
             </a>
           </Button>
           {doc.decompositions.length > 0 && (

@@ -9,7 +9,7 @@ from typing import Any, Generic, TypeVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..domain.enums import Anchor, HitSource, RunKind
+from ..domain.enums import Anchor, DocumentFormat, HitSource, RunKind
 from ..pipeline.options import RunOptions
 
 T = TypeVar("T")
@@ -115,6 +115,12 @@ class PipelineOut(BaseModel):
 # ---- documents ---------------------------------------------------------------------------------
 
 
+class FormatOut(BaseModel):
+    format: DocumentFormat
+    mime_types: list[str]
+    extensions: list[str] = Field(description="Lower-case, with the dot, e.g. .pdf")
+
+
 class RunSummary(_Out):
     id: uuid.UUID
     document_id: uuid.UUID
@@ -157,6 +163,7 @@ class DocumentOut(_Out):
     title: str | None
     original_filename: str
     mime_type: str
+    format: DocumentFormat
     sha256: str
     size_bytes: int
     page_count: int | None
@@ -168,7 +175,7 @@ class DocumentOut(_Out):
 class DecompositionOut(BaseModel):
     id: uuid.UUID
     config: str | None
-    method: str | None
+    method: str | None = Field(description="The converter that ran, e.g. pdf:pymupdf, image:ocr, html")
     text_format: str | None
     page_count: int
     duration_ms: int
@@ -196,6 +203,7 @@ class PageOut(BaseModel):
     footer: str | None
     width: float | None
     height: float | None
+    source_part: str | None = Field(None, description="Part of the source the page came from, e.g. an email attachment")
     images: list[ImageOut]
 
 
