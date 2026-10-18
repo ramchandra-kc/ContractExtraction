@@ -2,6 +2,7 @@ import { Link, useSearchParams } from 'react-router'
 import { useDocuments } from '@/api/hooks'
 import { Pager } from '@/components/Pager'
 import { ProblemAlert } from '@/components/ProblemAlert'
+import { RefreshButton } from '@/components/RefreshButton'
 import { StateBadge } from '@/components/StateBadge'
 import { Badge } from '@/components/ui/badge'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -21,8 +22,9 @@ export function DocumentsPage() {
     <div className="space-y-6">
       <UploadDropzone />
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Documents</CardTitle>
+          <RefreshButton fetching={documents.isFetching} onRefresh={() => documents.refetch()} />
         </CardHeader>
         <CardContent className="space-y-3">
           <ProblemAlert error={documents.error} />

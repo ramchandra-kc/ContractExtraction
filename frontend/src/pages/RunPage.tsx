@@ -2,6 +2,7 @@ import { Link, useParams, useSearchParams } from 'react-router'
 import type { EvaluationOut } from '@/api/client'
 import { isActive, useCancelRun, useDocument, useRun, useRunEvents, useRunResults } from '@/api/hooks'
 import { ProblemAlert } from '@/components/ProblemAlert'
+import { RefreshButton } from '@/components/RefreshButton'
 import { StateBadge } from '@/components/StateBadge'
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
@@ -61,8 +62,8 @@ export function RunPage() {
   const [params, setParams] = useSearchParams()
   const run = useRun(id)
   const active = isActive(run.data?.state)
-  const events = useRunEvents(id, active)
-  const results = useRunResults(id, active)
+  const events = useRunEvents(id)
+  const results = useRunResults(id)
   const document = useDocument(run.data?.document_id)
   const cancel = useCancelRun()
 
@@ -94,6 +95,15 @@ export function RunPage() {
           </p>
         </div>
         <div className="flex gap-2">
+          <RefreshButton
+            fetching={run.isFetching || events.isFetching || results.isFetching}
+            onRefresh={() => {
+              run.refetch()
+              events.refetch()
+              results.refetch()
+              document.refetch()
+            }}
+          />
           {r.decomposition_id && (
             <Button variant="outline" asChild>
               <Link to={`/documents/${r.document_id}/pages?decomposition=${r.decomposition_id}`}>View pages</Link>

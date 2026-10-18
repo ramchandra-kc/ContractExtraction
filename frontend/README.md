@@ -41,10 +41,11 @@ npm run gen:api      # after an API change: openapi.json + src/api/schema.d.ts
 - **Calls** go through `openapi-fetch` (`src/api/client.ts`). Any non-2xx answer, or a network failure, becomes a `ProblemError`:
   RFC 9457 fields plus the `X-Request-ID`. `ProblemAlert` shows it.
 - **Progress is polled** (`src/api/hooks.ts`, TanStack Query):
-  - An active run is polled every `VITE_POLL_MS` (2000 ms), together with its partial results.
+  - The documents, document and run pages are polled every `VITE_POLL_MS` (5 s), a run together with its events and
+    results. The refresh button on those pages fetches at once.
   - Events are fetched incrementally with `?after=<last id>`.
-  - Polling stops when the run finishes, and its events, results and document are fetched once more.
-  - The document list polls only while a listed run is active. Health (`/api/v1/health/ready`) is checked every 30 s.
+  - When a run finishes, its events, results and document are fetched at once.
+  - Health (`/api/v1/health/ready`) is checked every 30 s.
 - **No business rules:** the best value per field comes from the API (`best`), and so do the match flag and the counts
   (`evaluation`). The "New run" button is disabled while a run is active, but the API's 409 stays the authority.
 - **Labels** (`src/lib/groundTruth.ts`): text is stored as trimmed text, list fields as one item per line, json fields as parsed
@@ -59,7 +60,7 @@ npm run gen:api      # after an API change: openapi.json + src/api/schema.d.ts
 | Variable | Default | Used by |
 |---|---|---|
 | `VITE_GATEWAY_URL` | `http://127.0.0.1:8080` | the dev-server proxy only (`vite.config.ts`), never the app |
-| `VITE_POLL_MS` | `2000` | run polling interval |
+| `VITE_POLL_MS` | `5000` | polling interval |
 
 ## Layout
 

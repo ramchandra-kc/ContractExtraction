@@ -30,8 +30,6 @@ export const keys = {
   fieldResult: (runId: string, resultId: string) => ['run', runId, 'result', resultId] as const,
 }
 
-const poll = (active: boolean) => (active ? config.pollMs : false)
-
 // ---- system ----------------------------------------------------------------------------------
 
 /** Readiness: 503 still carries the components; a gateway problem (e.g. 502) becomes one failed component. */
@@ -79,7 +77,7 @@ export function useDocuments(limit: number, offset: number) {
     queryKey: keys.documents(limit, offset),
     queryFn: async () => (await unwrap(api.GET('/api/v1/documents', { params: { query: { limit, offset } } }))).data,
     placeholderData: keepPreviousData,
-    refetchInterval: (q) => poll(!!q.state.data?.items.some((d) => isActive(d.latest_run?.state))),
+    refetchInterval: config.pollMs,
   })
 }
 
@@ -89,7 +87,7 @@ export function useDocument(id: string | undefined) {
     queryFn: async () =>
       (await unwrap(api.GET('/api/v1/documents/{document_id}', { params: { path: { document_id: id! } } }))).data,
     enabled: !!id,
-    refetchInterval: (q) => poll(isActive(q.state.data?.latest_run?.state)),
+    refetchInterval: config.pollMs,
   })
 }
 
@@ -219,7 +217,7 @@ function refreshFinishedRun(qc: QueryClient, run: RunOut) {
   qc.invalidateQueries({ queryKey: keys.documentsAll })
 }
 
-/** Polls while the run is active; when it finishes, its events, results and document are fetched once more. */
+/** Polled; when the run finishes, its events, results and document are fetched at once. */
 export function useRun(id: string) {
   const qc = useQueryClient()
   return useQuery({
@@ -230,12 +228,12 @@ export function useRun(id: string) {
       if (before && isActive(before.state) && !isActive(run.state)) refreshFinishedRun(qc, run)
       return run
     },
-    refetchInterval: (q) => poll(isActive(q.state.data?.state)),
+    refetchInterval: config.pollMs,
   })
 }
 
 /** The timeline, fetched incrementally with ?after=<last id>. */
-export function useRunEvents(id: string, active: boolean) {
+export function useRunEvents(id: string) {
   const qc = useQueryClient()
   return useQuery({
     queryKey: keys.events(id),
@@ -251,16 +249,16 @@ export function useRunEvents(id: string, active: boolean) {
       ).data
       return fresh.length ? [...previous, ...fresh] : previous
     },
-    refetchInterval: poll(active),
+    refetchInterval: config.pollMs,
   })
 }
 
 /** Best values and every outcome; partial while the run is active. */
-export function useRunResults(id: string, active: boolean) {
+export function useRunResults(id: string) {
   return useQuery({
     queryKey: keys.results(id),
     queryFn: async () => (await unwrap(api.GET('/api/v1/runs/{run_id}/results', { params: { path: { run_id: id } } }))).data,
-    refetchInterval: poll(active),
+    refetchInterval: config.pollMs,
   })
 }
 

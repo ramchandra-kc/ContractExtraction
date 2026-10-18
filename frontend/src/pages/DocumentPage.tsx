@@ -2,6 +2,7 @@ import { Link, useParams } from 'react-router'
 import { documentFileUrl } from '@/api/client'
 import { useDocument } from '@/api/hooks'
 import { ProblemAlert } from '@/components/ProblemAlert'
+import { RefreshButton } from '@/components/RefreshButton'
 import { StateBadge } from '@/components/StateBadge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -13,7 +14,7 @@ import { formatBytes, formatDateTime, formatMs, formatSpan } from '@/lib/format'
 
 export function DocumentPage() {
   const { id } = useParams()
-  const { data: doc, error, isPending } = useDocument(id)
+  const { data: doc, error, isPending, isFetching, refetch } = useDocument(id)
 
   if (error) return <ProblemAlert error={error} />
   if (isPending || !doc) return <Skeleton className="h-64" />
@@ -30,6 +31,7 @@ export function DocumentPage() {
           {doc.tags.length > 0 && <p className="text-sm text-muted-foreground">Tags: {doc.tags.join(', ')}</p>}
         </div>
         <div className="flex gap-2">
+          <RefreshButton fetching={isFetching} onRefresh={() => refetch()} />
           <Button variant="outline" asChild>
             <a href={documentFileUrl(doc.id)} target="_blank" rel="noreferrer">
               Open original
