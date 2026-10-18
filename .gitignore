@@ -25,6 +25,10 @@ storage/
 storage-test/
 *.log
 
+# Local sample contracts (large, third-party documents)
+/test_data/
+/sample.pdf
+
 # Editors / OS
 .DS_Store
 .idea/
