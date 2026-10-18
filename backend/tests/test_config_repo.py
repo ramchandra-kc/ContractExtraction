@@ -34,6 +34,24 @@ def test_default_pipeline_resolves(session):
     assert "PASS" in p.judge_prompt.body
 
 
+def test_preset_pipelines_resolve(session):
+    repo = ConfigRepo(session)
+    with pytest.raises(InvalidConfig, match="disabled"):
+        repo.resolve_pipeline("or-haiku")
+    repo.update_provider("openrouter", enabled=True)
+
+    pipelines = {row.name: repo.resolve_pipeline(row.name) for row in repo.pipelines()}
+    assert len(pipelines) == 10
+    assert [r.name for r in pipelines["or-rag-sweep"].retrievals] == ["RAG08", "RAG07", "RAG09", "RAG10", "RAG11"]
+    assert [r.name for r in pipelines["or-llama31-8b"].retrievals] == [r.name for r in pipelines["default"].retrievals]
+    triage = pipelines["or-p1-triage"]
+    assert not triage.judge_enabled and triage.judge_prompt is None and triage.min_priority == "P1"
+    assert pipelines["or-haiku"].judge_profile.model.name == "openai/gpt-6-luna"
+    budget = pipelines["or-budget"].extraction_profile
+    assert budget.extra == {"params": {"reasoning": {"enabled": False}}} and budget.top_k is None
+    assert pipelines["local-fast"].extraction_profile.model.provider.key == "ollama-local"
+
+
 def test_snapshot_is_json_and_secret_free(session):
     snap = ConfigRepo(session).resolve_pipeline().snapshot()
     assert snap["extraction_profile"]["temperature"] == "0.200"
@@ -87,4 +105,4 @@ def test_listings(session):
     repo = ConfigRepo(session)
     assert {p.key for p in repo.providers()} == {"ollama-local", "openrouter"}
     assert [mo.name for mo in repo.models(ModelKind.EMBEDDING)] == ["nomic-embed-text:latest"]
-    assert len(repo.retrieval_configs()) == 7
+    assert len(repo.retrieval_configs()) == 11

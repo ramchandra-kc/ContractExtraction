@@ -76,6 +76,9 @@ uv run contract-extraction providers set ollama-local --base-url http://localhos
 uv run contract-extraction providers set openrouter --enable                              # needs OPENROUTER_API_KEY
 ```
 
+`docker/seed_presets.sql` adds low-cost OpenRouter models and the `or-*` pipelines (plus `local-fast` and `local-hybrid`).
+It skips rows that already exist, so `../scripts/dev.sh presets` applies it to the running database without a reset.
+
 ### Extraction runs
 
 ```bash
@@ -155,7 +158,7 @@ src/contract_extraction/
 
 ## Tests
 
-`uv run pytest` recreates the `contract_extraction_test` database from `docker/schema.sql`, `seed.sql` and `seed_catalogue.sql`, then rolls back
+`uv run pytest` recreates the `contract_extraction_test` database from `docker/schema.sql`, `seed.sql`, `seed_catalogue.sql` and `seed_presets.sql`, then rolls back
 each test. Point it elsewhere with `TEST_DATABASE_URL` (the database name must end in `_test`). Without a reachable Postgres, the
 database tests are skipped.
 

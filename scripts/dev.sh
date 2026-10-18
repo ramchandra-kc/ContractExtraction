@@ -7,6 +7,7 @@
 #   scripts/dev.sh test                                   every offline test suite (backend, gateway, frontend)
 #   scripts/dev.sh down                                   stop the Docker services (data is kept)
 #   scripts/dev.sh reset [--yes]                          wipe the database, vectors and stored files, then start Docker again
+#   scripts/dev.sh presets                                add docker/seed_presets.sql rows missing from the running database
 #
 # Ports follow each part's own settings. To move one, export the variable the part reads (real environment variables
 # override every config file), so this script and the services agree: API__PORT, GATEWAY__PORT.
@@ -383,6 +384,15 @@ cmd_reset() {
   info "Done. Start the app processes with scripts/dev.sh"
 }
 
+# The init SQL in the Postgres image runs only on an empty volume; seed_presets.sql skips existing rows, so it can be
+# applied to a running database to pick up new presets without a reset.
+cmd_presets() {
+  require_docker
+  info "Applying docker/seed_presets.sql to the running database"
+  compose exec -T postgres sh -c 'psql -U "$POSTGRES_USER" -d "$POSTGRES_DB" -v ON_ERROR_STOP=1 -q' < "$ROOT/docker/seed_presets.sql"
+  info "Done"
+}
+
 # -------------------------------------------------------------------------------------------------------------- main
 
 command="${1:-up}"
@@ -394,7 +404,8 @@ case "$command" in
   test) cmd_test ;;
   down) cmd_down ;;
   reset) cmd_reset "$@" ;;
-  -h|--help|help) sed -n '2,13p' "$0" | sed 's/^# \{0,1\}//' ;;
+  presets) cmd_presets ;;
+  -h|--help|help) sed -n '2,14p' "$0" | sed 's/^# \{0,1\}//' ;;
   -*) cmd_up "$command" "$@" ;;
-  *) die "unknown command '$command' (up, status, smoke, test, down, reset)" ;;
+  *) die "unknown command '$command' (up, status, smoke, test, down, reset, presets)" ;;
 esac

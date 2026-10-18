@@ -80,7 +80,7 @@ Docker (docker/docker-compose.yml): Postgres, Qdrant, Ollama (optional profile)
 | **gateway** | routing `/api/*` → backend; request IDs; access logs; timeouts; upload size limit; CORS; aggregated `/health`; authentication (last phase) | backend API | contain business logic; access the database or storage |
 | **backend API** | REST resources (documents, runs, results, pages, system); validation; enqueueing runs; reading results | Postgres, file storage | be reached by the browser directly; run pipeline work inside a request |
 | **backend worker** | claims queued runs; heartbeats; cancellation; pipeline stages; writes results | Postgres, Qdrant, LLM provider, file storage | expose HTTP |
-| **docker** | one compose file for Postgres, Qdrant and (optionally) Ollama; the Postgres image with `schema.sql`, `seed.sql` and `seed_catalogue.sql` baked in | none | contain application code |
+| **docker** | one compose file for Postgres, Qdrant and (optionally) Ollama; the Postgres image with `schema.sql`, `seed.sql`, `seed_catalogue.sql` and `seed_presets.sql` baked in | none | contain application code |
 
 ### Dependency rules
 
@@ -204,7 +204,9 @@ stateDiagram-v2
 
 The full definition is in [`docker/schema.sql`](../docker/schema.sql): 31 tables and 2 views in four groups. The default
 configuration is in [`docker/seed.sql`](../docker/seed.sql); the fields and contract types in the generated
-[`docker/seed_catalogue.sql`](../docker/seed_catalogue.sql).
+[`docker/seed_catalogue.sql`](../docker/seed_catalogue.sql). [`docker/seed_presets.sql`](../docker/seed_presets.sql) adds
+low-cost OpenRouter models and profiles, the hybrid RAG08-RAG11 configs and ready-made pipelines (`local-*`, `or-*`); it
+skips existing rows, so it can also be applied to a running database.
 
 ### 7.1 Model & RAG configuration
 
@@ -395,7 +397,7 @@ See [ADR 0002](adr/0002-custom-gateway.md) and [`gateway/README.md`](../gateway/
   The `ollama-local` provider's `base_url` picks one: `contract-extraction providers set ollama-local --base-url …`.
   Runs record the URL they used in their snapshot.
 - **Docker:** `docker/docker-compose.yml` starts Postgres and Qdrant, plus Ollama with `--profile ollama`.
-  The Postgres image is built from `docker/Dockerfile` with `schema.sql`, `seed.sql` and the generated `seed_catalogue.sql` baked in. They run on an empty volume,
+  The Postgres image is built from `docker/Dockerfile` with `schema.sql`, `seed.sql`, the generated `seed_catalogue.sql` and `seed_presets.sql` baked in. They run on an empty volume,
   so `down -v`, then `up --build`, gives a clean database.
 - **Local processes:** backend API, one or more backend workers, gateway and frontend. `scripts/dev.sh` starts the
   Docker services and all of them with one command, in the foreground. It runs the installed entry points directly
