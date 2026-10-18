@@ -170,7 +170,7 @@ def test_upload_and_decompose_html(client, db, storage, harness, tmp_path):
     assert detail["decompositions"][0]["method"] == "html" and detail["page_count"] == 2
     pages = client.get(f"/api/v1/documents/{doc['id']}/pages").json()["pages"]
     assert [p["text"] for p in pages] == ["# Services Agreement", "The fee is $5,000 per month."]
-    assert pages[0]["width"] is None and pages[0]["source_part"] is None
+    assert pages[0]["width"] is None
 
 
 def test_upload_and_decompose_docx(client, db, storage, harness, tmp_path):

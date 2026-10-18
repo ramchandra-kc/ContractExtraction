@@ -403,7 +403,7 @@ CREATE TABLE documents (
     CONSTRAINT uq_documents_code UNIQUE (code),
     -- The same file is stored once; uploading it again returns the existing document.
     CONSTRAINT uq_documents_sha256 UNIQUE (sha256),
-    CONSTRAINT ck_documents_format CHECK (format IN ('pdf', 'image', 'html', 'txt', 'docx', 'eml')),
+    CONSTRAINT ck_documents_format CHECK (format IN ('pdf', 'image', 'html', 'txt', 'docx')),
     CONSTRAINT ck_documents_sha256 CHECK (sha256 ~ '^[0-9a-f]{64}$'),
     CONSTRAINT ck_documents_size_bytes CHECK (size_bytes >= 0),
     CONSTRAINT ck_documents_page_count CHECK (page_count IS NULL OR page_count >= 0)

@@ -147,7 +147,6 @@ function Original({ documentId, original, page }: { documentId: string; original
   return (
     <Card>
       <CardContent className="space-y-2 pt-6 text-sm text-muted-foreground">
-        {page.source_part && <p>Source: {page.source_part}</p>}
         <p>The original ({original?.format ?? 'file'}) can't be shown here; the extracted text is what the models read.</p>
         <a href={url} className="text-foreground underline underline-offset-4">
           Open original

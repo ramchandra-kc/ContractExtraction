@@ -1262,7 +1262,7 @@ export interface components {
          * @description Kind of source file; decides which converter decomposes it.
          * @enum {string}
          */
-        DocumentFormat: "pdf" | "image" | "html" | "txt" | "docx" | "eml";
+        DocumentFormat: "pdf" | "image" | "html" | "txt" | "docx";
         /** DocumentOut */
         DocumentOut: {
             /**
@@ -1806,11 +1806,6 @@ export interface components {
             width: number | null;
             /** Height */
             height: number | null;
-            /**
-             * Source Part
-             * @description Part of the source the page came from, e.g. an email attachment
-             */
-            source_part?: string | null;
             /** Images */
             images: components["schemas"]["ImageOut"][];
         };

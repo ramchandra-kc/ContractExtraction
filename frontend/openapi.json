@@ -3438,8 +3438,7 @@
           "image",
           "html",
           "txt",
-          "docx",
-          "eml"
+          "docx"
         ],
         "title": "DocumentFormat",
         "description": "Kind of source file; decides which converter decomposes it."
@@ -4948,18 +4947,6 @@
               }
             ],
             "title": "Height"
-          },
-          "source_part": {
-            "anyOf": [
-              {
-                "type": "string"
-              },
-              {
-                "type": "null"
-              }
-            ],
-            "title": "Source Part",
-            "description": "Part of the source the page came from, e.g. an email attachment"
           },
           "images": {
             "items": {

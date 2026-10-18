@@ -36,7 +36,7 @@ from .runs import run_out
 router = APIRouter(prefix="/documents", tags=["documents"])
 
 # Originals that a browser would run as a page are only ever downloaded, never shown inline.
-_DOWNLOAD_ONLY = {DocumentFormat.HTML, DocumentFormat.EML}
+_DOWNLOAD_ONLY = {DocumentFormat.HTML}
 
 
 def document_out(doc: m.Document, latest: m.Run | None) -> DocumentOut:
@@ -117,8 +117,7 @@ def get_pages(document_id: uuid.UUID, session: SessionDep, decomposition_id: uui
             url=f"/api/v1/documents/{doc.id}/images/{img.id}"))
     return PagesOut(decomposition_id=dec.id, pages=[
         PageOut(page_number=p.page_number, text=p.text, text_format=p.text_format, header=p.header, footer=p.footer,
-                width=p.width, height=p.height, source_part=(p.metadata_ or {}).get("source_part"),
-                images=images.get(p.id, []))
+                width=p.width, height=p.height, images=images.get(p.id, []))
         for p in repo.pages(dec.id)
     ])
 

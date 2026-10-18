@@ -203,7 +203,6 @@ class PageOut(BaseModel):
     footer: str | None
     width: float | None
     height: float | None
-    source_part: str | None = Field(None, description="Part of the source the page came from, e.g. an email attachment")
     images: list[ImageOut]
 
 

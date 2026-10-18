@@ -30,7 +30,6 @@ class DocumentFormat(StrEnum):
     HTML = "html"
     TXT = "txt"
     DOCX = "docx"
-    EML = "eml"
 
 
 class DecompositionMethod(StrEnum):

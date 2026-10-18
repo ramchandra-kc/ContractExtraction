@@ -28,7 +28,7 @@ One phase is one commit or PR. A phase isn't started before the previous one is 
 | 10a | **Formats 1: registry** | Converter registry and format detection; PDF converter behind it (no behaviour change); `documents.format`, `decompositions.converter`; `GET /config/formats`; frontend format awareness (accept list, viewer by format, format badge) | Existing tests pass; `sample.pdf` gives the same pages; the UI accepts only `.pdf` | ✅ done |
 | 10b | **Formats 2: text and HTML** | txt and html converters, page markers (EDGAR `<PAGE>`, `\f`, CSS page breaks) or pages by length, EDGAR wrapper removal | Unit tests pass; every `test_data` `.txt`/`.htm` decomposes; one of each runs end to end in the UI | ✅ done (end to end through the gateway; not clicked through in a browser) |
 | 10c | **Formats 3: images and DOCX** | images (pymupdf → PDF → OCR), docx (mammoth → html converter) | Unit and `ocr` tests pass; every `test_data` `.docx` decomposes | ✅ done |
-| 10d | **Formats 4: email** | eml body plus supported attachments as one document, `source_part` per page | Unit tests pass; an eml with a PDF attachment runs end to end with its parts shown | ⬜ planned |
+| 10d | ~~**Formats 4: email**~~ | ~~eml body plus supported attachments as one document~~ | Dropped (see change log, 2026-10-19) | ✖ dropped |
 
 ## Open questions (decided in the phase that needs them)
 
@@ -125,8 +125,7 @@ One phase is one commit or PR. A phase isn't started before the previous one is 
   - API:
     - `DecompositionOut.method` now shows the converter (`pdf:pymupdf`).
     - Upload errors say "Unsupported file type; accepted: …" or "The file is empty".
-    - `GET /documents/{id}/file` sends HTML and email originals as an attachment with `Content-Security-Policy: sandbox`.
-    - `PageOut.source_part` is new (set from 10d).
+    - `GET /documents/{id}/file` sends HTML originals as an attachment with `Content-Security-Policy: sandbox`.
   - Existing dev databases need `scripts/dev.sh reset` (or the two `ALTER TABLE … ADD COLUMN`s), because the schema has no migrations.
 - 2026-10-19: Phase 10b completed. `converters/text.py` (txt plus shared helpers: decoding, EDGAR unwrap, markers, pages by length)
   and `converters/html.py`.
@@ -168,3 +167,10 @@ One phase is one commit or PR. A phase isn't started before the previous one is 
     - All 16 `test_data` `.docx` files convert: 15 with Word's pages, 1 split by length.
     - PNG, JPEG and a 2-frame TIFF rendered from the smoke PDF OCR correctly.
     - Through the gateway, a `.docx` NDA (8 pages) and the JPEG scan ran end to end, and `parties` was extracted from both.
+- 2026-10-19: Phase 10d (email) dropped.
+  - Contracts sent by email are attachments (PDF or Word), which can be uploaded directly.
+  - Agreements formed in the email body itself are rare, and `test_data` has no `.eml` files to measure against.
+  - Email would only pay off for automated mailbox ingestion, which isn't planned. If it is, it's one new converter in the registry.
+  - Removed what 10a had added for it: `eml` from `DocumentFormat` and `ck_documents_format`, `eml` from the
+    download-only originals, and `PageOut.source_part`.
+  - The dev database's constraint was replaced in place (`ALTER TABLE`, no data change).

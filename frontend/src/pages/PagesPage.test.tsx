@@ -17,7 +17,6 @@ const pages: PagesOut = {
       footer: null,
       width: null,
       height: null,
-      source_part: null,
       images: [],
     },
   ],
