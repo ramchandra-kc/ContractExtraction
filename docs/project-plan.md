@@ -26,7 +26,7 @@ One phase is one commit or PR. A phase isn't started before the previous one is 
 | 8 | **Dev experience** | `scripts/dev.sh` (`up`, `status`, `smoke`, `test`, `down`, `reset`): Docker services, dependencies, check, then API, workers, gateway and frontend in one terminal with prefixed logs, fail-fast and graceful Ctrl-C; end-to-end smoke test through the gateway; docs refresh | One command brings up the full stack; the smoke test passes | ✅ done |
 | 9 | **Authentication** | Auth in the gateway, frontend login, backend trusts the gateway | Unauthenticated requests are rejected at the gateway | ⬜ planned |
 | 10a | **Formats 1: registry** | Converter registry and format detection; PDF converter behind it (no behaviour change); `documents.format`, `decompositions.converter`; `GET /config/formats`; frontend format awareness (accept list, viewer by format, format badge) | Existing tests pass; `sample.pdf` gives the same pages; the UI accepts only `.pdf` | ✅ done |
-| 10b | **Formats 2: text and HTML** | txt and html converters, page markers (EDGAR `<PAGE>`, `\f`, CSS page breaks) or pages by length, EDGAR wrapper removal | Unit tests pass; every `test_data` `.txt`/`.htm` decomposes; one of each runs end to end in the UI | ✅ done (UI run pending a dev DB update) |
+| 10b | **Formats 2: text and HTML** | txt and html converters, page markers (EDGAR `<PAGE>`, `\f`, CSS page breaks) or pages by length, EDGAR wrapper removal | Unit tests pass; every `test_data` `.txt`/`.htm` decomposes; one of each runs end to end in the UI | ✅ done (end to end through the gateway; not clicked through in a browser) |
 | 10c | **Formats 3: images and DOCX** | images (pymupdf → PDF → OCR), docx (mammoth → html converter) | Unit and `ocr` tests pass; every `test_data` `.docx` decomposes | ⬜ planned |
 | 10d | **Formats 4: email** | eml body plus supported attachments as one document, `source_part` per page | Unit tests pass; an eml with a PDF attachment runs end to end with its parts shown | ⬜ planned |
 
@@ -141,4 +141,14 @@ One phase is one commit or PR. A phase isn't started before the previous one is 
     - 220 `.htm` and 45 `.txt` all convert, with no empty pages.
     - 245 split at page markers and 20 by length.
     - The slowest file takes 1.8 s.
-    - Not verified: a UI run, because the dev database predates the 10a columns.
+  - Numbered-clause tables (`(e) | Construction. …`) are flattened too. Markdown table lines across the 220 HTML files
+    drop from 134k to 49k; real two-column tables stay tables.
+  - Verified end to end after `scripts/dev.sh reset`:
+    - The PDF smoke test passes.
+    - Through the gateway, an EDGAR `.htm` (10 pages, converter `html`) and `.txt` (6 pages, `txt`) upload and run.
+    - The txt NDA's `parties` came out right with RAG07. RAG01 (dense, top 3) found no preamble chunk.
+    - The HTML letter NDA got `not_found` from llama3.1:8b even with the preamble retrieved: one party is "you".
+      That is a model limit, not the converter.
+    - The HTML original is served as a sandboxed attachment.
+    - `/config/formats` and the documents list work through the Vite proxy.
+    - Not verified: clicking through the UI in a browser (the browser extension wasn't connected).
