@@ -462,9 +462,18 @@ def summary(c: Collected) -> list[dict[str, Any]]:
             "tokens_per_run": _mean([r.prompt_tokens + r.completion_tokens for r in ok]),
             "cost_usd_per_run": _mean([r.cost_usd for r in ok]),
             "seconds_per_run": _mean([r.seconds for r in ok]),
-            "snapshots": len({r.snapshot for r in ok}),
+            # per document: each contract type snapshots its own field set, so documents legitimately differ
+            "snapshots": max((len(v) for v in _group(ok, lambda r: r.document, lambda r: r.snapshot).values()),
+                             default=0),
             "code_versions": len({r.code_version for r in ok}),
         })
+    return out
+
+
+def _group(rows, key, value) -> dict[Any, set]:
+    out: dict[Any, set] = defaultdict(set)
+    for r in rows:
+        out[key(r)].add(value(r))
     return out
 
 
