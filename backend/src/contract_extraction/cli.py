@@ -14,14 +14,21 @@
                                               list LLM providers / switch e.g. native ↔ Docker Ollama
     contract-extraction labels import DIR [--dry-run] [--overwrite] [--tag TAG]
                                               import draft ground truth from label files (one JSON per contract)
+    contract-extraction documents tag TAG CODE_OR_FILE... [--remove] | list [--tag TAG]
+                                              tag documents for experiments / list them with their labels
+    contract-extraction experiment create NAME --pipelines A,B --tag TAG [--repeats N] | list | run NAME |
+                                   show NAME | export NAME [-o DIR]
+                                              documents × pipelines × repeats under fixed conditions (experiments.py)
 """
 
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import sys
 import uuid
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -300,6 +307,203 @@ def labels_import(directory: Path, root: Path, overwrite: bool, dry_run: bool, t
     return 1 if totals["failed"] else 0
 
 
+def documents_tag(tag: str, refs: list[str], remove: bool) -> int:
+    """Tag documents given by code (DOC001) or by file (registered first when new)."""
+    from .ingestion import register_file
+    from .persistence.repositories import DocumentRepo
+
+    settings = load_settings()
+    db = Database(settings.database)
+    storage = FileStorage(settings.storage_root)
+    try:
+        ids, registered = [], 0
+        for ref in refs:
+            path = Path(ref)
+            if path.is_file():
+                if remove:
+                    with db.session() as s:
+                        doc = DocumentRepo(s).get_by_sha256(hashlib.sha256(path.read_bytes()).hexdigest())
+                    if doc is not None:
+                        ids.append(doc.id)
+                    continue
+                document_id, _, created = register_file(db, storage, settings, path)
+                ids.append(document_id)
+                registered += created
+            else:
+                with db.session() as s:
+                    ids.append(DocumentRepo(s).get_by_code(ref).id)
+        with db.session() as s:
+            repo = DocumentRepo(s)
+            for document_id in dict.fromkeys(ids):
+                (repo.remove_tags if remove else repo.add_tags)(document_id, [tag])
+        verb = "untagged" if remove else "tagged"
+        print(f"{verb} {len(set(ids))} documents with {tag}" + (f" ({registered} newly registered)" if registered else ""))
+        return 0
+    except AppError as exc:
+        print(f"FAIL: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        db.dispose()
+
+
+def documents_list(tag: str | None, limit: int) -> int:
+    """Documents (newest first, or those with a tag) with their label counts and labelled contract types."""
+    from .persistence.repositories import DocumentRepo
+
+    settings = load_settings()
+    db = Database(settings.database)
+    try:
+        with db.session() as s:
+            repo = DocumentRepo(s)
+            docs = list(repo.with_tag(tag)) if tag else list(repo.list(limit)[0])
+            ids = [d.id for d in docs]
+            labels = dict(s.execute(select(m.GroundTruth.document_id, func.count()).where(
+                m.GroundTruth.document_id.in_(ids)).group_by(m.GroundTruth.document_id)).all())
+            types: dict[uuid.UUID, list[str]] = {}
+            for doc_id, key in s.execute(
+                    select(m.DocumentContractType.document_id, m.ContractType.key)
+                    .join(m.ContractType, m.ContractType.id == m.DocumentContractType.contract_type_id)
+                    .where(m.DocumentContractType.document_id.in_(ids)).order_by(m.ContractType.position)):
+                types.setdefault(doc_id, []).append(key)
+            print(f"{'code':7} {'format':6} {'labels':6} {'contract types':24} {'tags':20} file")
+            for d in docs:
+                print(f"{d.code:7} {d.format:6} {labels.get(d.id, 0):6} {','.join(types.get(d.id, [])) or '-':24} "
+                      f"{','.join(d.tags) or '-':20} {d.original_filename}")
+            print(f"\n{len(docs)} documents" + (f" tagged {tag}" if tag else ""))
+        return 0
+    finally:
+        db.dispose()
+
+
+def experiment_create(args: argparse.Namespace) -> int:
+    from . import experiments
+    from .domain.enums import Priority
+
+    split = lambda v: [x.strip() for x in v.split(",") if x.strip()] if v else None  # noqa: E731
+    modes = ("labelled", "types", "detect")
+    fields_mode, keys = (args.fields, None) if args.fields in modes else ("list", split(args.fields))
+    settings = load_settings()
+    db = Database(settings.database)
+    try:
+        with db.session() as s:
+            exp = experiments.create(
+                s, args.name, pipelines=split(args.pipelines) or [], repeats=args.repeats, tag=args.tag,
+                codes=split(args.documents) or [], fields=fields_mode, field_keys=keys,
+                min_priority=Priority(args.min_priority) if args.min_priority else None,
+                retrievals=split(args.retrievals), judge=False if args.no_judge else None,
+                description=args.description, hypothesis=args.hypothesis)
+            design = experiments.Design.model_validate(exp.design)
+            n_docs, n_pipes = len(design.documents), len(design.pipelines)
+            sizes = sorted(len(d.fields) for d in design.documents if d.fields)
+            per_doc = "" if not sizes else str(sizes[0]) if sizes[0] == sizes[-1] else f"{sizes[0]}–{sizes[-1]}"
+            print(f"experiment {exp.name}: {n_docs} documents × {n_pipes} pipelines × {design.repeats} repeats "
+                  f"= {n_docs * n_pipes * design.repeats} runs"
+                  + (f", {per_doc} fields per document" if per_doc else ", fields detected by each pipeline"))
+            print(f"run it with: contract-extraction experiment run {exp.name}   (workers execute the runs)")
+        return 0
+    except AppError as exc:
+        print(f"FAIL: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        db.dispose()
+
+
+def experiment_list() -> int:
+    from .persistence.repositories.experiments import ExperimentRepo
+
+    settings = load_settings()
+    db = Database(settings.database)
+    try:
+        with db.session() as s:
+            print(f"{'experiment':30} {'created':16} {'runs':28} pipelines")
+            for exp, counts in ExperimentRepo(s).list():
+                runs = " ".join(f"{k} {v}" for k, v in sorted(counts.items())) or "-"
+                print(f"{exp.name:30} {exp.created_at.astimezone():%Y-%m-%d %H:%M} {runs:28} "
+                      f"{','.join(exp.design.get('pipelines', []))}")
+        return 0
+    finally:
+        db.dispose()
+
+
+def experiment_run(name: str, max_queued: int, retries: int, poll: float) -> int:
+    from .experiments import ExperimentRunner
+
+    settings = load_settings()
+    setup_logging(settings.log_level)
+    db = Database(settings.database)
+    runner = None
+    try:
+        runner = ExperimentRunner(db, name, max_queued=max_queued, retries=retries)
+        print(f"experiment {name}: queueing for the workers (start them with scripts/dev.sh up --workers N, or "
+              "contract-extraction worker); Ctrl-C stops queueing", flush=True)
+        progress = runner.run(poll=poll, report=lambda p: print(f"{datetime.now():%H:%M:%S} {p}", flush=True))
+        print("finished" if not progress.given_up else "finished, except the given-up cells (run again to retry them)")
+        return 0 if not progress.given_up else 1
+    except KeyboardInterrupt:
+        n = runner.cancel_queued() if runner else 0
+        print(f"stopped: cancelled {n} queued runs; running ones finish. Run again to resume.", file=sys.stderr)
+        return 130
+    except AppError as exc:
+        print(f"FAIL: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        db.dispose()
+
+
+def experiment_show(name: str) -> int:
+    from .experiments import collect, summary
+
+    settings = load_settings()
+    db = Database(settings.database)
+    try:
+        with db.session() as s:
+            c = collect(s, name)
+            exp, d = c.experiment, c.design
+            print(f"experiment : {exp.name}  (created {exp.created_at.astimezone():%Y-%m-%d %H:%M})")
+            if exp.hypothesis:
+                print(f"hypothesis : {exp.hypothesis}")
+            print(f"design     : {len(d.documents)} documents{' tagged ' + d.tag if d.tag else ''} × "
+                  f"{', '.join(d.pipelines)} × {d.repeats} repeats; fields: {d.fields}"
+                  + (f" (≤ {d.min_priority})" if d.min_priority else "")
+                  + (f"; RAG configs {','.join(d.retrievals)}" if d.retrievals else "") + ("; no judge" if d.judge is False else ""))
+            states = Counter(r.state for r in c.runs)
+            print(f"runs       : {' '.join(f'{k} {v}' for k, v in sorted(states.items())) or 'none yet'}")
+            pct = lambda v: "-" if v is None else f"{v * 100:.1f}%"  # noqa: E731
+            num = lambda v, f="{:.3f}": "-" if v is None else f.format(v)  # noqa: E731
+            print(f"\n{'pipeline':22} {'runs':>5} {'value acc':>9} {'score':>6} {'±sd':>6} {'missed':>7} "
+                  f"{'absent ok':>9} {'invented':>8} {'PASS ok':>7} {'$/run':>8} {'s/run':>7}")
+            for r in summary(c):
+                print(f"{r['pipeline']:22} {r['runs_succeeded']:5} {pct(r['value_exact']):>9} {num(r['value_score']):>6} "
+                      f"{num(r['value_score_sd']):>6} {pct(r['value_missed']):>7} {pct(r['absent_correct']):>9} "
+                      f"{pct(r['invented']):>8} {pct(r['judge_pass_correct']):>7} {num(r['cost_usd_per_run'], '{:.4f}'):>8} "
+                      f"{num(r['seconds_per_run'], '{:.0f}'):>7}"
+                      + ("  ⚠ pipeline changed during the experiment" if r["snapshots"] > 1 else ""))
+        return 0
+    except AppError as exc:
+        print(f"FAIL: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        db.dispose()
+
+
+def experiment_export(name: str, out: Path | None) -> int:
+    from .experiments import collect, export
+
+    settings = load_settings()
+    db = Database(settings.database)
+    try:
+        with db.session() as s:
+            files = export(collect(s, name), out or BACKEND_ROOT.parent / "experiments" / name)
+        for f in files:
+            print(f"wrote {f}")
+        return 0
+    except AppError as exc:
+        print(f"FAIL: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        db.dispose()
+
+
 def gen_catalogue(doc: Path, out: Path, queries_path: Path, with_queries: bool, per_field: int) -> int:
     """Parse the catalogue document and write the seed SQL; optionally generate missing search queries."""
     from . import catalogue
@@ -433,7 +637,59 @@ def main(argv: list[str] | None = None) -> int:
     p_limport.add_argument("--dry-run", action="store_true", help="validate and report; change nothing")
     p_limport.add_argument("--tag", action="append", default=[], help="tag every imported document (repeatable)")
 
+    p_docs = sub.add_parser("documents", help="list documents, or tag them for experiments")
+    docs_sub = p_docs.add_subparsers(dest="action", required=True)
+    p_dtag = docs_sub.add_parser("tag", help="tag documents given by code (DOC001) or file (registered when new)")
+    p_dtag.add_argument("tag")
+    p_dtag.add_argument("refs", nargs="+", metavar="CODE_OR_FILE")
+    p_dtag.add_argument("--remove", action="store_true", help="remove the tag instead")
+    p_dlist = docs_sub.add_parser("list", help="documents with their labels and labelled contract types")
+    p_dlist.add_argument("--tag", help="only documents with this tag")
+    p_dlist.add_argument("--limit", type=int, default=50, help="newest N documents when no tag is given")
+
+    p_exp = sub.add_parser("experiment", help="create, run, show and export experiments")
+    exp_sub = p_exp.add_subparsers(dest="action", required=True)
+    p_ecreate = exp_sub.add_parser("create", help="fix an experiment's design: documents × pipelines × repeats")
+    p_ecreate.add_argument("name")
+    p_ecreate.add_argument("--pipelines", required=True, help="comma-separated pipeline config names")
+    p_ecreate.add_argument("--tag", help="the documents with this tag")
+    p_ecreate.add_argument("--documents", help="comma-separated document codes (also, or instead of --tag)")
+    p_ecreate.add_argument("--repeats", type=int, default=1)
+    p_ecreate.add_argument("--fields", default="labelled",
+                           help="labelled (default: each document's labelled fields), types (its labelled contract "
+                                "types' fields), detect (each pipeline detects the type), or comma-separated keys")
+    p_ecreate.add_argument("--min-priority", choices=["P1", "P2", "P3"], help="with --fields types: down to this priority")
+    p_ecreate.add_argument("--retrievals", help="comma-separated RAG config names (default: each pipeline's)")
+    p_ecreate.add_argument("--no-judge", action="store_true", help="skip the judge in every run")
+    p_ecreate.add_argument("--hypothesis")
+    p_ecreate.add_argument("--description")
+    exp_sub.add_parser("list", help="experiments with their run counts")
+    p_erun = exp_sub.add_parser("run", help="queue the experiment's runs and wait for them (resumes where it stopped)")
+    p_erun.add_argument("name")
+    p_erun.add_argument("--max-queued", type=int, default=8, help="experiment runs kept in the queue at a time")
+    p_erun.add_argument("--retries", type=int, default=1, help="retries of a failed run, per document and pipeline")
+    p_erun.add_argument("--poll", type=float, default=5.0, help="seconds between checks")
+    p_eshow = exp_sub.add_parser("show", help="design, run counts and a summary per pipeline")
+    p_eshow.add_argument("name")
+    p_eexport = exp_sub.add_parser("export", help="write results, runs, fields and summary CSVs")
+    p_eexport.add_argument("name")
+    p_eexport.add_argument("-o", "--output", type=Path, help="folder (default: experiments/NAME in the repository)")
+
     args = parser.parse_args(argv)
+    if args.command == "documents":
+        if args.action == "tag":
+            return documents_tag(args.tag, args.refs, args.remove)
+        return documents_list(args.tag, args.limit)
+    if args.command == "experiment":
+        if args.action == "create":
+            return experiment_create(args)
+        if args.action == "list":
+            return experiment_list()
+        if args.action == "run":
+            return experiment_run(args.name, args.max_queued, args.retries, args.poll)
+        if args.action == "show":
+            return experiment_show(args.name)
+        return experiment_export(args.name, args.output)
     if args.command == "labels":
         return labels_import(args.directory, args.root, args.overwrite, args.dry_run, args.tag)
     if args.command == "providers":

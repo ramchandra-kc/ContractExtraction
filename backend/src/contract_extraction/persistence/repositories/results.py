@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import and_, or_, select
+from sqlalchemy import and_, func, or_, select
 from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.orm import Session, selectinload
@@ -171,10 +171,26 @@ class ResultRepo:
     def best_values(self, run_id: uuid.UUID) -> Sequence[RowMapping]:
         """Best value per field with its ground truth: ``expected_value`` (None when unlabelled) and
         ``exact_match`` (None when unlabelled), both from v_run_evaluation."""
+        return self.best_values_for_runs([run_id])
+
+    def best_values_for_runs(self, run_ids: list[uuid.UUID]) -> Sequence[RowMapping]:
+        """``best_values`` of several runs, by run and field position."""
         bv, ev = m.best_values, m.run_evaluation
         return self.session.execute(
             select(bv, m.Field.position, m.Field.value_type, ev.c.expected_value, ev.c.exact_match)
             .join(m.Field, m.Field.id == bv.c.field_id)
             .join(ev, and_(ev.c.run_id == bv.c.run_id, ev.c.field_id == bv.c.field_id))
-            .where(bv.c.run_id == run_id).order_by(m.Field.position)
+            .where(bv.c.run_id.in_(run_ids)).order_by(bv.c.run_id, m.Field.position)
         ).mappings().all()
+
+    def call_totals(self, run_ids: list[uuid.UUID]) -> dict[uuid.UUID, RowMapping]:
+        """Per run: LLM calls, prompt and completion tokens, cost (USD) and mean latency (ms)."""
+        c = m.LlmCall
+        rows = self.session.execute(
+            select(c.run_id, func.count().label("calls"),
+                   func.coalesce(func.sum(c.prompt_tokens), 0).label("prompt_tokens"),
+                   func.coalesce(func.sum(c.completion_tokens), 0).label("completion_tokens"),
+                   func.sum(c.cost_usd).label("cost_usd"), func.avg(c.latency_ms).label("mean_latency_ms"))
+            .where(c.run_id.in_(run_ids)).group_by(c.run_id)
+        ).mappings().all()
+        return {r["run_id"]: r for r in rows}

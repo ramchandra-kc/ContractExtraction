@@ -34,6 +34,23 @@ BEGIN
 END;
 $$;
 
+-- A JSON value without the object keys whose value is null or "" (at any depth, also inside list items), so an
+-- answer that writes "" for an unknown key compares equal to a label that leaves it null.
+CREATE FUNCTION jsonb_strip_empty(j jsonb) RETURNS jsonb
+LANGUAGE plpgsql IMMUTABLE AS $$
+BEGIN
+    RETURN CASE jsonb_typeof(j)
+        WHEN 'object' THEN coalesce(
+            (SELECT jsonb_object_agg(key, jsonb_strip_empty(value)) FROM jsonb_each(j)
+             WHERE value NOT IN ('null'::jsonb, '""'::jsonb)), '{}'::jsonb)
+        WHEN 'array' THEN coalesce(
+            (SELECT jsonb_agg(jsonb_strip_empty(value) ORDER BY n) FROM jsonb_array_elements(j) WITH ORDINALITY AS e(value, n)),
+            '[]'::jsonb)
+        ELSE j
+    END;
+END;
+$$;
+
 CREATE SEQUENCE document_code_seq;
 
 -- DOC001, DOC002, ... DOC999, DOC1000, ...
@@ -527,6 +544,9 @@ CREATE TABLE experiments (
     name        text        NOT NULL,
     description text,
     hypothesis  text,
+    -- What the experiment runs (pipelines, repeats, run options, and the documents with their fields), fixed
+    -- when it is created; see experiments.py.
+    design      jsonb       NOT NULL DEFAULT '{}',
     created_at  timestamptz NOT NULL DEFAULT now(),
     updated_at  timestamptz NOT NULL DEFAULT now(),
     CONSTRAINT pk_experiments PRIMARY KEY (id),
@@ -806,7 +826,7 @@ ORDER BY fr.run_id, fr.field_id,
          fr.created_at;
 
 -- Best values next to the ground truth. exact_match compares trimmed, case-insensitive text, and objects and
--- lists as JSON (key order and null-valued keys ignored); NULL when no label exists, false for an error outcome,
+-- lists as JSON (key order ignored, and keys whose value is null or "" left out); NULL when no label exists, false for an error outcome,
 -- which must never count as correct. A label of "" means "not in this contract" and matches a not_found outcome.
 -- Partial credit for objects and lists is computed by the API (evaluation.py).
 CREATE VIEW v_run_evaluation AS
@@ -823,7 +843,7 @@ SELECT
         WHEN gt.id IS NULL THEN NULL
         WHEN b.status = 'error' THEN false
         WHEN jsonb_typeof(gt.expected_value) IN ('object', 'array')
-            THEN coalesce(jsonb_strip_nulls(b.value) = jsonb_strip_nulls(gt.expected_value), false)
+            THEN coalesce(jsonb_strip_empty(b.value) = jsonb_strip_empty(gt.expected_value), false)
         ELSE lower(btrim(coalesce(b.value #>> '{}', ''))) = lower(btrim(coalesce(gt.expected_value #>> '{}', '')))
     END              AS exact_match
 FROM v_best_values b

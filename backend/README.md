@@ -130,6 +130,45 @@ as drafts: `ground_truth.created_by` is the file's `labelled_by`, and the notes 
 confidence. Editing a label in the UI clears `created_by`, so importing again keeps your edits (and labelled contract
 types) unless `--overwrite`.
 
+### Experiments
+
+```bash
+uv run contract-extraction documents tag exp-set-1 DOC001 DOC002 ../test_data/nda/x.pdf   # codes or files (--remove)
+uv run contract-extraction documents list --tag exp-set-1                                # labels and contract types
+
+uv run contract-extraction experiment create rag-1 --tag p1-drafts --pipelines default,local-hybrid --repeats 3 \
+    --hypothesis "Hybrid retrieval beats dense-only"
+uv run contract-extraction experiment run rag-1      # queues the runs; workers execute them (dev.sh up --workers N)
+uv run contract-extraction experiment show rag-1     # progress and a summary per pipeline
+uv run contract-extraction experiment export rag-1   # CSVs in ../experiments/rag-1/ (git-ignored)
+```
+
+`create` fixes the design in `experiments.design`: the pipelines, repeats, run options and the documents (from `--tag`
+and/or `--documents`) with the fields each one extracts. Every pipeline extracts the same fields of a document:
+`--fields labelled` (default: the document's labelled fields), `types` (its labelled contract types' fields, down to
+`--min-priority`), a comma-separated list, or `detect` (each pipeline detects the type itself, so fields may differ).
+`--retrievals` and `--no-judge` apply to every run.
+
+`run` queues a document's next run when its previous one has finished (one active run per document), keeps at most
+`--max-queued` runs queued and rotates the pipelines per document and repeat. Ctrl-C cancels the queued runs; running ones
+finish. Running it again resumes: a document and pipeline are done after `--repeats` succeeded runs, and failed runs are
+retried `--retries` times per invocation.
+
+`export` writes:
+
+| File | One row per | Holds |
+|---|---|---|
+| `results.csv` | run × field | best value, label, status, exact match, partial score, verdict |
+| `runs.csv` | run | state, repeat, seconds, LLM calls, tokens, cost, contract types, snapshot fingerprint |
+| `fields.csv` | pipeline × field | the quality columns below |
+| `summary.csv` | pipeline | quality, ± SD of the score across repeats, judge agreement, calls / tokens / cost / seconds per run |
+| `experiment.json` | | name, hypothesis and the design |
+
+Labels with a value and labels of `""` (not in this contract) are scored apart: `value_exact`, `value_score` and
+`value_missed` (not found) over labels with a value; `absent_correct` and `invented` (a value where there is none) over
+`""` labels. `judge_pass_correct` is the share of PASS verdicts on correct values. Only succeeded runs count. When a
+pipeline was edited during an experiment, its runs have more than one snapshot fingerprint and `show` warns.
+
 ## Configuration
 
 - **Pipeline configuration** (providers, models, prompts, RAG configs, fields) lives in **the database**. It is read through
@@ -168,12 +207,13 @@ src/contract_extraction/
   api/           FastAPI app, routes/, schemas, problem details, dependencies (session per request)
   ingestion.py   register → decompose → index, reusing earlier work
   labels.py      import of draft ground truth from label files
+  experiments.py experiment design, runner (queueing, rotation, resume) and results / export
   storage.py     local file storage (staging + hashing, per-document folders, path guards)
   secrets.py     API key lookup by the env var named in the database
   health.py      liveness and readiness, shared by /health and `check`
   worker.py      claim loop (SKIP LOCKED), heartbeat, cancellation, stale-run cleanup
   catalogue.py   contract types and fields parsed from docs/contract_types_and_fields.md → docker/seed_catalogue.sql
-  cli.py         contract-extraction check | ingest | run | worker | status | cancel | api | openapi | providers | gen-catalogue | labels
+  cli.py         contract-extraction check | ingest | run | worker | status | cancel | api | openapi | providers | gen-catalogue | labels | documents | experiment
 ```
 
 ## Tests

@@ -7,7 +7,7 @@ import uuid
 from fastapi import APIRouter, Query
 
 from ...domain.enums import RunState
-from ...evaluation import score
+from ...evaluation import match_score
 from ...persistence import models as m
 from ...persistence.repositories import RunRepo
 from ...persistence.repositories.ground_truth import GroundTruthRepo
@@ -90,18 +90,10 @@ def get_run_results(run_id: uuid.UUID, session: SessionDep):
                       status=b["status"], retrieval_config=b["retrieval_config"], verdict=b["verdict"], issue=b["issue"],
                       explanation=b["explanation"], field_result_id=b["field_result_id"],
                       expected_value=b["expected_value"], exact_match=b["exact_match"],
-                      match_score=_score(b))
+                      match_score=match_score(b["status"], b["value"], b["expected_value"], b["exact_match"]))
             for b in repo.best_values(run.id)]
     return RunResults(run=run_out(run), best=best, evaluation=_evaluation(session, run, best),
                       results=[FieldResultOut(**_outcome_out(o)) for o in outcomes])
-
-
-def _score(b) -> float | None:
-    if b["exact_match"] is None:
-        return None
-    if b["status"] == "error":
-        return 0.0
-    return round(score(b["value"], b["expected_value"]), 3)
 
 
 def _evaluation(session, run: m.Run, best: list[BestValue]) -> EvaluationOut:

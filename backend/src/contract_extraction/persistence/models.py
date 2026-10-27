@@ -450,6 +450,7 @@ class Experiment(Base):
     name: Mapped[str] = mapped_column(unique=True)
     description: Mapped[str | None]
     hypothesis: Mapped[str | None]
+    design: Mapped[dict[str, Any]] = _json()
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = _updated()
 

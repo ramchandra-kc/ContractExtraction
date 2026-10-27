@@ -33,9 +33,9 @@ writing last.
 | # | Item | Done when |
 |---|---|---|
 | R1 | CUAD importer: CSV answers → ground truth, normalised to catalogue types | ~500 contracts labelled for mapped fields |
-| R2 | Results export: per run / field / document → CSV | All tables and charts come from the export |
-| R3 | Baseline run: one frozen pipeline | Baseline numbers recorded with run ids |
-| R4 | Experiments: change one thing at a time; ≥3 seeds where temperature > 0 | One results table per research question |
+| R2 | Results export: per run / field / document → CSV (`experiment export`, Phase 11) | All tables and charts come from the export |
+| R3 | Baseline run: one frozen pipeline (`experiment create/run`, Phase 11) | Baseline numbers recorded with run ids |
+| R4 | Experiments: change one thing at a time; ≥3 repeats where temperature > 0 | One results table per research question |
 | R5 | Error analysis: 30–50 failures by cause (decomposition/OCR, chunking, retrieval, model, normalisation, label wrong) | Category counts and examples |
 | R6 | Write-up | Draft complete |
 

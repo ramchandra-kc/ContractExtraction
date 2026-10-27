@@ -29,7 +29,7 @@ One phase is one commit or PR. A phase isn't started before the previous one is 
 | 10b | **Formats 2: text and HTML** | txt and html converters, page markers (EDGAR `<PAGE>`, `\f`, CSS page breaks) or pages by length, EDGAR wrapper removal | Unit tests pass; every `test_data` `.txt`/`.htm` decomposes; one of each runs end to end in the UI | ✅ done (end to end through the gateway; not clicked through in a browser) |
 | 10c | **Formats 3: images and DOCX** | images (pymupdf → PDF → OCR), docx (mammoth → html converter) | Unit and `ocr` tests pass; every `test_data` `.docx` decomposes | ✅ done |
 | 10d | ~~**Formats 4: email**~~ | ~~eml body plus supported attachments as one document~~ | Dropped (see change log, 2026-10-19) | ✖ dropped |
-| 11 | **Experiments** | `experiment` CLI over the existing `experiments` table: create, run a documents × pipelines × repeats matrix (resumable, one active run per document, same fields for every pipeline), show, export CSVs (results, runs, summary); `documents tag`; partial-credit scoring shared by the API and the export | Scheduler, export and repo tests pass; a small real experiment (2 documents × 2 pipelines × 2 repeats) runs and exports | ⬜ planned |
+| 11 | **Experiments** | `experiment` CLI over the `experiments` table: create (design fixed in `experiments.design`: pipelines, repeats, options, documents with their fields), run (documents × pipelines × repeats; resumable, one active run per document, pipelines rotated, same fields for every pipeline), list, show, export CSVs (results, runs, fields, summary); `documents tag` / `list`; partial-credit scoring shared by the API and the export | Scheduler, export and repo tests pass; a small real experiment (2 documents × 2 pipelines × 2 repeats) runs and exports | ✅ done |
 
 ## Open questions (decided in the phase that needs them)
 
@@ -180,3 +180,19 @@ One phase is one commit or PR. A phase isn't started before the previous one is 
   `test_data/labels/`): registers the contract, sets its contract types, validates each value like the UI does and
   reports the ones that don't fit. `ground_truth.created_by` now records who set the current value (the label file's
   `labelled_by` for a draft, NULL from the API), so a re-import keeps labels edited by hand unless `--overwrite`.
+- 2026-10-27: Phase 11 completed. Changes from the plan:
+  - The design is stored with the experiment (`experiments.design jsonb`, added to the dev database with `ALTER TABLE`),
+    so `experiment run NAME` resumes without flags and the document set is fixed when the experiment is created (no
+    check for tag changes needed).
+  - Every pipeline extracts the same fields: by default each document's labelled fields (`--fields labelled`), fixed at
+    creation; also `types` (labelled contract types down to `--min-priority`), a list, or `detect`. No `RunOptions` or
+    API change was needed.
+  - Summary and per-field metrics score labels with a value apart from labels of `""`, since 23–54% of the P1 labels
+    are `""`.
+  - Verified with `verify-phase11` (DOC003, DOC105 × `default`, `local-fast` × 2 repeats, 4 fields, RAG07): 8 runs
+    succeeded, rotation and one-run-per-document held, export wrote all files.
+- 2026-10-27: `v_run_evaluation.exact_match` now leaves out object keys whose value is null **or ""** (new helper
+  `jsonb_strip_empty`, recursive, also inside list items). Models often write `""` for an unknown key where the label
+  has null, which made correct answers count as wrong (seen in `verify-phase11`: `default` 33% → 50% value accuracy).
+  Applied to the dev database in place (`CREATE FUNCTION`, `CREATE OR REPLACE VIEW`); past runs are rescored as the
+  view is read.

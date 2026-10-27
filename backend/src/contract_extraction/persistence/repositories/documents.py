@@ -74,6 +74,18 @@ class DocumentRepo:
             self.session.flush()
         return doc.tags
 
+    def remove_tags(self, document_id: uuid.UUID, tags: list[str]) -> list[str]:
+        doc = self.get(document_id)
+        if any(t in doc.tags for t in tags):
+            doc.tags = [t for t in doc.tags if t not in tags]
+            self.session.flush()
+        return doc.tags
+
+    def with_tag(self, tag: str) -> Sequence[m.Document]:
+        """Documents carrying the tag, by code."""
+        return self.session.scalars(
+            select(m.Document).where(m.Document.tags.contains([tag])).order_by(m.Document.code)).all()
+
     def list(self, limit: int = 25, offset: int = 0) -> tuple[Sequence[m.Document], int]:
         """Newest first, with the total count for paging."""
         rows = self.session.scalars(

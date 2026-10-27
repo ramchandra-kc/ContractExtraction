@@ -63,3 +63,13 @@ def score(value: Any, expected: Any) -> float:
     if isinstance(value, (dict, list)):
         return 0.0
     return 1.0 if _norm(value) == _norm(expected) else 0.0
+
+
+def match_score(status: str, value: Any, expected: Any, exact_match: bool | None) -> float | None:
+    """A best value's partial credit against its label, rounded as the API shows it: None when unlabelled, 0 for an
+    error outcome (which never counts as correct)."""
+    if exact_match is None:
+        return None
+    if status == "error":
+        return 0.0
+    return round(score(value, expected), 3)

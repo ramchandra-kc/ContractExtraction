@@ -33,3 +33,6 @@ storage-test/
 .DS_Store
 .idea/
 .vscode/
+
+# Experiment exports (they contain values from the contracts)
+/experiments/

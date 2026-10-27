@@ -5,7 +5,7 @@ from __future__ import annotations
 import io
 
 import pytest
-from sqlalchemy import delete, func, select, update
+from sqlalchemy import delete, func, select, text, update
 
 from contract_extraction.core.errors import InvalidInput, NotFound
 from contract_extraction.domain.enums import RunState
@@ -112,6 +112,27 @@ def test_exact_match(db, storage, tmp_path, session):
 
     repo.set(doc_id, _field(session, "title").id, "Contoso Limited")
     assert _best(session, run_id)["title"][3] is False
+
+
+def test_strip_empty(session):
+    strip = lambda j: session.scalar(text("SELECT jsonb_strip_empty(CAST(:j AS jsonb))"), {"j": j})  # noqa: E731
+    assert strip('{"a": "", "b": null, "c": "x", "d": {"e": ""}}') == {"c": "x", "d": {}}
+    assert strip('[{"name": "Acme", "email": ""}, {"name": "Contoso", "email": null}]') == \
+        [{"name": "Acme"}, {"name": "Contoso"}]
+    assert strip('[]') == [] and strip('"x"') == "x" and strip('{"n": 0, "f": false}') == {"n": 0, "f": False}
+
+
+def test_exact_match_treats_empty_and_null_keys_alike(db, storage, tmp_path, session):
+    h = Harness(db, storage, tmp_path, "emptykeys", answers={"payment_terms": {"due_period": "P30D", "currency": ""}})
+    run_id = h.enqueue()
+    assert h.execute(run_id) == RunState.SUCCEEDED
+    doc_id = RunRepo(session).get(run_id).document_id
+    repo = GroundTruthRepo(session)
+
+    repo.set(doc_id, _field(session, "payment_terms").id, {"due_period": "P30D", "currency": None})
+    assert _best(session, run_id)["payment_terms"][3] is True
+    repo.set(doc_id, _field(session, "payment_terms").id, {"due_period": "P30D", "currency": "AUD"})
+    assert _best(session, run_id)["payment_terms"][3] is False, '"" is no answer to a key the label fills'
 
 
 def test_an_error_outcome_never_matches(db, storage, tmp_path, session):
