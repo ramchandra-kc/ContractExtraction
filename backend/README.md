@@ -172,6 +172,8 @@ retried `--retries` times per invocation.
 uv run contract-extraction experiment retrieval-eval rag-sweep --tag dev                       # the pipeline's RAG configs
 uv run contract-extraction experiment retrieval-eval k-sweep --tag dev --retrievals RAG02,RAG07 \
     --top-k 3,5,10,20 --threshold 0,0.5                                                       # one variant per k × threshold
+uv run contract-extraction experiment retrieval-eval rerank --tag dev --retrievals RAG07 --top-k 5 --per-query-top 20 \
+    --rerank none,BAAI/bge-reranker-v2-m3-int8 --candidates 20,40                             # reranker on / off
 ```
 
 `retrieval-eval` retrieves every labelled field that has an evidence quote under each RAG config (variant), exactly as
@@ -180,6 +182,15 @@ a run would, and scores the evidence recall, with no LLM calls (only query embed
 config: hits, evidence rank, whether it is indexed, the evidence chunk's score), `retrieval_summary.csv` (per config:
 recall, recall of all passages, recall@1/3/5/10/20, MRR, not indexed, mean hits) and `retrieval_by_type.csv` (the
 same per config and value type) to `experiments/NAME/`.
+
+**Reranking.** A RAG config with `rerank_model` (a fastembed cross-encoder name, e.g. `BAAI/bge-reranker-v2-m3-int8`)
+scores its best `rerank_candidates` fused hits against the field's label and description and keeps the best `top_k`
+(`extraction/retrieval.py`, `providers/rerank.py`; anchors are added after, as without it). The models run locally on
+CPU (about 0.1 s per candidate on an M4), download once to `~/.cache/fastembed` and load once per process; the score
+is stored in `retrieval_hits.rerank_score`. Candidates are capped by `per_query_top` × queries, so raise
+`per_query_top` with it. A database created before the reranker needs
+`ALTER TABLE retrieval_configs ADD COLUMN rerank_model text, ADD COLUMN rerank_candidates integer NOT NULL DEFAULT 30;`
+and `ALTER TABLE retrieval_hits ADD COLUMN rerank_score double precision;`.
 
 ### Comparing arms
 
