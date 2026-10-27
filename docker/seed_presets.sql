@@ -82,7 +82,11 @@ INSERT INTO retrieval_configs (name, description, top_k, score_threshold, query_
      15, 0.4, true, 5, 0.25, true, 3),
     -- RAG07 without query expansion: isolates what the expansion queries add once keyword search is on.
     ('RAG11', 'hybrid: top 5, threshold 0.5, without query expansion, 2 anchor chunks',
-     5, 0.5, false, 3, 0.30, true, 2)
+     5, 0.5, false, 3, 0.30, true, 2),
+    -- Research baseline: dense, fixed k with no threshold (thresholds starve context: retrieval-eval E2), and 5
+    -- hits per query so top_k is reachable. The research grid varies one setting of it at a time.
+    ('R-base', 'research baseline: dense, top 5, no threshold, with query expansion, 5 hits per query',
+     5, 0, true, 5, 0, false, 0)
 ON CONFLICT (name) DO NOTHING;
 
 -- Pipelines. All use the default decomposition and index, the contract_fields set and version 1 of the
@@ -113,7 +117,10 @@ FROM (VALUES
     ('or-rag-sweep',     'Qwen3 30B under every hybrid RAG config (RAG07-RAG11), Claude Haiku judge: compare retrieval',
      'extraction-or-qwen3-30b', 'judge-or-haiku', 'classification-or-gemini-lite', true, 'P3', 'field'),
     ('or-p1-triage',     'P1 fields only (direct financial, time or exit exposure), Gemini Flash-Lite group extraction, no judge',
-     'extraction-group-or-gemini-lite', NULL, 'classification-or-gemini-lite', false, 'P1', 'group')
+     'extraction-group-or-gemini-lite', NULL, 'classification-or-gemini-lite', false, 'P1', 'group'),
+    -- Research workhorse: Qwen3 30B field extraction under R-base only, no judge (experiment E1 and the grids).
+    ('e1-qwen3-rbase',   'Research baseline: Qwen3 30B field extraction under R-base only, no judge',
+     'extraction-or-qwen3-30b', NULL, 'classification-or-gemini-lite', false, 'P3', 'field')
 ) AS v (name, description, extraction_profile, judge_profile, classification_profile, judge_parallel, min_priority, granularity)
 JOIN decomposition_configs dc ON dc.name = 'default'
 JOIN index_configs ic ON ic.name = 'default'
@@ -141,7 +148,8 @@ FROM (VALUES
     ('or-haiku', 'RAG08', 1), ('or-haiku', 'RAG07', 2),
     ('or-rag-sweep', 'RAG08', 1), ('or-rag-sweep', 'RAG07', 2), ('or-rag-sweep', 'RAG09', 3),
     ('or-rag-sweep', 'RAG10', 4), ('or-rag-sweep', 'RAG11', 5),
-    ('or-p1-triage', 'RAG08', 1)
+    ('or-p1-triage', 'RAG08', 1),
+    ('e1-qwen3-rbase', 'R-base', 1)
 ) AS v (pipeline, retrieval, position)
 JOIN pipeline_configs p ON p.name = v.pipeline
 JOIN retrieval_configs r ON r.name = v.retrieval
