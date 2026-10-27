@@ -39,6 +39,7 @@ from dataclasses import dataclass, field as dc_field
 from typing import Any
 
 from ..core.settings import Settings
+from ..core.version import code_version
 from ..domain.config import Field, Model, ModelProfile, PipelineConfig, RetrievalConfig
 from ..domain.enums import (
     ClassificationSource,
@@ -204,7 +205,8 @@ class RunExecutor:
     def _run(self, run_id: uuid.UUID, pipeline: PipelineConfig, options: RunOptions, kind: RunKind,
              document_id: uuid.UUID) -> RunState:
         try:
-            self.event(run_id, f"Run started: {kind}, pipeline {pipeline.name}, {len(pipeline.retrievals)} RAG configs")
+            self.event(run_id, f"Run started: {kind}, pipeline {pipeline.name}, {len(pipeline.retrievals)} RAG configs",
+                       code_version=code_version())
             self._stage(run_id, RunStage.DECOMPOSING)
             dec = ensure_decomposition(self.db, self.storage, document_id, pipeline.decomposition, options.redecompose)
             self.event(run_id, f"Decomposition {'reused' if dec.reused else 'created'}: {dec.page_count} pages",

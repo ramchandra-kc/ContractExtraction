@@ -477,7 +477,8 @@ def experiment_show(name: str) -> int:
                       f"{num(r['value_score_sd']):>6} {pct(r['value_missed']):>7} {pct(r['absent_correct']):>9} "
                       f"{pct(r['invented']):>8} {pct(r['judge_pass_correct']):>7} {num(r['cost_usd_per_run'], '{:.4f}'):>8} "
                       f"{num(r['seconds_per_run'], '{:.0f}'):>7}"
-                      + ("  ⚠ pipeline changed during the experiment" if r["snapshots"] > 1 else ""))
+                      + ("  ⚠ pipeline changed during the experiment" if r["snapshots"] > 1 else "")
+                      + ("  ⚠ runs from more than one code version" if r["code_versions"] > 1 else ""))
         return 0
     except AppError as exc:
         print(f"FAIL: {exc}", file=sys.stderr)

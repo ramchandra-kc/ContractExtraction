@@ -176,6 +176,17 @@ class RunRepo:
         self.session.add(m.RunEvent(run_id=run_id, message=message, level=level, stage=stage, data=data or {}))
         self.session.flush()
 
+    def code_versions(self, run_ids: list[uuid.UUID]) -> dict[uuid.UUID, str]:
+        """Per run: the code version its executor recorded when it last started (runs from before it was recorded
+        are left out)."""
+        e = m.RunEvent
+        rows = self.session.execute(
+            select(e.run_id, e.data["code_version"].astext)
+            .where(e.run_id.in_(run_ids), e.data.has_key("code_version"))
+            .ext(distinct_on(e.run_id)).order_by(e.run_id, e.id.desc())
+        ).all()
+        return {run_id: version for run_id, version in rows}
+
     def events(self, run_id: uuid.UUID, after: int | None = None) -> Sequence[m.RunEvent]:
         """The run's timeline in order; ``after`` returns only events newer than that event id (for polling)."""
         q = select(m.RunEvent).where(m.RunEvent.run_id == run_id)

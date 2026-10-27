@@ -15,6 +15,7 @@ from sqlalchemy import func, update
 
 from contract_extraction import experiments
 from contract_extraction.core.errors import Conflict, InvalidInput, NotFound
+from contract_extraction.core.version import code_version
 from contract_extraction.domain.enums import Priority, RunState
 from contract_extraction.ingestion import register_file
 from contract_extraction.persistence import models as m
@@ -178,6 +179,7 @@ def test_results_split_value_and_absent_labels(db, storage, harness, tmp_path):
         c = experiments.collect(s, name)
     assert len(c.runs) == 8 and len(c.results) == 16
     assert sorted({r.repeat for r in c.runs}) == [1, 2]
+    assert {r.code_version for r in c.runs} == {code_version()}, "recorded by the executor when the run started"
 
     rows = {r["pipeline"]: r for r in experiments.summary(c)}
     assert set(rows) == set(PIPELINES)
@@ -185,7 +187,7 @@ def test_results_split_value_and_absent_labels(db, storage, harness, tmp_path):
         # per run: title right (doc 1) and wrong (doc 2), payment terms missed (doc 2), absence right (doc 1)
         assert (r["runs_succeeded"], r["documents"], r["value_labels"], r["absent_labels"]) == (4, 2, 6, 2)
         assert (r["value_exact"], r["value_missed"], r["absent_correct"], r["invented"]) == (0.3333, 0.3333, 1.0, 0.0)
-        assert r["value_score_sd"] == 0.0 and r["snapshots"] == 1
+        assert r["value_score_sd"] == 0.0 and r["snapshots"] == 1 and r["code_versions"] == 1
     assert rows["default"]["judge_pass"] == 4 and rows["default"]["judge_pass_correct"] == 0.5, "PASS on both titles"
     assert rows["default"]["llm_calls_per_run"] > 0 and rows["local-fast"]["judge_pass"] == 0, "local-fast has no judge"
 

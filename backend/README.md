@@ -159,7 +159,7 @@ retried `--retries` times per invocation.
 | File | One row per | Holds |
 |---|---|---|
 | `results.csv` | run × field | best value, label, status, exact match, partial score, verdict |
-| `runs.csv` | run | state, repeat, seconds, LLM calls, tokens, cost, contract types, snapshot fingerprint |
+| `runs.csv` | run | state, repeat, seconds, LLM calls, tokens, cost, contract types, snapshot fingerprint, code version |
 | `fields.csv` | pipeline × field | the quality columns below |
 | `summary.csv` | pipeline | quality, ± SD of the score across repeats, judge agreement, calls / tokens / cost / seconds per run |
 | `experiment.json` | | name, hypothesis and the design |
@@ -168,6 +168,8 @@ Labels with a value and labels of `""` (not in this contract) are scored apart: 
 `value_missed` (not found) over labels with a value; `absent_correct` and `invented` (a value where there is none) over
 `""` labels. `judge_pass_correct` is the share of PASS verdicts on correct values. Only succeeded runs count. When a
 pipeline was edited during an experiment, its runs have more than one snapshot fingerprint and `show` warns.
+The executor records the code it runs (`git describe --always --dirty`) in each run's "Run started" event, so `show`
+also warns when an experiment's runs come from more than one code version.
 
 ## Configuration
 

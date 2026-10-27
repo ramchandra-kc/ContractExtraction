@@ -287,6 +287,7 @@ class RunRow:
     mean_latency_ms: float | None
     contract_types: str
     snapshot: str  # short fingerprint of the config snapshot: differs when a pipeline was edited mid-experiment
+    code_version: str | None  # git commit the worker ran (``-dirty``: with uncommitted changes)
     error: str | None
 
 
@@ -318,6 +319,7 @@ def collect(session, name: str) -> Collected:
     for b in results.best_values_for_runs([r.id for r in runs]):
         best[b["run_id"]].append(b)
     calls = results.call_totals([r.id for r in runs])
+    versions = RunRepo(session).code_versions([r.id for r in runs])
     for run in runs:
         pipeline, doc = run.config_snapshot.get("name", "?"), codes.get(run.document_id, str(run.document_id))
         for b in best[run.id]:
@@ -335,7 +337,7 @@ def collect(session, name: str) -> Collected:
             float(c["cost_usd"]) if c and c["cost_usd"] is not None else None,
             round(float(c["mean_latency_ms"]), 1) if c and c["mean_latency_ms"] is not None else None,
             ",".join(cl.contract_type.key for cl in run.classifications if cl.selected),
-            _fingerprint(run.config_snapshot), run.error))
+            _fingerprint(run.config_snapshot), versions.get(run.id), run.error))
     return out
 
 
@@ -399,6 +401,7 @@ def summary(c: Collected) -> list[dict[str, Any]]:
             "cost_usd_per_run": _mean([r.cost_usd for r in ok]),
             "seconds_per_run": _mean([r.seconds for r in ok]),
             "snapshots": len({r.snapshot for r in ok}),
+            "code_versions": len({r.code_version for r in ok}),
         })
     return out
 
