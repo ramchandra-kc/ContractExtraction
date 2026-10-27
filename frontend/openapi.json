@@ -1198,6 +1198,25 @@
               "default": 0,
               "title": "Offset"
             }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "maxLength": 200
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Only documents whose code, title or filename contains this",
+              "title": "Q"
+            },
+            "description": "Only documents whose code, title or filename contains this"
           }
         ],
         "responses": {

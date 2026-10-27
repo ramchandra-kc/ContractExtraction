@@ -45,3 +45,14 @@ def test_lookup_and_paging(session, storage):
     assert total >= 3 and len(rows) == 2
     with pytest.raises(NotFound):
         repo.get(uuid.uuid4())
+
+
+def test_search(session, storage):
+    lease, _ = _register(session, storage, f"lease {uuid.uuid4()}".encode(), "Zqx_Office_Lease.pdf")
+    _register(session, storage, f"nda {uuid.uuid4()}".encode(), "zqx-mutual-nda.pdf")
+    repo = DocumentRepo(session)
+    assert [d.id for d in repo.list(q="zqx_office")[0]] == [lease.id]
+    assert [d.id for d in repo.list(q=lease.code.lower())[0]] == [lease.id]
+    assert repo.list(q=" ZQX ")[1] == 2
+    assert repo.list(q="zqx%lease")[1] == 0 and repo.list(q="zqx_mutual")[1] == 0
+    assert repo.list(q="  ")[1] >= 2

@@ -3242,6 +3242,8 @@ export interface operations {
             query?: {
                 limit?: number;
                 offset?: number;
+                /** @description Only documents whose code, title or filename contains this */
+                q?: string | null;
             };
             header?: never;
             path?: never;

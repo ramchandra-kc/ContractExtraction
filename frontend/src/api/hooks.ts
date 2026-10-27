@@ -19,7 +19,7 @@ export const keys = {
   pipelines: ['pipelines'] as const,
   catalog: ['catalog'] as const,
   formats: ['formats'] as const,
-  documents: (limit: number, offset: number) => ['documents', { limit, offset }] as const,
+  documents: (limit: number, offset: number, q: string) => ['documents', { limit, offset, q }] as const,
   documentsAll: ['documents'] as const,
   document: (id: string) => ['document', id] as const,
   pages: (id: string, decompositionId?: string) => ['pages', id, decompositionId ?? 'latest'] as const,
@@ -72,10 +72,11 @@ export function useFormats() {
 
 // ---- documents -------------------------------------------------------------------------------
 
-export function useDocuments(limit: number, offset: number) {
+export function useDocuments(limit: number, offset: number, q = '') {
   return useQuery({
-    queryKey: keys.documents(limit, offset),
-    queryFn: async () => (await unwrap(api.GET('/api/v1/documents', { params: { query: { limit, offset } } }))).data,
+    queryKey: keys.documents(limit, offset, q),
+    queryFn: async () =>
+      (await unwrap(api.GET('/api/v1/documents', { params: { query: { limit, offset, ...(q && { q }) } } }))).data,
     placeholderData: keepPreviousData,
     refetchInterval: config.pollMs,
   })

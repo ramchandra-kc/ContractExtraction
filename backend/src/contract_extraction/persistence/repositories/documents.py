@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from collections.abc import Sequence
 
-from sqlalchemy import func, select
+from sqlalchemy import func, or_, select
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
@@ -86,10 +86,19 @@ class DocumentRepo:
         return self.session.scalars(
             select(m.Document).where(m.Document.tags.contains([tag])).order_by(m.Document.code)).all()
 
-    def list(self, limit: int = 25, offset: int = 0) -> tuple[Sequence[m.Document], int]:
-        """Newest first, with the total count for paging."""
+    def list(self, limit: int = 25, offset: int = 0, q: str | None = None) -> tuple[Sequence[m.Document], int]:
+        """Newest first, with the total count for paging.
+
+        ``q`` keeps documents whose code, title or original filename contains it (case-insensitive).
+        """
+        where = []
+        if q and q.strip():
+            pattern = "%" + q.strip().replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_") + "%"
+            where.append(or_(*(col.ilike(pattern, escape="\\") for col in
+                               (m.Document.code, m.Document.title, m.Document.original_filename))))
         rows = self.session.scalars(
-            select(m.Document).order_by(m.Document.created_at.desc(), m.Document.code.desc()).limit(limit).offset(offset)
+            select(m.Document).where(*where)
+            .order_by(m.Document.created_at.desc(), m.Document.code.desc()).limit(limit).offset(offset)
         ).all()
-        total = self.session.scalar(select(func.count()).select_from(m.Document)) or 0
+        total = self.session.scalar(select(func.count()).select_from(m.Document).where(*where)) or 0
         return rows, total

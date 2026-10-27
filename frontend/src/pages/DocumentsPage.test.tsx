@@ -25,6 +25,26 @@ describe('DocumentsPage', () => {
     expect(screen.getByText('pdf')).toBeInTheDocument()
   })
 
+  it('searches documents and keeps the search in the URL', async () => {
+    const queries: (string | null)[] = []
+    documentsApi(() => HttpResponse.json(document(), { status: 201 }))
+    server.use(
+      http.get('*/api/v1/documents', ({ request }) => {
+        const q = new URL(request.url).searchParams.get('q')
+        queries.push(q)
+        return HttpResponse.json({ items: q === 'nomatch' ? [] : [document()], total: q === 'nomatch' ? 0 : 1, limit: 25, offset: 0 })
+      }),
+    )
+    const { router } = renderApp('/?offset=25')
+    await screen.findByText('DOC001')
+    await userEvent.type(screen.getByLabelText('Search documents'), 'nomatch')
+
+    expect(await screen.findByText('No documents match “nomatch”.')).toBeInTheDocument()
+    expect(router.state.location.search).toBe('?q=nomatch')
+    expect(queries.at(-1)).toBe('nomatch')
+    expect(queries.filter((q) => q !== null && q !== 'nomatch')).toEqual([])
+  })
+
   it('accepts the formats the API supports', async () => {
     documentsApi(() => HttpResponse.json(document(), { status: 201 }))
     renderApp('/')

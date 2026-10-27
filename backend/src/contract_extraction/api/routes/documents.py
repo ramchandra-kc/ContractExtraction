@@ -64,9 +64,11 @@ def upload_document(
 
 @router.get("", response_model=Page[DocumentOut])
 def list_documents(session: SessionDep,
-                   limit: int = Query(25, ge=1, le=200), offset: int = Query(0, ge=0)):
+                   limit: int = Query(25, ge=1, le=200), offset: int = Query(0, ge=0),
+                   q: str | None = Query(None, max_length=200,
+                                         description="Only documents whose code, title or filename contains this")):
     """Newest first, each with its latest run."""
-    rows, total = DocumentRepo(session).list(limit, offset)
+    rows, total = DocumentRepo(session).list(limit, offset, q)
     latest = RunRepo(session).latest_for_documents([d.id for d in rows])
     return Page[DocumentOut](items=[document_out(d, latest.get(d.id)) for d in rows], total=total, limit=limit, offset=offset)
 
