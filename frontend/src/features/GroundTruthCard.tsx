@@ -13,6 +13,7 @@ import { formatDateTime } from '@/lib/format'
 import { editorKind, toDraft } from '@/lib/groundTruth'
 
 const isLabelled = (value: unknown) => value !== null && value !== undefined
+const PRIORITIES = ['P1', 'P2', 'P3'] as const
 
 /**
  * Expected values for a document: its contract type(s), and one row per field of the default pipeline's
@@ -26,6 +27,7 @@ export function GroundTruthCard({ documentId }: { documentId: string }) {
   const setTypes = useSetContractTypes(documentId)
   const [editing, setEditing] = useState<string | null>(null)
   const [showAll, setShowAll] = useState(false)
+  const [shown, setShown] = useState<string[]>([...PRIORITIES])
 
   const edit = (fieldId: string | null) => {
     setLabel.reset()
@@ -36,10 +38,12 @@ export function GroundTruthCard({ documentId }: { documentId: string }) {
   const expected = data?.expected_contract_types ?? []
   const typeFields = new Set((data?.contract_types ?? []).filter((t) => expected.includes(t.key)).flatMap((t) => t.field_keys))
   const filtered = expected.length > 0 && !showAll
-  const items = data?.items.filter((i) => !filtered || typeFields.has(i.field_key) || isLabelled(i.expected_value)) ?? []
+  const typed = data?.items.filter((i) => !filtered || typeFields.has(i.field_key) || isLabelled(i.expected_value)) ?? []
+  const items = typed.filter((i) => shown.includes(i.priority))
   const labelled = data?.items.filter((i) => isLabelled(i.expected_value)).length ?? 0
   const toggleType = (key: string) =>
     setTypes.mutate(expected.includes(key) ? expected.filter((k) => k !== key) : [...expected, key])
+  const togglePriority = (p: string) => setShown(shown.includes(p) ? shown.filter((s) => s !== p) : [...shown, p])
 
   return (
     <Card>
@@ -91,6 +95,23 @@ export function GroundTruthCard({ documentId }: { documentId: string }) {
           </section>
         )}
         {data && (
+          <section aria-label="Field priorities" className="flex flex-wrap items-center gap-1">
+            <p className="mr-2 text-sm font-medium">Priority</p>
+            {PRIORITIES.map((p) => (
+              <Button
+                key={p}
+                size="sm"
+                variant={shown.includes(p) ? 'default' : 'outline'}
+                aria-pressed={shown.includes(p)}
+                title={`${shown.includes(p) ? 'Hide' : 'Show'} ${p} fields`}
+                onClick={() => togglePriority(p)}
+              >
+                {p} ({typed.filter((i) => i.priority === p).length})
+              </Button>
+            ))}
+          </section>
+        )}
+        {data && (
           <Table>
             <TableHeader>
               <TableRow>
@@ -107,11 +128,9 @@ export function GroundTruthCard({ documentId }: { documentId: string }) {
                   <TableRow className="align-top">
                     <TableCell className="font-medium whitespace-normal">
                       {item.field_label}
-                      {item.priority === 'P1' && (
-                        <Badge variant="secondary" className="ml-2">
-                          P1
-                        </Badge>
-                      )}
+                      <Badge variant={item.priority === 'P1' ? 'secondary' : 'outline'} className="ml-2">
+                        {item.priority}
+                      </Badge>
                       <span className="ml-2 font-mono text-xs font-normal text-muted-foreground">
                         {item.type_spec ?? item.value_type}
                       </span>

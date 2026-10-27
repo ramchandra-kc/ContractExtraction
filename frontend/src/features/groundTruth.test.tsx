@@ -134,6 +134,30 @@ describe('GroundTruthCard', () => {
     expect(screen.getByRole('button', { name: 'Edit NDA direction' })).toBeInTheDocument()
   })
 
+  it('shows and hides fields by priority', async () => {
+    server.use(
+      http.get('*/api/v1/documents/:id/ground-truth', () =>
+        HttpResponse.json({
+          ...groundTruth,
+          items: groundTruth.items.map((i) => (i.field_id === FIELD_PAYMENT ? { ...i, priority: 'P2' } : i)),
+        }),
+      ),
+    )
+    render()
+    const priorities = await screen.findByRole('region', { name: 'Field priorities' })
+    expect(within(priorities).getByRole('button', { name: 'P3 (0)' })).toHaveAttribute('aria-pressed', 'true')
+
+    await userEvent.click(within(priorities).getByRole('button', { name: 'P2 (1)' }))
+    expect(within(priorities).getByRole('button', { name: 'P2 (1)' })).toHaveAttribute('aria-pressed', 'false')
+    expect(screen.queryByRole('button', { name: 'Edit Payment terms' })).toBeNull()
+    expect(screen.getByRole('button', { name: 'Edit Customer name' })).toBeInTheDocument()
+
+    await userEvent.click(within(priorities).getByRole('button', { name: 'P1 (2)' }))
+    expect(screen.queryByRole('button', { name: 'Edit Customer name' })).toBeNull()
+    await userEvent.click(within(priorities).getByRole('button', { name: 'P2 (1)' }))
+    expect(screen.getByRole('button', { name: 'Edit Payment terms' })).toBeInTheDocument()
+  })
+
   it('saves a structured label as JSON shaped by the field schema', async () => {
     const { puts } = labelApi()
     const schema = { type: 'object', properties: { due_period: { type: ['string', 'null'] }, currency: {} } }
