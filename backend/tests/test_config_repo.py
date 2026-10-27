@@ -41,7 +41,10 @@ def test_preset_pipelines_resolve(session):
     repo.update_provider("openrouter", enabled=True)
 
     pipelines = {row.name: repo.resolve_pipeline(row.name) for row in repo.pipelines()}
-    assert len(pipelines) == 10
+    assert len(pipelines) == 11
+    rbase = pipelines["e1-qwen3-rbase"]
+    assert [r.name for r in rbase.retrievals] == ["R-base"] and not rbase.judge_enabled
+    assert rbase.retrievals[0].score_threshold == 0 and rbase.retrievals[0].top_k == 5
     assert [r.name for r in pipelines["or-rag-sweep"].retrievals] == ["RAG08", "RAG07", "RAG09", "RAG10", "RAG11"]
     assert [r.name for r in pipelines["or-llama31-8b"].retrievals] == [r.name for r in pipelines["default"].retrievals]
     triage = pipelines["or-p1-triage"]
@@ -50,6 +53,15 @@ def test_preset_pipelines_resolve(session):
     budget = pipelines["or-budget"].extraction_profile
     assert budget.extra == {"params": {"reasoning": {"enabled": False}}} and budget.top_k is None
     assert pipelines["local-fast"].extraction_profile.model.provider.key == "ollama-local"
+
+
+def test_profile_by_name(session):
+    repo = ConfigRepo(session)
+    assert repo.resolve_profile("extraction-group-local", "grading").model.name == "llama3.1:8b"
+    with pytest.raises(InvalidConfig, match="openrouter"):
+        repo.resolve_profile("judge-or-gpt6-luna", "grading")
+    with pytest.raises(NotFound, match="nope"):
+        repo.resolve_profile("nope", "grading")
 
 
 def test_snapshot_is_json_and_secret_free(session):
@@ -105,4 +117,4 @@ def test_listings(session):
     repo = ConfigRepo(session)
     assert {p.key for p in repo.providers()} == {"ollama-local", "openrouter"}
     assert [mo.name for mo in repo.models(ModelKind.EMBEDDING)] == ["nomic-embed-text:latest"]
-    assert len(repo.retrieval_configs()) == 11
+    assert len(repo.retrieval_configs()) == 12

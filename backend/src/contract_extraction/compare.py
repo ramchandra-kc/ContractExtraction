@@ -30,6 +30,7 @@ METRICS = {
     "exact": "exact_match",
     "score": "score",
     "lenient": "lenient",
+    "semantic": "semantic",  # after `experiment semantic`
     "evidence": "evidence_any",
     "invented": "status",  # on "" labels: a value where there is none
 }

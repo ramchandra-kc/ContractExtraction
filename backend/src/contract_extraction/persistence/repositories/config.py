@@ -43,6 +43,13 @@ class ConfigRepo:
             raise NotFound(f"Unknown RAG config(s): {', '.join(unknown)}")
         return [_retrieval(rows[n]) for n in names]
 
+    def resolve_profile(self, name: str, purpose: str) -> d.ModelProfile:
+        """A chat model profile by name, for a use outside a pipeline (``purpose`` names it in errors)."""
+        row = self.session.scalars(select(m.ModelProfile).where(m.ModelProfile.name == name)).one_or_none()
+        if row is None:
+            raise NotFound(f"Unknown model profile: {name}")
+        return _profile(row, ModelKind.CHAT, purpose)
+
     def field_sets(self) -> Sequence[m.FieldSet]:
         return self.session.scalars(select(m.FieldSet).order_by(m.FieldSet.name, m.FieldSet.version)).all()
 

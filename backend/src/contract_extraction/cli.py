@@ -21,6 +21,10 @@
                                               documents × pipelines × repeats under fixed conditions (experiments.py)
     contract-extraction experiment retrieval-eval NAME --tag TAG [--retrievals A,B] [--top-k 3,5,10] [--threshold 0,0.5] [--per-query-top 3,10]
                                               evidence recall of RAG configs, no LLM calls (retrieval_eval.py)
+    contract-extraction experiment compare NAME --baseline ARM [--by pipeline] [--metric score] [--file results.csv]
+                                              paired arm comparison with cluster bootstrap CIs (compare.py)
+    contract-extraction experiment semantic NAME [--dry-run] [--sample 100] | --check FILE
+                                              LLM-graded semantic score added to the export's CSVs (semantic.py)
 """
 
 from __future__ import annotations
@@ -559,6 +563,66 @@ def experiment_retrieval_eval(args: argparse.Namespace) -> int:
         db.dispose()
 
 
+def experiment_semantic(args: argparse.Namespace) -> int:
+    from .compare import read_rows
+    from .experiments import write_csv
+    from .persistence.repositories.ground_truth import GroundTruthRepo
+    from .providers.factory import chat_client
+    from .semantic import Cache, FieldInfo, add_scores, agreement, grade, requests_for, sample
+
+    folder = args.name if args.name.exists() else BACKEND_ROOT.parent / "experiments" / str(args.name)
+    if args.check:
+        a = agreement(read_rows(args.check))
+        if not a["n"]:
+            print(f"FAIL: no rows with human_grade (correct / partial / wrong) in {args.check}", file=sys.stderr)
+            return 1
+        print(f"{a['n']} hand-graded parts: agreement {a['agreement']:.1%}, Cohen's kappa {a['kappa']:.3f}, "
+              f"correct-vs-not agreement {a['correct_agreement']:.1%}")
+        print("grader->human: " + ", ".join(f"{k} {v}" for k, v in a["confusion"].items()))
+        return 0
+    files = [folder / f for f in ("results.csv", "outcomes.csv") if (folder / f).exists()]
+    if not files:
+        print(f"FAIL: no results.csv in {folder} (run experiment export first)", file=sys.stderr)
+        return 1
+    settings = load_settings()
+    db = Database(settings.database)
+    try:
+        with db.session() as s:
+            profile = ConfigRepo(s).resolve_profile(args.profile, "semantic grading")
+            fields = {f.key: FieldInfo(f.label, f.description) for f in GroundTruthRepo(s).field_set().fields}
+    except AppError as exc:
+        print(f"FAIL: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        db.dispose()
+    cache = Cache(args.cache or BACKEND_ROOT.parent / "experiments" / ".semantic-cache.jsonl", profile.model.name)
+    rows = [r for f in files for r in read_rows(f)]
+    requests = requests_for(rows)
+    todo = {r.key for r in requests if cache.grades(r.key) is None}
+    print(f"{len(rows)} rows, {len({r.key for r in requests})} distinct cells need the grader, {len(todo)} not cached "
+          f"(grader {profile.name}: {profile.model.name})")
+    if args.dry_run:
+        price = lambda tokens, per_m: tokens * float(per_m or 0) / 1e6  # noqa: E731
+        print(f"estimate at ~900 prompt + ~400 completion tokens a cell: "
+              f"${price(900 * len(todo), profile.model.input_cost_per_mtok) + price(400 * len(todo), profile.model.output_cost_per_mtok):.2f}")
+        return 0
+    if todo:
+        client = chat_client(profile, settings)
+        usage = grade(requests, fields, lambda system, user: client.complete(system, user, profile), cache,
+                      args.workers, report=lambda i, n: print(f"\r{i}/{n} graded", end="", flush=True) if i % 25 == 0 or i == n else None)
+        cost = (usage.prompt_tokens * float(profile.model.input_cost_per_mtok or 0)
+                + usage.completion_tokens * float(profile.model.output_cost_per_mtok or 0)) / 1e6
+        print(f"\n{usage.calls} calls, {usage.prompt_tokens} + {usage.completion_tokens} tokens, ≈ ${cost:.2f}; "
+              f"{usage.failed} cells left ungraded (run again to retry)")
+    for f in files:
+        scored, missing = add_scores(f, cache)
+        print(f"wrote {f}: semantic score on {scored} rows" + (f", {missing} still missing a grade" if missing else ""))
+    if args.sample:
+        out = write_csv(folder / "semantic_sample.csv", sample(read_rows(files[0]), cache, args.sample))
+        print(f"wrote {out}: fill human_grade, then `experiment semantic {args.name} --check {out}`")
+    return 0
+
+
 def experiment_compare(args: argparse.Namespace) -> int:
     from .compare import compare_arms, read_rows
 
@@ -775,13 +839,21 @@ def main(argv: list[str] | None = None) -> int:
     p_ecmp.add_argument("--by", default="pipeline", help="arm column(s), comma-separated: pipeline, retrieval_config")
     p_ecmp.add_argument("--baseline", required=True, help="the arm the others are compared to")
     p_ecmp.add_argument("--file", help="CSV in the folder (default: outcomes.csv, results.csv or retrieval_hits.csv)")
-    p_ecmp.add_argument("--metric", choices=["exact", "score", "lenient", "evidence", "invented"],
+    p_ecmp.add_argument("--metric", choices=["exact", "score", "lenient", "semantic", "evidence", "invented"],
                         help="default: score, or evidence for retrieval_hits.csv")
     p_ecmp.add_argument("--labels", default="value", choices=["value", "absent", "all"],
                         help="labels with a value (default), labels of \"\" (use with --metric invented), or all")
     p_ecmp.add_argument("--where", action="append", metavar="COLUMN=VALUE",
                         help="only rows with this value, e.g. label_confidence=high (repeatable)")
     p_ecmp.add_argument("--resamples", type=int, default=10_000)
+    p_esem = exp_sub.add_parser("semantic", help="add an LLM-graded semantic score to an export's CSVs (cached)")
+    p_esem.add_argument("name", type=Path, help="export folder, or its name under experiments/")
+    p_esem.add_argument("--profile", default="judge-or-gpt6-luna", help="chat model profile that grades")
+    p_esem.add_argument("--workers", type=int, default=8, help="grading calls at a time")
+    p_esem.add_argument("--dry-run", action="store_true", help="only count the cells to grade and estimate the cost")
+    p_esem.add_argument("--sample", type=int, default=0, help="also write N graded parts to semantic_sample.csv")
+    p_esem.add_argument("--check", type=Path, help="a filled-in semantic_sample.csv: grader vs hand agreement")
+    p_esem.add_argument("--cache", type=Path, help="grade cache (default: experiments/.semantic-cache.jsonl)")
 
     args = parser.parse_args(argv)
     if args.command == "documents":
@@ -801,6 +873,8 @@ def main(argv: list[str] | None = None) -> int:
             return experiment_retrieval_eval(args)
         if args.action == "compare":
             return experiment_compare(args)
+        if args.action == "semantic":
+            return experiment_semantic(args)
         return experiment_export(args.name, args.output)
     if args.command == "labels":
         return labels_import(args.directory, args.root, args.overwrite, args.dry_run, args.tag)

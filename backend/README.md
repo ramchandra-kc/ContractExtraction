@@ -196,6 +196,27 @@ compares every arm with the baseline cell by cell (document × field, repeats av
 one contract are correlated, so the 95% interval is a cluster bootstrap over documents and `p` a document-level
 sign-flip permutation test, Holm-corrected over the arms (`p_holm`); for 0/1 metrics McNemar's test over cells is shown
 too. Report an effect only when the interval excludes 0 and it holds with `--where label_confidence=high`.
+`outcomes.csv` holds every RAG config's answer, so a multi-config pipeline's cell there is the average config; compare
+whole pipelines (judge-selected best values) with `--file results.csv`.
+
+### Semantic score
+
+```bash
+uv run contract-extraction experiment semantic e1-baseline --dry-run       # cells to grade and the estimated cost
+uv run contract-extraction experiment semantic e1-baseline --sample 120    # grade, add `semantic`, write a hand-check sample
+uv run contract-extraction experiment semantic e1-baseline --check ../experiments/e1-baseline/semantic_sample.csv
+uv run contract-extraction experiment compare e1-baseline --file results.csv --baseline or-llama31-8b --metric semantic
+```
+
+The draft labels paraphrase ("material breach not remedied within 30 days") where extractions often quote the clause,
+so exact, partial and even lenient scores count right answers as wrong. `semantic` (`semantic.py`) adds a `semantic`
+column to `results.csv` and `outcomes.csv`: each labelled key of an object label (or the whole value) is settled
+without an LLM when it can be (empty answer, lenient 1, booleans and numbers), and otherwise graded correct / partial
+/ wrong (1 / 0.5 / 0) by a grader model (`--profile`, default `judge-or-gpt6-luna`, another family than the label
+drafts). Grades are cached in `experiments/.semantic-cache.jsonl` by grader, prompt version, field, label and
+answer, so re-running after `experiment export` (which rewrites the CSVs without the column) is free. Validate the
+grader before using its numbers: fill `human_grade` in `semantic_sample.csv` and `--check` it (agreement, Cohen's
+kappa, confusion).
 
 **Evidence recall** (`evidence.py`): a draft label's evidence quote (kept in its notes) is split at "…" into
 passages, and a passage counts as found in a chunk when 80% of its words appear there in order (Markdown, case and
