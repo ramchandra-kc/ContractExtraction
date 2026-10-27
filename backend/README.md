@@ -190,7 +190,9 @@ the index, so it was lost in decomposition or chunking, not retrieval). The summ
 
 Labels with a value and labels of `""` (not in this contract) are scored apart: `value_exact`, `value_score` and
 `value_missed` (not found) over labels with a value; `absent_correct` and `invented` (a value where there is none) over
-`""` labels. `judge_pass_correct` is the share of PASS verdicts on correct values. Only succeeded runs count. When a
+`""` labels. `judge_pass_correct` is the share of PASS verdicts on correct values. `value_lenient` (and the `lenient` column) scores like `value_score`
+but compares numbers by value and text by token F1, ignoring case, punctuation and legal forms ("Acme Pty Ltd." = "ACME"),
+so formatting differences are told apart from wrong answers. Only succeeded runs count. When a
 pipeline was edited during an experiment, its runs have more than one snapshot fingerprint and `show` warns.
 The executor records the code it runs (`git describe --always --dirty`) in each run's "Run started" event, so `show`
 also warns when an experiment's runs come from more than one code version.

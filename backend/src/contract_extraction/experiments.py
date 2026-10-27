@@ -41,7 +41,7 @@ from sqlalchemy import select
 from .core.errors import Conflict, InvalidInput
 from .domain.config import PipelineConfig
 from .domain.enums import Priority, RunKind, RunState
-from .evaluation import match_score
+from .evaluation import lenient_score, match_score
 from .evidence import EvidenceMatch, Matcher, quote_from_notes
 from .persistence import models as m
 from .persistence.db import Database
@@ -275,6 +275,8 @@ class ResultRow:
     evidence_all: bool | None = None
     evidence_rank: int | None = None
     evidence_indexed: bool | None = None
+    # evaluation.lenient_score: numbers by value, text by token F1 ignoring legal forms and punctuation.
+    lenient: float | None = None
 
 
 @dataclass
@@ -344,7 +346,8 @@ def collect(session, name: str, outcomes: bool = False) -> Collected:
             run.id, codes.get(run.document_id, str(run.document_id)), run.config_snapshot.get("name", "?"),
             repeat.get(run.id), run.state, b["field_key"], retrieval_config, label, b["status"], b["value"], expected,
             b["exact_match"], match_score(b["status"], b["value"], expected, b["exact_match"]), b["verdict"],
-            *((ev.any, ev.all, ev.rank, ev.indexed) if ev else ()))
+            *((ev.any, ev.all, ev.rank, ev.indexed) if ev else (None,) * 4),
+            lenient_score(b["status"], b["value"], expected, b["exact_match"]))
 
     if outcomes:
         out.outcomes = [row(by_run[o["run_id"]], o, o["retrieval_config"]) for o in all_outcomes]
@@ -410,6 +413,7 @@ def _quality(rows: list[ResultRow]) -> dict[str, Any]:
         "value_labels": len(value),
         "value_exact": _rate([r.exact_match is True for r in value]),
         "value_score": _mean([r.score for r in value]),
+        "value_lenient": _mean([r.lenient for r in value]),
         "value_missed": _rate([r.status == "not_found" for r in value]),
         "absent_labels": len(absent),
         "absent_correct": _rate([r.exact_match is True for r in absent]),
