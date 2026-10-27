@@ -162,7 +162,16 @@ retried `--retries` times per invocation.
 | `runs.csv` | run | state, repeat, seconds, LLM calls, tokens, cost, contract types, snapshot fingerprint, code version |
 | `fields.csv` | pipeline × field | the quality columns below |
 | `summary.csv` | pipeline | quality, ± SD of the score across repeats, judge agreement, calls / tokens / cost / seconds per run |
+| `outcomes.csv` | run × RAG config × field | every outcome, not just the best value: the columns of `results.csv` |
+| `retrievals.csv` | pipeline × RAG config | the quality columns and ± SD per RAG config: each config of a pipeline answered the same fields, so they compare pairwise |
 | `experiment.json` | | name, hypothesis and the design |
+
+**Evidence recall** (`evidence.py`): a draft label's evidence quote (kept in its notes) is split at "…" into
+passages, and a passage counts as found in a chunk when 80% of its words appear there in order (Markdown, case and
+small OCR noise ignored). `results.csv` and `outcomes.csv` get `evidence_any` (the model saw part of the evidence),
+`evidence_all`, `evidence_rank` (first chunk holding it) and `evidence_indexed` (false: the evidence is in no chunk of
+the index, so it was lost in decomposition or chunking, not retrieval). The summaries add `evidence_recall`,
+`evidence_recall_all`, `evidence_mrr`, `evidence_not_indexed` and the mean score with and without the evidence.
 
 Labels with a value and labels of `""` (not in this contract) are scored apart: `value_exact`, `value_score` and
 `value_missed` (not found) over labels with a value; `absent_correct` and `invented` (a value where there is none) over

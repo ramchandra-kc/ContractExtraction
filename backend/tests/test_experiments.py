@@ -18,6 +18,7 @@ from contract_extraction.core.errors import Conflict, InvalidInput, NotFound
 from contract_extraction.core.version import code_version
 from contract_extraction.domain.enums import Priority, RunState
 from contract_extraction.ingestion import register_file
+from contract_extraction.labels import notes_for
 from contract_extraction.persistence import models as m
 from contract_extraction.persistence.repositories import ConfigRepo, DocumentRepo, RunRepo
 from contract_extraction.persistence.repositories.experiments import ExperimentRepo
@@ -203,6 +204,48 @@ def test_results_split_value_and_absent_labels(db, storage, harness, tmp_path):
     assert json.loads(next(r for r in results if r["field"] == "payment_terms" and r["label"] == "value")["expected"]) \
         == {"due_period": "P30D"}
     assert json.loads((tmp_path / "out" / "experiment.json").read_text())["design"]["repeats"] == 2
+
+
+def test_outcomes_per_rag_config_with_evidence_recall(db, storage, harness, tmp_path):
+    tag, codes = _docs(db, storage, harness, tmp_path, LABELS)
+    quotes = {(0, "title"): "made between Acme Pty Ltd (the Customer) and Contoso Limited",
+              (1, "payment_terms"): "a clause about liquidated damages for late delivery of the goods"}  # in no chunk
+    with db.session() as s:
+        repo = GroundTruthRepo(s)
+        fields = {f.key: f for f in repo.field_set().fields}
+        for (i, key), quote in quotes.items():
+            doc = DocumentRepo(s).get_by_code(codes[i])
+            repo.set(doc.id, fields[key].id, LABELS[i][key], notes_for({"confidence": "high", "evidence": quote}, "test"))
+    name = f"exp-{uuid.uuid4().hex[:8]}"
+    with db.session() as s:
+        experiments.create(s, name, pipelines=["default"], tag=tag, retrievals=["RAG02", "RAG07"])
+    experiments.ExperimentRunner(db, name).run(poll=0, report=lambda p: None,
+                                               sleep=lambda _: _process(db, storage, harness))
+    with db.session() as s:
+        plain, c = experiments.collect(s, name), experiments.collect(s, name, outcomes=True)
+    assert plain.outcomes == [] and all(r.evidence_any is None for r in plain.results)
+    assert len(c.outcomes) == 2 * len(c.results), "two RAG configs per field"
+    assert {r.retrieval_config for r in c.outcomes} == {"RAG02", "RAG07"}
+    best = {(r.run_id, r.field): r for r in c.results}
+    for r in c.outcomes:  # outcomes compute exact match like v_run_evaluation does for the best values
+        b = best[(r.run_id, r.field)]
+        if (r.status, r.value) == (b.status, b.value):
+            assert r.exact_match == b.exact_match, (r.field, r.value, r.expected)
+    assert any(r.exact_match is False for r in c.outcomes if r.field == "title"), "the wrong title is not a match"
+
+    found = [r for r in c.outcomes if r.field == "title" and r.document == codes[0]]
+    assert all(r.evidence_any and r.evidence_all and r.evidence_rank and r.evidence_indexed for r in found)
+    lost = [r for r in c.outcomes if r.field == "payment_terms" and r.document == codes[1]]
+    assert all(r.evidence_any is False and r.evidence_indexed is False for r in lost)
+    assert all(r.evidence_any is None for r in c.outcomes if (r.field, r.document) == ("title", codes[1])), "no quote"
+
+    rows = {r["retrieval_config"]: r for r in experiments.per_retrieval(c)}
+    assert set(rows) == {"RAG02", "RAG07"}
+    for r in rows.values():
+        assert (r["evidence_labels"], r["evidence_recall"], r["evidence_not_indexed"]) == (2, 0.5, 0.5)
+        assert r["value_labels"] == 3 and r["value_exact"] is not None
+    files = experiments.export(c, tmp_path / "out")
+    assert [f.name for f in files][-3:] == ["outcomes.csv", "retrievals.csv", "experiment.json"]
 
 
 def test_run_state_is_kept_for_unfinished_runs(db, storage, harness, tmp_path):

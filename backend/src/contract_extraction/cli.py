@@ -494,7 +494,7 @@ def experiment_export(name: str, out: Path | None) -> int:
     db = Database(settings.database)
     try:
         with db.session() as s:
-            files = export(collect(s, name), out or BACKEND_ROOT.parent / "experiments" / name)
+            files = export(collect(s, name, outcomes=True), out or BACKEND_ROOT.parent / "experiments" / name)
         for f in files:
             print(f"wrote {f}")
         return 0

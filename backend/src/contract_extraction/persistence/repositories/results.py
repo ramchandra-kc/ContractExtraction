@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Any
 
-from sqlalchemy import and_, func, or_, select
+from sqlalchemy import and_, case, func, literal_column, or_, select
 from sqlalchemy.dialects.postgresql import distinct_on
 from sqlalchemy.engine import RowMapping
 from sqlalchemy.orm import Session, selectinload
@@ -182,6 +182,50 @@ class ResultRepo:
             .join(ev, and_(ev.c.run_id == bv.c.run_id, ev.c.field_id == bv.c.field_id))
             .where(bv.c.run_id.in_(run_ids)).order_by(bv.c.run_id, m.Field.position)
         ).mappings().all()
+
+    def outcomes_for_runs(self, run_ids: list[uuid.UUID]) -> Sequence[RowMapping]:
+        """Every outcome of several runs (run × RAG config × field), with its latest verdict, label, label notes and
+        exact match computed as in ``v_run_evaluation``; by run, field position and RAG config."""
+        fr, gt, rc = m.FieldResult, m.GroundTruth, m.RetrievalConfig
+        verdict = (select(m.Judgement.verdict).where(m.Judgement.field_result_id == fr.id)
+                   .order_by(m.Judgement.created_at.desc()).limit(1).scalar_subquery())
+        structured = func.jsonb_typeof(gt.expected_value).in_(["object", "array"])
+        text = lambda j: func.lower(func.btrim(func.coalesce(j.op("#>>")(literal_column("'{}'::text[]")), "")))  # noqa: E731
+        exact = case(
+            (gt.id.is_(None), None),
+            (fr.status == FieldResultStatus.ERROR, False),
+            (structured, func.coalesce(func.jsonb_strip_empty(fr.value) == func.jsonb_strip_empty(gt.expected_value), False)),
+            else_=text(fr.value) == text(gt.expected_value))
+        return self.session.execute(
+            select(fr.id.label("field_result_id"), fr.run_id, m.Run.document_id, m.Run.vector_index_id, fr.field_id,
+                   m.Field.key.label("field_key"), m.Field.value_type, rc.name.label("retrieval_config"), fr.status,
+                   fr.value, verdict.label("verdict"), gt.expected_value, gt.notes.label("label_notes"),
+                   exact.label("exact_match"))
+            .join(m.Run, m.Run.id == fr.run_id).join(m.Field, m.Field.id == fr.field_id).join(rc, rc.id == fr.retrieval_config_id)
+            .outerjoin(gt, and_(gt.document_id == m.Run.document_id, gt.field_id == fr.field_id))
+            .where(fr.run_id.in_(run_ids)).order_by(fr.run_id, m.Field.position, rc.name)
+        ).mappings().all()
+
+    def hits_for_results(self, field_result_ids: list[uuid.UUID]) -> dict[uuid.UUID, list[tuple[int, uuid.UUID]]]:
+        """Per field result: its evidence as (rank, chunk id), best rank first."""
+        h = m.RetrievalHit
+        out: dict[uuid.UUID, list[tuple[int, uuid.UUID]]] = {}
+        for i in range(0, len(field_result_ids), 5000):
+            rows = self.session.execute(select(h.field_result_id, h.rank, h.chunk_id)
+                                        .where(h.field_result_id.in_(field_result_ids[i:i + 5000]))
+                                        .order_by(h.field_result_id, h.rank)).all()
+            for fid, rank, chunk_id in rows:
+                out.setdefault(fid, []).append((rank, chunk_id))
+        return out
+
+    def chunk_texts(self, vector_index_ids: list[uuid.UUID]) -> dict[uuid.UUID, dict[uuid.UUID, str]]:
+        """Per vector index: every chunk's text by chunk id."""
+        c = m.Chunk
+        out: dict[uuid.UUID, dict[uuid.UUID, str]] = {}
+        for index_id, chunk_id, text in self.session.execute(
+                select(c.vector_index_id, c.id, c.text).where(c.vector_index_id.in_(vector_index_ids))):
+            out.setdefault(index_id, {})[chunk_id] = text
+        return out
 
     def call_totals(self, run_ids: list[uuid.UUID]) -> dict[uuid.UUID, RowMapping]:
         """Per run: LLM calls, prompt and completion tokens, cost (USD) and mean latency (ms)."""

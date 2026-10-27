@@ -42,6 +42,7 @@ from .core.errors import Conflict, InvalidInput
 from .domain.config import PipelineConfig
 from .domain.enums import Priority, RunKind, RunState
 from .evaluation import match_score
+from .evidence import EvidenceMatch, Matcher, quote_from_notes
 from .persistence import models as m
 from .persistence.db import Database
 from .persistence.repositories import ConfigRepo, DocumentRepo, RunRepo
@@ -269,6 +270,11 @@ class ResultRow:
     exact_match: bool | None
     score: float | None
     verdict: str | None
+    # Evidence recall against the label's evidence quote (evidence.py); None without a quote or when not computed.
+    evidence_any: bool | None = None
+    evidence_all: bool | None = None
+    evidence_rank: int | None = None
+    evidence_indexed: bool | None = None
 
 
 @dataclass
@@ -297,9 +303,13 @@ class Collected:
     design: Design
     results: list[ResultRow] = field(default_factory=list)
     runs: list[RunRow] = field(default_factory=list)
+    # Every outcome (run × RAG config × field), filled by collect(outcomes=True).
+    outcomes: list[ResultRow] = field(default_factory=list)
 
 
-def collect(session, name: str) -> Collected:
+def collect(session, name: str, outcomes: bool = False) -> Collected:
+    """The experiment's runs and best values; with ``outcomes``, also every RAG config's outcome and the evidence
+    recall of all of them (slower: reads every retrieved chunk)."""
     exp = ExperimentRepo(session).get_by_name(name)
     design = Design.model_validate(exp.design)
     out = Collected(exp, design)
@@ -320,15 +330,28 @@ def collect(session, name: str) -> Collected:
         best[b["run_id"]].append(b)
     calls = results.call_totals([r.id for r in runs])
     versions = RunRepo(session).code_versions([r.id for r in runs])
+    evidence: dict[uuid.UUID, EvidenceMatch] = {}
+    if outcomes:
+        all_outcomes = results.outcomes_for_runs([r.id for r in runs])
+        evidence = _evidence(results, all_outcomes)
+    by_run = {r.id: r for r in runs}
+
+    def row(run: m.Run, b, retrieval_config: str) -> ResultRow:
+        expected = b["expected_value"]
+        label = "unlabelled" if expected is None else "absent" if expected == "" else "value"
+        ev = evidence.get(b["field_result_id"])
+        return ResultRow(
+            run.id, codes.get(run.document_id, str(run.document_id)), run.config_snapshot.get("name", "?"),
+            repeat.get(run.id), run.state, b["field_key"], retrieval_config, label, b["status"], b["value"], expected,
+            b["exact_match"], match_score(b["status"], b["value"], expected, b["exact_match"]), b["verdict"],
+            *((ev.any, ev.all, ev.rank, ev.indexed) if ev else ()))
+
+    if outcomes:
+        out.outcomes = [row(by_run[o["run_id"]], o, o["retrieval_config"]) for o in all_outcomes]
     for run in runs:
         pipeline, doc = run.config_snapshot.get("name", "?"), codes.get(run.document_id, str(run.document_id))
         for b in best[run.id]:
-            expected = b["expected_value"]
-            label = "unlabelled" if expected is None else "absent" if expected == "" else "value"
-            out.results.append(ResultRow(
-                run.id, doc, pipeline, repeat.get(run.id), run.state, b["field_key"], b["retrieval_config"], label,
-                b["status"], b["value"], expected, b["exact_match"],
-                match_score(b["status"], b["value"], expected, b["exact_match"]), b["verdict"]))
+            out.results.append(row(run, b, b["retrieval_config"]))
         c = calls.get(run.id)
         seconds = (run.finished_at - run.started_at).total_seconds() if run.finished_at and run.started_at else None
         out.runs.append(RunRow(
@@ -338,6 +361,29 @@ def collect(session, name: str) -> Collected:
             round(float(c["mean_latency_ms"]), 1) if c and c["mean_latency_ms"] is not None else None,
             ",".join(cl.contract_type.key for cl in run.classifications if cl.selected),
             _fingerprint(run.config_snapshot), versions.get(run.id), run.error))
+    return out
+
+
+def _evidence(results: ResultRepo, outcomes) -> dict[uuid.UUID, EvidenceMatch]:
+    """Evidence recall of every outcome whose label has an evidence quote and a value."""
+    quoted = {}
+    for o in outcomes:
+        if o["expected_value"] not in (None, ""):
+            quote = quote_from_notes(o["label_notes"])
+            if quote:
+                quoted[o["field_result_id"]] = (quote, o["vector_index_id"])
+    if not quoted:
+        return {}
+    hits = results.hits_for_results(list(quoted))
+    chunks = results.chunk_texts(list({ix for _, ix in quoted.values() if ix is not None}))
+    matcher = Matcher()
+    for texts in chunks.values():
+        matcher.add_chunks(texts)
+    out = {}
+    for frid, (quote, index_id) in quoted.items():
+        ev = matcher.match(quote, hits.get(frid, []), chunks.get(index_id) if index_id in chunks else None)
+        if ev:
+            out[frid] = ev
     return out
 
 
@@ -358,6 +404,8 @@ def _quality(rows: list[ResultRow]) -> dict[str, Any]:
     """Accuracy on labels with a value, and handling of labels of "" (not in this contract)."""
     value = [r for r in rows if r.label == "value"]
     absent = [r for r in rows if r.label == "absent"]
+    quoted = [r for r in value if r.evidence_any is not None]
+    seen, unseen = [r for r in quoted if r.evidence_any], [r for r in quoted if not r.evidence_any]
     return {
         "value_labels": len(value),
         "value_exact": _rate([r.exact_match is True for r in value]),
@@ -366,6 +414,14 @@ def _quality(rows: list[ResultRow]) -> dict[str, Any]:
         "absent_labels": len(absent),
         "absent_correct": _rate([r.exact_match is True for r in absent]),
         "invented": _rate([r.status == "extracted" for r in absent]),
+        # Over value labels with an evidence quote (only when collected with outcomes).
+        "evidence_labels": len(quoted),
+        "evidence_recall": _rate([r.evidence_any for r in quoted]),
+        "evidence_recall_all": _rate([r.evidence_all for r in quoted]),
+        "evidence_mrr": _mean([1 / r.evidence_rank if r.evidence_rank else 0.0 for r in quoted]),
+        "evidence_not_indexed": _rate([r.evidence_indexed is False for r in quoted if r.evidence_indexed is not None]),
+        "score_with_evidence": _mean([r.score for r in seen]),
+        "score_without_evidence": _mean([r.score for r in unseen]),
     }
 
 
@@ -406,6 +462,28 @@ def summary(c: Collected) -> list[dict[str, Any]]:
     return out
 
 
+def per_retrieval(c: Collected) -> list[dict[str, Any]]:
+    """One row per pipeline and RAG config, over every outcome of succeeded runs (not just the best values): each
+    RAG config of a pipeline answered the same fields of the same documents, so they compare pairwise."""
+    groups: dict[tuple[str, str], list[ResultRow]] = defaultdict(list)
+    for r in c.outcomes:
+        if r.run_state == RunState.SUCCEEDED and r.label != "unlabelled":
+            groups[(r.pipeline, r.retrieval_config)].append(r)
+    order = {p: i for i, p in enumerate(c.design.pipelines)}
+    out = []
+    for (p, rc), rows in sorted(groups.items(), key=lambda kv: (order.get(kv[0][0], 99), kv[0][1])):
+        by_repeat = defaultdict(list)
+        for r in rows:
+            if r.label == "value":
+                by_repeat[r.repeat].append(r.score)
+        repeat_means = [statistics.fmean(v) for v in by_repeat.values() if v]
+        out.append({"pipeline": p, "retrieval_config": rc, **_quality(rows),
+                    "value_score_sd": round(statistics.stdev(repeat_means), 4) if len(repeat_means) > 1 else None,
+                    "errors": _rate([r.status == "error" for r in rows]),
+                    "judge_pass_correct": _rate([r.exact_match is True for r in rows if r.verdict == "PASS"])})
+    return out
+
+
 def per_field(c: Collected) -> list[dict[str, Any]]:
     """One row per pipeline and field, over succeeded runs."""
     groups: dict[tuple[str, str], list[ResultRow]] = defaultdict(list)
@@ -418,7 +496,8 @@ def per_field(c: Collected) -> list[dict[str, Any]]:
 
 
 def export(c: Collected, out_dir: Path) -> list[Path]:
-    """results.csv, runs.csv, fields.csv, summary.csv and experiment.json in ``out_dir``."""
+    """results.csv, runs.csv, fields.csv, summary.csv, experiment.json and, when ``c`` was collected with
+    outcomes, outcomes.csv and retrievals.csv in ``out_dir``."""
     out_dir.mkdir(parents=True, exist_ok=True)
     written = [
         _csv(out_dir / "results.csv", [asdict(r) for r in c.results], json_cols=("value", "expected")),
@@ -426,7 +505,10 @@ def export(c: Collected, out_dir: Path) -> list[Path]:
         _csv(out_dir / "fields.csv", per_field(c)),
         _csv(out_dir / "summary.csv", summary(c)),
     ]
-    meta = out_dir / "experiment.json"
+    if c.outcomes:
+        written += [_csv(out_dir / "outcomes.csv", [asdict(r) for r in c.outcomes], json_cols=("value", "expected")),
+                    _csv(out_dir / "retrievals.csv", per_retrieval(c))]
+    meta = out_dir / "experiment.json"  # last, after the optional files
     meta.write_text(json.dumps({
         "name": c.experiment.name, "description": c.experiment.description, "hypothesis": c.experiment.hypothesis,
         "created_at": c.experiment.created_at.isoformat(), "exported_at": datetime.now(timezone.utc).isoformat(),
