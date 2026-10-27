@@ -12,6 +12,8 @@
                                               regenerate docker/seed_catalogue.sql from docs/contract_types_and_fields.md
     contract-extraction providers [set KEY --base-url URL | --enable | --disable]
                                               list LLM providers / switch e.g. native ↔ Docker Ollama
+    contract-extraction labels import DIR [--dry-run] [--overwrite] [--tag TAG]
+                                              import draft ground truth from label files (one JSON per contract)
 """
 
 from __future__ import annotations
@@ -260,6 +262,44 @@ def providers(key: str | None, base_url: str | None, enabled: bool | None) -> in
         db.dispose()
 
 
+def labels_import(directory: Path, root: Path, overwrite: bool, dry_run: bool, tags: list[str]) -> int:
+    from .labels import import_file, label_files
+
+    settings = load_settings()
+    setup_logging(settings.log_level)
+    db = Database(settings.database)
+    storage = FileStorage(settings.storage_root)
+    files = label_files(directory)
+    if not files:
+        print(f"no label files under {directory}", file=sys.stderr)
+        return 1
+    totals = {"imported": 0, "kept": 0, "rejected": 0, "failed": 0, "registered": 0}
+    try:
+        for path in files:
+            r = import_file(db, storage, settings, path, root, overwrite=overwrite, dry_run=dry_run, tags=tags)
+            name = path.relative_to(directory)
+            if r.error:
+                totals["failed"] += 1
+                print(f"FAIL {name}: {r.error}")
+                continue
+            totals["imported"] += r.imported
+            totals["kept"] += r.kept
+            totals["rejected"] += len(r.rejected)
+            totals["registered"] += r.registered
+            code = r.code or "(new)"
+            print(f"{code:7} {str(name):70} {r.imported:3} set  {r.kept:3} kept  {len(r.rejected):3} rejected"
+                  f"  types: {','.join(r.contract_types) or '-'}")
+            for key, reason in r.rejected:
+                print(f"          ✗ {key}: {reason}")
+    finally:
+        db.dispose()
+    verb = "would set" if dry_run else "set"
+    print(f"\n{len(files)} files: {verb} {totals['imported']} labels, kept {totals['kept']} edited by hand, "
+          f"rejected {totals['rejected']}, {totals['registered']} documents {'to register' if dry_run else 'registered'}, "
+          f"{totals['failed']} files failed")
+    return 1 if totals["failed"] else 0
+
+
 def gen_catalogue(doc: Path, out: Path, queries_path: Path, with_queries: bool, per_field: int) -> int:
     """Parse the catalogue document and write the seed SQL; optionally generate missing search queries."""
     from . import catalogue
@@ -382,7 +422,20 @@ def main(argv: list[str] | None = None) -> int:
     toggle.add_argument("--enable", dest="enabled", action="store_true", default=None)
     toggle.add_argument("--disable", dest="enabled", action="store_false")
 
+    p_labels = sub.add_parser("labels", help="import draft ground truth with 'labels import'")
+    labels_sub = p_labels.add_subparsers(dest="action", required=True)
+    p_limport = labels_sub.add_parser("import", help="import label files (one JSON per contract) as draft ground truth")
+    p_limport.add_argument("directory", type=Path, help="e.g. ../test_data/labels")
+    p_limport.add_argument("--root", type=Path, default=repo_root,
+                           help="folder the label files' paths are relative to (default: the repository root)")
+    p_limport.add_argument("--overwrite", action="store_true",
+                           help="also replace labels edited by hand and contract types already labelled")
+    p_limport.add_argument("--dry-run", action="store_true", help="validate and report; change nothing")
+    p_limport.add_argument("--tag", action="append", default=[], help="tag every imported document (repeatable)")
+
     args = parser.parse_args(argv)
+    if args.command == "labels":
+        return labels_import(args.directory, args.root, args.overwrite, args.dry_run, args.tag)
     if args.command == "providers":
         if args.action == "set":
             return providers(args.key, args.base_url, args.enabled)

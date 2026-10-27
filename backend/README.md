@@ -115,6 +115,21 @@ With native Ollama on the Apple GPU, a call takes
 about 7–15 s. Ollama in Docker on macOS is CPU-only and takes about 90–150 s per call. Reuse of repeated evidence cuts the number
 of calls a lot on short documents. Narrow runs with `--fields` / `--retrievals` while experimenting.
 
+### Draft ground truth
+
+```bash
+uv run contract-extraction labels import ../test_data/labels --dry-run         # validate and report, change nothing
+uv run contract-extraction labels import ../test_data/labels --tag p1-drafts   # register the contracts, set the labels
+```
+
+`labels import` reads one JSON file per contract (format in `labels.py`; drafted e.g. by Claude Cowork with
+[`docs/labelling/cowork-labelling-prompt.md`](../docs/labelling/cowork-labelling-prompt.md)). Paths in the files are
+relative to the repository root. Each contract is registered like an upload (not decomposed), its contract types are set,
+and each value is validated like a label set in the UI. Values that don't fit are listed and skipped. Labels are stored
+as drafts: `ground_truth.created_by` is the file's `labelled_by`, and the notes hold the evidence quote, location and
+confidence. Editing a label in the UI clears `created_by`, so importing again keeps your edits (and labelled contract
+types) unless `--overwrite`.
+
 ## Configuration
 
 - **Pipeline configuration** (providers, models, prompts, RAG configs, fields) lives in **the database**. It is read through
@@ -152,12 +167,13 @@ src/contract_extraction/
   pipeline/      run options and the executor (stages, progress, events, reuse of repeated evidence)
   api/           FastAPI app, routes/, schemas, problem details, dependencies (session per request)
   ingestion.py   register → decompose → index, reusing earlier work
+  labels.py      import of draft ground truth from label files
   storage.py     local file storage (staging + hashing, per-document folders, path guards)
   secrets.py     API key lookup by the env var named in the database
   health.py      liveness and readiness, shared by /health and `check`
   worker.py      claim loop (SKIP LOCKED), heartbeat, cancellation, stale-run cleanup
   catalogue.py   contract types and fields parsed from docs/contract_types_and_fields.md → docker/seed_catalogue.sql
-  cli.py         contract-extraction check | ingest | run | worker | status | cancel | api | openapi | providers | gen-catalogue
+  cli.py         contract-extraction check | ingest | run | worker | status | cancel | api | openapi | providers | gen-catalogue | labels
 ```
 
 ## Tests

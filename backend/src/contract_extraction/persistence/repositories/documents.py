@@ -65,6 +65,15 @@ class DocumentRepo:
     def get_by_sha256(self, sha256: str) -> m.Document | None:
         return self.session.scalars(select(m.Document).where(m.Document.sha256 == sha256)).one_or_none()
 
+    def add_tags(self, document_id: uuid.UUID, tags: list[str]) -> list[str]:
+        """Add tags the document does not have yet; returns its tags."""
+        doc = self.get(document_id)
+        new = [t for t in dict.fromkeys(tags) if t not in doc.tags]
+        if new:
+            doc.tags = [*doc.tags, *new]
+            self.session.flush()
+        return doc.tags
+
     def list(self, limit: int = 25, offset: int = 0) -> tuple[Sequence[m.Document], int]:
         """Newest first, with the total count for paging."""
         rows = self.session.scalars(

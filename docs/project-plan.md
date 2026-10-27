@@ -29,6 +29,7 @@ One phase is one commit or PR. A phase isn't started before the previous one is 
 | 10b | **Formats 2: text and HTML** | txt and html converters, page markers (EDGAR `<PAGE>`, `\f`, CSS page breaks) or pages by length, EDGAR wrapper removal | Unit tests pass; every `test_data` `.txt`/`.htm` decomposes; one of each runs end to end in the UI | ✅ done (end to end through the gateway; not clicked through in a browser) |
 | 10c | **Formats 3: images and DOCX** | images (pymupdf → PDF → OCR), docx (mammoth → html converter) | Unit and `ocr` tests pass; every `test_data` `.docx` decomposes | ✅ done |
 | 10d | ~~**Formats 4: email**~~ | ~~eml body plus supported attachments as one document~~ | Dropped (see change log, 2026-10-19) | ✖ dropped |
+| 11 | **Experiments** | `experiment` CLI over the existing `experiments` table: create, run a documents × pipelines × repeats matrix (resumable, one active run per document, same fields for every pipeline), show, export CSVs (results, runs, summary); `documents tag`; partial-credit scoring shared by the API and the export | Scheduler, export and repo tests pass; a small real experiment (2 documents × 2 pipelines × 2 repeats) runs and exports | ⬜ planned |
 
 ## Open questions (decided in the phase that needs them)
 
@@ -174,3 +175,8 @@ One phase is one commit or PR. A phase isn't started before the previous one is 
   - Removed what 10a had added for it: `eml` from `DocumentFormat` and `ck_documents_format`, `eml` from the
     download-only originals, and `PageOut.source_part`.
   - The dev database's constraint was replaced in place (`ALTER TABLE`, no data change).
+- 2026-10-27: Draft ground truth import, ahead of Phase 11. `contract-extraction labels import DIR` loads one JSON per
+  contract (drafted by Claude Cowork with `docs/labelling/cowork-labelling-prompt.md`; output in the git-ignored
+  `test_data/labels/`): registers the contract, sets its contract types, validates each value like the UI does and
+  reports the ones that don't fit. `ground_truth.created_by` now records who set the current value (the label file's
+  `labelled_by` for a draft, NULL from the API), so a re-import keeps labels edited by hand unless `--overwrite`.

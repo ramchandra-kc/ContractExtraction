@@ -3,6 +3,10 @@
 A label is any JSON value except null that fits the field's value schema. The empty string means "not
 in this contract" and matches a not_found outcome in ``v_run_evaluation`` (exact match); evaluation.py
 adds partial credit. A document can also be labelled with its contract types, to measure classification.
+
+``created_by`` names who set the current value: an importer's source (e.g. ``claude-cowork``) for a draft,
+None for a label set by hand. Setting a label again replaces it, so editing a draft in the UI makes it a
+reviewed label that a later import keeps.
 """
 
 from __future__ import annotations
@@ -49,24 +53,32 @@ class GroundTruthRepo:
         ).all()
         return [(f, gt) for f, gt in rows]
 
+    @staticmethod
+    def conform(field: m.Field, expected_value: Any) -> Any:
+        """The label as stored (enum strings normalised); ``InvalidInput`` when it does not fit the field."""
+        if expected_value is None:
+            raise InvalidInput('expected_value must not be null; use "" for a value that is not in this contract')
+        if expected_value == "":
+            return expected_value
+        expected_value, problems = conform(expected_value, field.value_schema or {})
+        if problems:
+            raise InvalidInput(f"The label does not fit the type of {field.key!r} ({field.type_spec}): "
+                               + "; ".join(problems[:3]))
+        return expected_value
+
     def set(self, document_id: uuid.UUID, field_id: uuid.UUID, expected_value: Any,
-            notes: str | None = None) -> tuple[m.Field, m.GroundTruth]:
+            notes: str | None = None, created_by: str | None = None) -> tuple[m.Field, m.GroundTruth]:
         """Create or replace the label of one field."""
         field = self.session.get(m.Field, field_id)
         if field is None:
             raise NotFound(f"Field {field_id} not found")
-        if expected_value is None:
-            raise InvalidInput('expected_value must not be null; use "" for a value that is not in this contract')
-        if expected_value != "":
-            expected_value, problems = conform(expected_value, field.value_schema or {})
-            if problems:
-                raise InvalidInput(f"The label does not fit the type of {field.key!r} ({field.type_spec}): "
-                                   + "; ".join(problems[:3]))
+        expected_value = self.conform(field, expected_value)
         stmt = insert(m.GroundTruth).values(document_id=document_id, field_id=field_id,
-                                            expected_value=expected_value, notes=notes)
+                                            expected_value=expected_value, notes=notes, created_by=created_by)
         self.session.execute(stmt.on_conflict_do_update(
             constraint="uq_ground_truth_document_id_field_id",
-            set_={"expected_value": stmt.excluded.expected_value, "notes": stmt.excluded.notes},
+            set_={"expected_value": stmt.excluded.expected_value, "notes": stmt.excluded.notes,
+                  "created_by": stmt.excluded.created_by},
         ))
         label = self.session.scalars(
             select(m.GroundTruth).where(m.GroundTruth.document_id == document_id, m.GroundTruth.field_id == field_id)
