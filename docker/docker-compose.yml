@@ -7,19 +7,21 @@
 # schema.sql, seed.sql, seed_catalogue.sql (generated from docs/contract_types_and_fields.md) and seed_presets.sql are baked into the
 # Postgres image (Dockerfile) and run only when the volume is empty, so after editing them: `down -v`, then
 # `up --build` gives a clean database with the new schema.
-# Every value below can be overridden from the environment (e.g. POSTGRES_PORT=55432).
+# Host ports are 55432 / 56333 rather than the stock 5432 / 6333, so this stack can run beside other projects
+# that use the defaults. Every value below can be overridden from the environment (e.g. POSTGRES_PORT=5432).
 name: contract-extraction
 
 services:
   postgres:
     build: .
     image: contract-extraction-postgres:local
+    container_name: contract-extraction-postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-contract}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-contract}
       POSTGRES_DB: ${POSTGRES_DB:-contract_extraction}
     ports:
-      - "127.0.0.1:${POSTGRES_PORT:-5432}:5432"
+      - "127.0.0.1:${POSTGRES_PORT:-55432}:5432"
     volumes:
       - postgres-data:/var/lib/postgresql/data
     healthcheck:
@@ -31,8 +33,9 @@ services:
 
   qdrant:
     image: qdrant/qdrant:v1.12.4
+    container_name: contract-extraction-qdrant
     ports:
-      - "127.0.0.1:${QDRANT_PORT:-6333}:6333"
+      - "127.0.0.1:${QDRANT_PORT:-56333}:6333"
     volumes:
       - qdrant-data:/qdrant/storage
     restart: unless-stopped
@@ -43,6 +46,7 @@ services:
   # Pull models with: docker compose -f docker/docker-compose.yml exec ollama ollama pull llama3.1:8b
   ollama:
     image: ollama/ollama:0.5.4
+    container_name: contract-extraction-ollama
     profiles: ["ollama"]
     environment:
       # One request at a time: Ollama otherwise reserves context memory for 4 parallel requests,

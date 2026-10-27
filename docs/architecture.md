@@ -29,8 +29,8 @@ flowchart TB
     end
 
     subgraph docker["Docker (docker/docker-compose.yml)"]
-        pg[("Postgres :5432<br/>data + configuration")]
-        qd[("Qdrant :6333<br/>vectors")]
+        pg[("Postgres :55432<br/>data + configuration")]
+        qd[("Qdrant :56333<br/>vectors")]
         ol["Ollama :11434<br/>(optional profile)"]
     end
 
@@ -63,8 +63,8 @@ Browser ─► frontend (Vite :5173)
               ▼
            backend API (:8000, 127.0.0.1 only)          backend worker (no HTTP)
               │                                             │
-              └──────────── Postgres (:5432) ◄──────────────┤  API ⇄ worker talk ONLY through Postgres
-                            data + configuration            ├─► Qdrant  (:6333)   vectors
+              └──────────── Postgres (:55432) ◄─────────────┤  API ⇄ worker talk ONLY through Postgres
+                            data + configuration            ├─► Qdrant  (:56333)  vectors
                                                             ├─► LLM provider      embeddings, extraction, judge
                                                             │     Ollama (:11434, local) or OpenRouter (hosted)
                                                             └─► file storage      PDFs, page JSON, images, logs
@@ -419,8 +419,8 @@ See [ADR 0002](adr/0002-custom-gateway.md) and [`gateway/README.md`](../gateway/
 | frontend (Vite dev) | 5173 | localhost |
 | gateway | 8080 | localhost |
 | backend API | 8000 | 127.0.0.1 (reached only through the gateway) |
-| Postgres | 5432 (`POSTGRES_PORT`) | Docker, published to 127.0.0.1 |
-| Qdrant | 6333 (`QDRANT_PORT`) | Docker, published to 127.0.0.1 |
+| Postgres | 55432 (`POSTGRES_PORT`) | Docker, published to 127.0.0.1 |
+| Qdrant | 56333 (`QDRANT_PORT`) | Docker, published to 127.0.0.1 |
 | Ollama (native) | 11434 | `Ollama.app` (default on macOS) |
 | Ollama (Docker) | 11435 (`OLLAMA_PORT`) | Docker profile `ollama`, published to 127.0.0.1 |
 

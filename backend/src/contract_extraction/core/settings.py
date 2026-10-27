@@ -31,7 +31,7 @@ DEFAULT_CONFIG_DIR = BACKEND_ROOT / "config"
 
 
 class DatabaseSettings(BaseModel):
-    url: str = "postgresql+psycopg://contract:contract@localhost:5432/contract_extraction"
+    url: str = "postgresql+psycopg://contract:contract@localhost:55432/contract_extraction"
     pool_size: int = Field(5, gt=0)
     max_overflow: int = Field(10, ge=0)
     echo: bool = False
@@ -44,7 +44,7 @@ class StorageSettings(BaseModel):
 
 
 class QdrantSettings(BaseModel):
-    url: str = "http://localhost:6333"
+    url: str = "http://localhost:56333"
     api_key: str = ""
 
 
