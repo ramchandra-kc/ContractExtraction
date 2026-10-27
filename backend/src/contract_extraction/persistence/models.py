@@ -197,6 +197,8 @@ class RetrievalConfig(Base):
     min_score: Mapped[Decimal] = mapped_column(Numeric(4, 3), server_default=_db())
     keyword_search: Mapped[bool] = mapped_column(server_default=_db())
     anchor_chunks: Mapped[int] = mapped_column(server_default=_db())
+    rerank_model: Mapped[str | None]
+    rerank_candidates: Mapped[int] = mapped_column(server_default=_db())
     created_at: Mapped[datetime] = _created()
     updated_at: Mapped[datetime] = _updated()
 
@@ -526,6 +528,7 @@ class RetrievalHit(Base):
     score: Mapped[float | None] = mapped_column(Double)
     matched_query: Mapped[str | None]
     keyword_score: Mapped[float | None] = mapped_column(Double)
+    rerank_score: Mapped[float | None] = mapped_column(Double)
     source: Mapped[str] = mapped_column(server_default=_db())
 
 

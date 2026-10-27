@@ -533,7 +533,9 @@ def experiment_retrieval_eval(args: argparse.Namespace) -> int:
             configs = variants(ConfigRepo(s).resolve_retrievals(names),
                                [int(k) for k in split(args.top_k)] or None,
                                [float(t) for t in split(args.threshold)] if args.threshold else None,
-                               [int(q) for q in split(args.per_query_top)] or None)
+                               [int(q) for q in split(args.per_query_top)] or None,
+                               [None if r == "none" else r for r in split(args.rerank)] or None,
+                               [int(c) for c in split(args.candidates)] or None)
             s.expunge_all()
         if not docs:
             print("FAIL: no documents (give --tag and/or --documents)", file=sys.stderr)
@@ -833,6 +835,8 @@ def main(argv: list[str] | None = None) -> int:
     p_eret.add_argument("--top-k", help="comma-separated top_k values: one variant of each RAG config per value")
     p_eret.add_argument("--threshold", help="comma-separated score thresholds (score_threshold = min_score) to sweep")
     p_eret.add_argument("--per-query-top", help="comma-separated hits per query before merging, to sweep (caps top_k)")
+    p_eret.add_argument("--rerank", help="comma-separated cross-encoders (fastembed names) to sweep; none = off")
+    p_eret.add_argument("--candidates", help="comma-separated rerank candidate pool sizes to sweep")
     p_eret.add_argument("-o", "--output", type=Path, help="folder (default: experiments/NAME in the repository)")
     p_ecmp = exp_sub.add_parser("compare", help="paired comparison of arms with cluster bootstrap CIs and p-values")
     p_ecmp.add_argument("name", type=Path, help="export folder, or its name under experiments/")

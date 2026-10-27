@@ -56,7 +56,7 @@ class ResultRepo:
         self.session.flush()
         self.session.add_all(
             m.RetrievalHit(field_result_id=row.id, rank=rank, chunk_id=h.chunk_id, score=h.score, matched_query=h.matched_query,
-                           keyword_score=h.keyword_score, source=h.source)
+                           keyword_score=h.keyword_score, rerank_score=h.rerank_score, source=h.source)
             for rank, h in enumerate(hits, start=1)
         )
         self.session.flush()

@@ -40,6 +40,12 @@ class ChatClient(Protocol):
         ...
 
 
+class Reranker(Protocol):
+    def score(self, query: str, texts: list[str]) -> list[float]:
+        """Relevance of each text to the query (higher is better; the scale is the model's own)."""
+        ...
+
+
 class Embedder(Protocol):
     def embed(self, texts: list[str]) -> list[list[float]]: ...
 

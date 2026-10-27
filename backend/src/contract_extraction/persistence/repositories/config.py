@@ -190,7 +190,8 @@ def _retrieval(row: m.RetrievalConfig) -> d.RetrievalConfig:
     return d.RetrievalConfig(id=row.id, name=row.name, top_k=row.top_k, score_threshold=row.score_threshold,
                              query_expansion=row.query_expansion, per_query_top=row.per_query_top,
                              min_score=row.min_score, keyword_search=row.keyword_search,
-                             anchor_chunks=row.anchor_chunks)
+                             anchor_chunks=row.anchor_chunks, rerank_model=row.rerank_model,
+                             rerank_candidates=row.rerank_candidates)
 
 
 def _field(row: m.Field) -> d.Field:

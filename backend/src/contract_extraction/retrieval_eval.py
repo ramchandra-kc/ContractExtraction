@@ -5,10 +5,11 @@ field whose label has a value and an evidence quote is retrieved under every RAG
 would (``extraction.retrieval.Retriever``, field granularity), and matched against the quote (``evidence.py``).
 
 Variants: each named RAG config as stored, or, with ``top_ks`` / ``thresholds``, one copy per value (the threshold
-sets both ``score_threshold`` and ``min_score``). The rank of the first evidence chunk gives recall@n for every n up to
+sets both ``score_threshold`` and ``min_score``), and with ``rerankers`` / ``candidates`` one per reranker (None = off)
+and candidate pool size. The rank of the first evidence chunk gives recall@n for every n up to
 the variant's top_k, so one variant with a large top_k already traces the recall curve.
 
-Embeddings of the queries are the only model calls (local), so sweeps take minutes and cost nothing.
+Query embeddings and reranking are the only model calls (both local), so sweeps cost nothing.
 """
 
 from __future__ import annotations
@@ -60,15 +61,22 @@ class RetrievalRow:
 
 
 def variants(configs: list[RetrievalConfig], top_ks: list[int] | None = None,
-             thresholds: list[float] | None = None, per_query_tops: list[int] | None = None) -> list[RetrievalConfig]:
-    """Each config, or one copy per top_k × threshold × per_query_top, named e.g. ``RAG02 k=10 t=0.3 q=5``.
+             thresholds: list[float] | None = None, per_query_tops: list[int] | None = None,
+             rerankers: list[str | None] | None = None, candidates: list[int] | None = None) -> list[RetrievalConfig]:
+    """Each config, or one copy per top_k × threshold × per_query_top × reranker × candidate pool, named e.g.
+    ``RAG02 k=10 t=0.3 q=5`` or ``RAG07 q=20 r=bge-reranker-v2-m3 c=40`` (``r=none``: reranking off).
 
     A config retrieves at most per_query_top hits per query before merging, so top_k only matters up to
     per_query_top × the number of queries (one without query expansion): sweep both."""
     out = []
     for rc in configs:
-        for k, t, q in product(top_ks or [None], thresholds if thresholds is not None else [None], per_query_tops or [None]):
+        for k, t, q, r, c in product(top_ks or [None], thresholds if thresholds is not None else [None],
+                                     per_query_tops or [None], rerankers or [...], candidates or [None]):
             update: dict[str, Any] = {}
+            if r is not ...:
+                update["rerank_model"] = r
+            if c is not None:
+                update["rerank_candidates"] = c
             if k is not None:
                 update["top_k"] = k
             if t is not None:
@@ -76,7 +84,9 @@ def variants(configs: list[RetrievalConfig], top_ks: list[int] | None = None,
             if q is not None:
                 update["per_query_top"] = q
             name = (rc.name + (f" k={k}" if k is not None else "") + (f" t={t:g}" if t is not None else "")
-                    + (f" q={q}" if q is not None else ""))
+                    + (f" q={q}" if q is not None else "")
+                    + (f" r={r.rsplit('/', 1)[-1] if r else 'none'}" if r is not ... else "")
+                    + (f" c={c}" if c is not None else ""))
             out.append(rc.model_copy(update={**update, "name": name}) if update else rc)
     return out
 
@@ -107,7 +117,7 @@ def evaluate(db: Database, storage: FileStorage, settings: Settings, providers: 
             document = [Hit(c.id, None, c.page_start, c.text, None, source=HitSource.ANCHOR) for c in chunks]
             matcher.add_chunks({c.id: c.text for c in chunks})
         chunk_ids = [h.chunk_id for h in document]
-        retriever = Retriever(store, idx.collection_name, embedder, document)
+        retriever = Retriever(store, idx.collection_name, embedder, document, providers.reranker)
         for f, quote, confidence in quoted:
             for rc in configs:
                 hits = retriever.retrieve(f, rc)

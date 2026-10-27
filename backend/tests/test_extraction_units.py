@@ -143,6 +143,45 @@ def test_anchors_in_a_group_and_on_a_short_document():
         "start and end overlap on a short document: each chunk once"
 
 
+class FakeReranker:
+    """Scores a chunk by its scripted relevance; records each call."""
+
+    def __init__(self, relevance: dict[str, float]):
+        self.relevance, self.calls = relevance, []
+
+    def score(self, query, texts):
+        self.calls.append((query, list(texts)))
+        return [self.relevance.get(t.removeprefix("text of "), 0.0) for t in texts]
+
+
+def test_reranking_reorders_a_larger_candidate_pool():
+    store = FakeStore({0: [("a", 0.9), ("b", 0.8), ("c", 0.7)], 1: [("d", 0.6), ("e", 0.5)]})
+    cross = FakeReranker({"e": 3.0, "c": 2.0, "a": -1.0, "d": 5.0})
+    models: list[str] = []
+    retriever = Retriever(store, "col", IndexEmbedder(), (), lambda name: models.append(name) or cross)
+    field = FIELD.model_copy(update={"description": "When invoices fall due"})
+
+    hits = retriever.retrieve(field, rc(top_k=2, per_query_top=3).model_copy(
+        update={"rerank_model": "bge", "rerank_candidates": 4}))
+    # Candidates are the best 4 by dense score (a, b, c, d): e (best by the reranker) never gets a chance.
+    assert [h.text for h in hits] == ["text of d", "text of c"], "the best 4 fused hits are rescored, the best 2 kept"
+    assert [h.rerank_score for h in hits] == [5.0, 2.0] and hits[0].score == 0.6, "dense scores are kept"
+    assert cross.calls == [("Payment Terms: When invoices fall due", ["text of a", "text of b", "text of c", "text of d"])]
+    assert models == ["bge"]
+
+    wider = retriever.retrieve(field, rc(top_k=1, per_query_top=3).model_copy(
+        update={"rerank_model": "bge", "rerank_candidates": 5}))
+    assert [h.text for h in wider] == ["text of d"]
+    assert cross.calls[1][1] == ["text of e"], "scores are cached across configs: only the new candidate is scored"
+    assert retriever.retrieve(field, rc(top_k=2, per_query_top=3))[0].rerank_score is None, "rerank_model unset: off"
+
+
+def test_reranking_needs_a_reranker():
+    retriever = Retriever(FakeStore({0: [("a", 0.9)]}), "col", IndexEmbedder())
+    with pytest.raises(ValueError, match="no reranker"):
+        retriever.retrieve(FIELD, rc().model_copy(update={"rerank_model": "bge"}))
+
+
 def test_prompts():
     hits = [Hit(uuid.uuid4(), 0.9, 1, "Invoices are payable in 30 days.", None), Hit(uuid.uuid4(), 0.8, 1, "tiny", None)]
     context = build_context(hits)

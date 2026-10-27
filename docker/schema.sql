@@ -219,6 +219,10 @@ CREATE TABLE retrieval_configs (
     keyword_search  boolean      NOT NULL DEFAULT false,
     -- Opening/closing chunks added (beyond top_k) for fields with an anchor; 0 = off.
     anchor_chunks   integer      NOT NULL DEFAULT 0,
+    -- Cross-encoder that re-scores the candidates against the field (fastembed model name); NULL = off.
+    rerank_model      text,
+    -- Fused candidates the reranker scores before the best top_k are kept.
+    rerank_candidates integer    NOT NULL DEFAULT 30,
     created_at      timestamptz  NOT NULL DEFAULT now(),
     updated_at      timestamptz  NOT NULL DEFAULT now(),
     CONSTRAINT pk_retrieval_configs PRIMARY KEY (id),
@@ -226,6 +230,7 @@ CREATE TABLE retrieval_configs (
     CONSTRAINT ck_retrieval_configs_top_k CHECK (top_k > 0),
     CONSTRAINT ck_retrieval_configs_per_query_top CHECK (per_query_top > 0),
     CONSTRAINT ck_retrieval_configs_anchor_chunks CHECK (anchor_chunks >= 0),
+    CONSTRAINT ck_retrieval_configs_rerank_candidates CHECK (rerank_candidates > 0),
     CONSTRAINT ck_retrieval_configs_scores CHECK (score_threshold BETWEEN 0 AND 1 AND min_score BETWEEN 0 AND 1)
 );
 
@@ -656,6 +661,8 @@ CREATE TABLE retrieval_hits (
     matched_query   text,
     -- Best keyword (BM25) score; NULL for a chunk keyword search did not find.
     keyword_score   double precision,
+    -- Cross-encoder score when the RAG config reranks; NULL otherwise and for anchor chunks.
+    rerank_score    double precision,
     source          text             NOT NULL DEFAULT 'dense',
     CONSTRAINT pk_retrieval_hits PRIMARY KEY (field_result_id, rank),
     CONSTRAINT fk_retrieval_hits_field_result_id FOREIGN KEY (field_result_id) REFERENCES field_results (id) ON DELETE CASCADE,

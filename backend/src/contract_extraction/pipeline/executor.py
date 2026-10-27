@@ -66,7 +66,7 @@ from ..persistence.repositories import RunRepo
 from ..persistence.repositories.artifacts import IndexRepo
 from ..persistence.repositories.results import ResultRepo
 from ..providers import factory
-from ..providers.base import ChatClient, ChatResult, Embedder, ProviderError, VectorStore
+from ..providers.base import ChatClient, ChatResult, Embedder, ProviderError, Reranker, VectorStore
 from ..storage import FileStorage
 from .options import RunOptions
 
@@ -85,12 +85,20 @@ class Providers:
     chat: Callable[[ModelProfile], ChatClient]
     embedder: Callable[[Model], Embedder]
     store: Callable[[str], VectorStore]
+    # Cross-encoder by model name, for RAG configs that rerank (local fastembed models by default).
+    reranker: Callable[[str], Reranker] = dc_field(default=lambda name: _fastembed(name))
 
     @classmethod
     def from_settings(cls, settings: Settings) -> Providers:
         return cls(chat=lambda p: factory.chat_client(p, settings),
                    embedder=lambda mo: factory.embedder(mo, settings),
                    store=lambda kind: factory.vector_store(kind, settings))
+
+
+def _fastembed(name: str) -> Reranker:
+    from ..providers.rerank import reranker
+
+    return reranker(name)
 
 
 class RunCancelled(Exception):
@@ -376,7 +384,8 @@ class _Extraction:
             with self.db.session() as s:
                 document = [Hit(c.id, None, c.page_start, c.text, None, source=HitSource.ANCHOR)
                             for c in IndexRepo(s).chunks(index_id)]
-        self.retriever = Retriever(store, collection, ex.providers.embedder(pipeline.index.embedding_model), document)
+        self.retriever = Retriever(store, collection, ex.providers.embedder(pipeline.index.embedding_model), document,
+                                   ex.providers.reranker)
         self.chat = ex.providers.chat(pipeline.extraction_profile)
         self.judge_chat = ex.providers.chat(pipeline.judge_profile) if pipeline.judge_enabled and pipeline.judge_profile else None
         self.checkpoint = ex.checkpoint(run_id)  # shared by the judge threads: a late or extra check is harmless

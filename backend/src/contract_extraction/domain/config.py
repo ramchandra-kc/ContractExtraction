@@ -112,6 +112,9 @@ class RetrievalConfig(_Frozen):
     keyword_search: bool = False
     # Opening/closing chunks added for fields with an anchor (0 = off).
     anchor_chunks: int = 0
+    # Cross-encoder (fastembed model name) that re-scores the best ``rerank_candidates`` fused hits; None = off.
+    rerank_model: str | None = None
+    rerank_candidates: int = 30
 
 
 class Field(_Frozen):
