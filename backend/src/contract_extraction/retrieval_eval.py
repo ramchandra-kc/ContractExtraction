@@ -24,7 +24,7 @@ from typing import Any
 from .core.settings import Settings
 from .domain.config import RetrievalConfig
 from .domain.enums import HitSource
-from .evidence import Matcher, quote_from_notes
+from .evidence import Matcher, confidence_from_notes, quote_from_notes
 from .extraction.retrieval import Hit, Retriever
 from .indexing.indexer import build_index
 from .ingestion import ensure_decomposition
@@ -56,20 +56,27 @@ class RetrievalRow:
     evidence_indexed: bool | None
     evidence_score: float | None  # dense score of the first evidence chunk (None: not retrieved or keyword-only)
     top_score: float | None  # best dense score among the hits
+    label_confidence: str | None = None
 
 
 def variants(configs: list[RetrievalConfig], top_ks: list[int] | None = None,
-             thresholds: list[float] | None = None) -> list[RetrievalConfig]:
-    """Each config, or one copy per top_k × threshold, named e.g. ``RAG02 k=10 t=0.3``."""
+             thresholds: list[float] | None = None, per_query_tops: list[int] | None = None) -> list[RetrievalConfig]:
+    """Each config, or one copy per top_k × threshold × per_query_top, named e.g. ``RAG02 k=10 t=0.3 q=5``.
+
+    A config retrieves at most per_query_top hits per query before merging, so top_k only matters up to
+    per_query_top × the number of queries (one without query expansion): sweep both."""
     out = []
     for rc in configs:
-        for k, t in product(top_ks or [None], thresholds if thresholds is not None else [None]):
+        for k, t, q in product(top_ks or [None], thresholds if thresholds is not None else [None], per_query_tops or [None]):
             update: dict[str, Any] = {}
             if k is not None:
                 update["top_k"] = k
             if t is not None:
                 update["score_threshold"] = update["min_score"] = Decimal(str(t))
-            name = rc.name + (f" k={k}" if k is not None else "") + (f" t={t:g}" if t is not None else "")
+            if q is not None:
+                update["per_query_top"] = q
+            name = (rc.name + (f" k={k}" if k is not None else "") + (f" t={t:g}" if t is not None else "")
+                    + (f" q={q}" if q is not None else ""))
             out.append(rc.model_copy(update={**update, "name": name}) if update else rc)
     return out
 
@@ -86,7 +93,8 @@ def evaluate(db: Database, storage: FileStorage, settings: Settings, providers: 
     for n, doc in enumerate(documents, start=1):
         with db.session() as s:
             gt = GroundTruthRepo(s)
-            quoted = [(fields[f.id], quote) for f, label in gt.labels(doc.id, gt.field_set())
+            quoted = [(fields[f.id], quote, confidence_from_notes(label.notes))
+                      for f, label in gt.labels(doc.id, gt.field_set())
                       if label is not None and label.expected_value not in (None, "") and f.id in fields
                       and (quote := quote_from_notes(label.notes))]
         if not quoted:
@@ -100,7 +108,7 @@ def evaluate(db: Database, storage: FileStorage, settings: Settings, providers: 
             matcher.add_chunks({c.id: c.text for c in chunks})
         chunk_ids = [h.chunk_id for h in document]
         retriever = Retriever(store, idx.collection_name, embedder, document)
-        for f, quote in quoted:
+        for f, quote, confidence in quoted:
             for rc in configs:
                 hits = retriever.retrieve(f, rc)
                 ev = matcher.match(quote, [(i, h.chunk_id) for i, h in enumerate(hits, start=1)], chunk_ids)
@@ -111,7 +119,7 @@ def evaluate(db: Database, storage: FileStorage, settings: Settings, providers: 
                 rows.append(RetrievalRow(
                     doc.code, f.key, str(f.value_type), str(f.priority), rc.name, rc.top_k, float(rc.min_score), len(hits),
                     ev.fragments, ev.any, ev.all, ev.rank, ev.indexed, first.score if first else None,
-                    max(dense) if dense else None))
+                    max(dense) if dense else None, confidence))
         report(f"[{n}/{len(documents)}] {doc.code}: {len(quoted)} quoted labels × {len(configs)} RAG configs "
                f"({idx.chunk_count} chunks, index {'reused' if idx.reused else 'built'})")
     return rows

@@ -42,7 +42,7 @@ from .core.errors import Conflict, InvalidInput
 from .domain.config import PipelineConfig
 from .domain.enums import Priority, RunKind, RunState
 from .evaluation import lenient_score, match_score
-from .evidence import EvidenceMatch, Matcher, quote_from_notes
+from .evidence import EvidenceMatch, Matcher, confidence_from_notes, quote_from_notes
 from .persistence import models as m
 from .persistence.db import Database
 from .persistence.repositories import ConfigRepo, DocumentRepo, RunRepo
@@ -277,6 +277,8 @@ class ResultRow:
     evidence_indexed: bool | None = None
     # evaluation.lenient_score: numbers by value, text by token F1 ignoring legal forms and punctuation.
     lenient: float | None = None
+    # high | medium | low from a draft label's notes; None for labels written in the UI.
+    label_confidence: str | None = None
 
 
 @dataclass
@@ -347,7 +349,7 @@ def collect(session, name: str, outcomes: bool = False) -> Collected:
             repeat.get(run.id), run.state, b["field_key"], retrieval_config, label, b["status"], b["value"], expected,
             b["exact_match"], match_score(b["status"], b["value"], expected, b["exact_match"]), b["verdict"],
             *((ev.any, ev.all, ev.rank, ev.indexed) if ev else (None,) * 4),
-            lenient_score(b["status"], b["value"], expected, b["exact_match"]))
+            lenient_score(b["status"], b["value"], expected, b["exact_match"]), confidence_from_notes(b["label_notes"]))
 
     if outcomes:
         out.outcomes = [row(by_run[o["run_id"]], o, o["retrieval_config"]) for o in all_outcomes]

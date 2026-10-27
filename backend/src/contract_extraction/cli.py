@@ -19,7 +19,7 @@
     contract-extraction experiment create NAME --pipelines A,B --tag TAG [--repeats N] | list | run NAME |
                                    show NAME | export NAME [-o DIR]
                                               documents × pipelines × repeats under fixed conditions (experiments.py)
-    contract-extraction experiment retrieval-eval NAME --tag TAG [--retrievals A,B] [--top-k 3,5,10] [--threshold 0,0.5]
+    contract-extraction experiment retrieval-eval NAME --tag TAG [--retrievals A,B] [--top-k 3,5,10] [--threshold 0,0.5] [--per-query-top 3,10]
                                               evidence recall of RAG configs, no LLM calls (retrieval_eval.py)
 """
 
@@ -528,7 +528,8 @@ def experiment_retrieval_eval(args: argparse.Namespace) -> int:
             names = split(args.retrievals) or [rc.name for rc in pipeline.retrievals]
             configs = variants(ConfigRepo(s).resolve_retrievals(names),
                                [int(k) for k in split(args.top_k)] or None,
-                               [float(t) for t in split(args.threshold)] if args.threshold else None)
+                               [float(t) for t in split(args.threshold)] if args.threshold else None,
+                               [int(q) for q in split(args.per_query_top)] or None)
             s.expunge_all()
         if not docs:
             print("FAIL: no documents (give --tag and/or --documents)", file=sys.stderr)
@@ -556,6 +557,36 @@ def experiment_retrieval_eval(args: argparse.Namespace) -> int:
         return 1
     finally:
         db.dispose()
+
+
+def experiment_compare(args: argparse.Namespace) -> int:
+    from .compare import compare_arms, read_rows
+
+    folder = args.name if args.name.exists() else BACKEND_ROOT.parent / "experiments" / str(args.name)
+    files = [args.file] if args.file else ["outcomes.csv", "results.csv", "retrieval_hits.csv"]
+    path = next((folder / f for f in files if (folder / f).exists()), None)
+    if path is None:
+        print(f"FAIL: none of {', '.join(files)} in {folder} (run experiment export / retrieval-eval first)", file=sys.stderr)
+        return 1
+    where = dict(w.split("=", 1) for w in args.where or [])
+    try:
+        rows = read_rows(path)
+        metric = args.metric or ("evidence" if path.name == "retrieval_hits.csv" else "score")
+        by = [c.strip() for c in args.by.split(",")]
+        out = compare_arms(rows, by, args.baseline, metric, args.labels, where, args.resamples)
+    except KeyError as exc:
+        print(f"FAIL: {exc.args[0]}", file=sys.stderr)
+        return 1
+    print(f"{path.name}: {metric} on {args.labels} labels{' where ' + str(where) if where else ''}, "
+          f"baseline {args.baseline}, paired by document × field ({args.resamples} resamples)\n")
+    print(f"{'arm':28} {'cells':>5} {'docs':>4} {'base':>6} {'arm':>6} {'diff':>7} {'95% CI':>17} {'p':>7} "
+          f"{'p_holm':>7} {'b/c':>9} {'mcnemar':>7}")
+    for c in sorted(out, key=lambda c: -c.diff):
+        bc = f"{c.b}/{c.c}" if c.b is not None else "-"
+        mp = f"{c.mcnemar_p:.4f}" if c.mcnemar_p is not None else "-"
+        print(f"{c.arm[:28]:28} {c.cells:5} {c.documents:4} {c.baseline_mean:6.3f} {c.arm_mean:6.3f} {c.diff:+7.3f} "
+              f"[{c.ci_low:+.3f}, {c.ci_high:+.3f}] {c.p:7.4f} {c.p_holm:7.4f} {bc:>9} {mp:>7}")
+    return 0
 
 
 def gen_catalogue(doc: Path, out: Path, queries_path: Path, with_queries: bool, per_field: int) -> int:
@@ -737,7 +768,20 @@ def main(argv: list[str] | None = None) -> int:
     p_eret.add_argument("--retrievals", help="comma-separated RAG config names (default: the pipeline's)")
     p_eret.add_argument("--top-k", help="comma-separated top_k values: one variant of each RAG config per value")
     p_eret.add_argument("--threshold", help="comma-separated score thresholds (score_threshold = min_score) to sweep")
+    p_eret.add_argument("--per-query-top", help="comma-separated hits per query before merging, to sweep (caps top_k)")
     p_eret.add_argument("-o", "--output", type=Path, help="folder (default: experiments/NAME in the repository)")
+    p_ecmp = exp_sub.add_parser("compare", help="paired comparison of arms with cluster bootstrap CIs and p-values")
+    p_ecmp.add_argument("name", type=Path, help="export folder, or its name under experiments/")
+    p_ecmp.add_argument("--by", default="pipeline", help="arm column(s), comma-separated: pipeline, retrieval_config")
+    p_ecmp.add_argument("--baseline", required=True, help="the arm the others are compared to")
+    p_ecmp.add_argument("--file", help="CSV in the folder (default: outcomes.csv, results.csv or retrieval_hits.csv)")
+    p_ecmp.add_argument("--metric", choices=["exact", "score", "lenient", "evidence", "invented"],
+                        help="default: score, or evidence for retrieval_hits.csv")
+    p_ecmp.add_argument("--labels", default="value", choices=["value", "absent", "all"],
+                        help="labels with a value (default), labels of \"\" (use with --metric invented), or all")
+    p_ecmp.add_argument("--where", action="append", metavar="COLUMN=VALUE",
+                        help="only rows with this value, e.g. label_confidence=high (repeatable)")
+    p_ecmp.add_argument("--resamples", type=int, default=10_000)
 
     args = parser.parse_args(argv)
     if args.command == "documents":
@@ -755,6 +799,8 @@ def main(argv: list[str] | None = None) -> int:
             return experiment_show(args.name)
         if args.action == "retrieval-eval":
             return experiment_retrieval_eval(args)
+        if args.action == "compare":
+            return experiment_compare(args)
         return experiment_export(args.name, args.output)
     if args.command == "labels":
         return labels_import(args.directory, args.root, args.overwrite, args.dry_run, args.tag)

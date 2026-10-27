@@ -45,6 +45,13 @@ def quote_from_notes(notes: str | None) -> str | None:
     return None
 
 
+def confidence_from_notes(notes: str | None) -> str | None:
+    """The drafter's confidence (high, medium, low) in label notes written by ``labels.notes_for``; None for a label
+    without it (e.g. written in the UI)."""
+    parts = (notes or "").split(" · ")
+    return parts[1] if len(parts) > 1 and parts[0].endswith(" draft") and parts[1] in ("high", "medium", "low") else None
+
+
 def tokens(text: str) -> tuple[str, ...]:
     text = unicodedata.normalize("NFKC", text).casefold()
     return tuple(_WORD.findall(text))

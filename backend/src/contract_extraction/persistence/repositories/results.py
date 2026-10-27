@@ -175,11 +175,13 @@ class ResultRepo:
 
     def best_values_for_runs(self, run_ids: list[uuid.UUID]) -> Sequence[RowMapping]:
         """``best_values`` of several runs, by run and field position."""
-        bv, ev = m.best_values, m.run_evaluation
+        bv, ev, gt = m.best_values, m.run_evaluation, m.GroundTruth
         return self.session.execute(
-            select(bv, m.Field.position, m.Field.value_type, ev.c.expected_value, ev.c.exact_match)
+            select(bv, m.Field.position, m.Field.value_type, ev.c.expected_value, ev.c.exact_match,
+                   gt.notes.label("label_notes"))
             .join(m.Field, m.Field.id == bv.c.field_id)
             .join(ev, and_(ev.c.run_id == bv.c.run_id, ev.c.field_id == bv.c.field_id))
+            .outerjoin(gt, and_(gt.document_id == bv.c.document_id, gt.field_id == bv.c.field_id))
             .where(bv.c.run_id.in_(run_ids)).order_by(bv.c.run_id, m.Field.position)
         ).mappings().all()
 

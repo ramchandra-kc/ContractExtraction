@@ -181,6 +181,22 @@ config: hits, evidence rank, whether it is indexed, the evidence chunk's score),
 recall, recall of all passages, recall@1/3/5/10/20, MRR, not indexed, mean hits) and `retrieval_by_type.csv` (the
 same per config and value type) to `experiments/NAME/`.
 
+### Comparing arms
+
+```bash
+uv run contract-extraction experiment compare rag-1 --by pipeline --baseline default                     # score
+uv run contract-extraction experiment compare rag-1 --by retrieval_config --baseline RAG02 --metric exact
+uv run contract-extraction experiment compare rag-1 --by pipeline --baseline default --labels absent --metric invented
+uv run contract-extraction experiment compare k-sweep --by retrieval_config --baseline "RAG02 k=5 t=0" \
+    --where label_confidence=high                                                                     # evidence recall
+```
+
+`compare` (`compare.py`) reads an export folder (`outcomes.csv`, else `results.csv`, else `retrieval_hits.csv`) and
+compares every arm with the baseline cell by cell (document × field, repeats averaged, cells both arms have). Fields of
+one contract are correlated, so the 95% interval is a cluster bootstrap over documents and `p` a document-level
+sign-flip permutation test, Holm-corrected over the arms (`p_holm`); for 0/1 metrics McNemar's test over cells is shown
+too. Report an effect only when the interval excludes 0 and it holds with `--where label_confidence=high`.
+
 **Evidence recall** (`evidence.py`): a draft label's evidence quote (kept in its notes) is split at "…" into
 passages, and a passage counts as found in a chunk when 80% of its words appear there in order (Markdown, case and
 small OCR noise ignored). `results.csv` and `outcomes.csv` get `evidence_any` (the model saw part of the evidence),
