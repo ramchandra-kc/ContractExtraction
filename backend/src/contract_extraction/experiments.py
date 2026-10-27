@@ -500,14 +500,14 @@ def export(c: Collected, out_dir: Path) -> list[Path]:
     outcomes, outcomes.csv and retrievals.csv in ``out_dir``."""
     out_dir.mkdir(parents=True, exist_ok=True)
     written = [
-        _csv(out_dir / "results.csv", [asdict(r) for r in c.results], json_cols=("value", "expected")),
-        _csv(out_dir / "runs.csv", [asdict(r) for r in c.runs]),
-        _csv(out_dir / "fields.csv", per_field(c)),
-        _csv(out_dir / "summary.csv", summary(c)),
+        write_csv(out_dir / "results.csv", [asdict(r) for r in c.results], json_cols=("value", "expected")),
+        write_csv(out_dir / "runs.csv", [asdict(r) for r in c.runs]),
+        write_csv(out_dir / "fields.csv", per_field(c)),
+        write_csv(out_dir / "summary.csv", summary(c)),
     ]
     if c.outcomes:
-        written += [_csv(out_dir / "outcomes.csv", [asdict(r) for r in c.outcomes], json_cols=("value", "expected")),
-                    _csv(out_dir / "retrievals.csv", per_retrieval(c))]
+        written += [write_csv(out_dir / "outcomes.csv", [asdict(r) for r in c.outcomes], json_cols=("value", "expected")),
+                    write_csv(out_dir / "retrievals.csv", per_retrieval(c))]
     meta = out_dir / "experiment.json"  # last, after the optional files
     meta.write_text(json.dumps({
         "name": c.experiment.name, "description": c.experiment.description, "hypothesis": c.experiment.hypothesis,
@@ -517,7 +517,7 @@ def export(c: Collected, out_dir: Path) -> list[Path]:
     return [*written, meta]
 
 
-def _csv(path: Path, rows: list[dict[str, Any]], json_cols: tuple[str, ...] = ()) -> Path:
+def write_csv(path: Path, rows: list[dict[str, Any]], json_cols: tuple[str, ...] = ()) -> Path:
     with path.open("w", newline="", encoding="utf-8") as fh:
         if rows:
             writer = csv.DictWriter(fh, fieldnames=list(rows[0]))

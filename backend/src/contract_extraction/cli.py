@@ -19,6 +19,8 @@
     contract-extraction experiment create NAME --pipelines A,B --tag TAG [--repeats N] | list | run NAME |
                                    show NAME | export NAME [-o DIR]
                                               documents × pipelines × repeats under fixed conditions (experiments.py)
+    contract-extraction experiment retrieval-eval NAME --tag TAG [--retrievals A,B] [--top-k 3,5,10] [--threshold 0,0.5]
+                                              evidence recall of RAG configs, no LLM calls (retrieval_eval.py)
 """
 
 from __future__ import annotations
@@ -505,6 +507,57 @@ def experiment_export(name: str, out: Path | None) -> int:
         db.dispose()
 
 
+def experiment_retrieval_eval(args: argparse.Namespace) -> int:
+    from dataclasses import asdict
+
+    from .experiments import write_csv
+    from .persistence.repositories import DocumentRepo
+    from .pipeline.executor import Providers
+    from .retrieval_eval import evaluate, summary, variants
+
+    split = lambda v: [x.strip() for x in v.split(",") if x.strip()] if v else []  # noqa: E731
+    settings = load_settings()
+    setup_logging(settings.log_level)
+    db = Database(settings.database)
+    try:
+        with db.session() as s:
+            repo = DocumentRepo(s)
+            docs = {d.id: d for d in (repo.with_tag(args.tag) if args.tag else [])}
+            docs |= {d.id: d for d in (repo.get_by_code(c) for c in split(args.documents))}
+            pipeline = ConfigRepo(s).resolve_pipeline(args.pipeline)
+            names = split(args.retrievals) or [rc.name for rc in pipeline.retrievals]
+            configs = variants(ConfigRepo(s).resolve_retrievals(names),
+                               [int(k) for k in split(args.top_k)] or None,
+                               [float(t) for t in split(args.threshold)] if args.threshold else None)
+            s.expunge_all()
+        if not docs:
+            print("FAIL: no documents (give --tag and/or --documents)", file=sys.stderr)
+            return 1
+        print(f"{len(docs)} documents × {len(configs)} RAG config variants, pipeline {pipeline.name}")
+        rows = evaluate(db, FileStorage(settings.storage_root), settings, Providers.from_settings(settings),
+                        pipeline.name, sorted(docs.values(), key=lambda d: d.code), configs)
+        out = args.output or BACKEND_ROOT.parent / "experiments" / args.name
+        out.mkdir(parents=True, exist_ok=True)
+        overall = summary(rows)
+        for f in (write_csv(out / "retrieval_hits.csv", [asdict(r) for r in rows]),
+                  write_csv(out / "retrieval_summary.csv", overall),
+                  write_csv(out / "retrieval_by_type.csv", summary(rows, ("retrieval_config", "value_type")))):
+            print(f"wrote {f}")
+        pct = lambda v: "-" if v is None else f"{v * 100:.1f}%"  # noqa: E731
+        print(f"\n{'RAG config':24} {'labels':>6} {'recall':>7} {'all':>7} {'@1':>6} {'@3':>6} {'@5':>6} {'MRR':>6} "
+              f"{'not idx':>7} {'hits':>5}")
+        for r in overall:
+            print(f"{r['retrieval_config']:24} {r['labels']:6} {pct(r['recall']):>7} {pct(r['recall_all']):>7} "
+                  f"{pct(r['recall_at_1']):>6} {pct(r['recall_at_3']):>6} {pct(r['recall_at_5']):>6} "
+                  f"{r['mrr'] or 0:6.3f} {pct(r['not_indexed']):>7} {r['mean_hits'] or 0:5.1f}")
+        return 0
+    except (AppError, ProviderError) as exc:
+        print(f"FAIL: {exc}", file=sys.stderr)
+        return 1
+    finally:
+        db.dispose()
+
+
 def gen_catalogue(doc: Path, out: Path, queries_path: Path, with_queries: bool, per_field: int) -> int:
     """Parse the catalogue document and write the seed SQL; optionally generate missing search queries."""
     from . import catalogue
@@ -675,6 +728,16 @@ def main(argv: list[str] | None = None) -> int:
     p_eexport = exp_sub.add_parser("export", help="write results, runs, fields and summary CSVs")
     p_eexport.add_argument("name")
     p_eexport.add_argument("-o", "--output", type=Path, help="folder (default: experiments/NAME in the repository)")
+    p_eret = exp_sub.add_parser("retrieval-eval",
+                                help="evidence recall of RAG configs against labelled evidence quotes, no LLM calls")
+    p_eret.add_argument("name", help="output folder name under experiments/")
+    p_eret.add_argument("--tag", help="the documents with this tag")
+    p_eret.add_argument("--documents", help="comma-separated document codes (also, or instead of --tag)")
+    p_eret.add_argument("--pipeline", help="decomposition, index and fields from this pipeline (default: the default)")
+    p_eret.add_argument("--retrievals", help="comma-separated RAG config names (default: the pipeline's)")
+    p_eret.add_argument("--top-k", help="comma-separated top_k values: one variant of each RAG config per value")
+    p_eret.add_argument("--threshold", help="comma-separated score thresholds (score_threshold = min_score) to sweep")
+    p_eret.add_argument("-o", "--output", type=Path, help="folder (default: experiments/NAME in the repository)")
 
     args = parser.parse_args(argv)
     if args.command == "documents":
@@ -690,6 +753,8 @@ def main(argv: list[str] | None = None) -> int:
             return experiment_run(args.name, args.max_queued, args.retries, args.poll)
         if args.action == "show":
             return experiment_show(args.name)
+        if args.action == "retrieval-eval":
+            return experiment_retrieval_eval(args)
         return experiment_export(args.name, args.output)
     if args.command == "labels":
         return labels_import(args.directory, args.root, args.overwrite, args.dry_run, args.tag)

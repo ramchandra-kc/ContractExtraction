@@ -35,6 +35,14 @@ class ConfigRepo:
     def retrieval_configs(self) -> Sequence[m.RetrievalConfig]:
         return self.session.scalars(select(m.RetrievalConfig).order_by(m.RetrievalConfig.name)).all()
 
+    def resolve_retrievals(self, names: list[str]) -> list[d.RetrievalConfig]:
+        """RAG configs by name, in the given order; ``NotFound`` names the unknown ones."""
+        rows = {r.name: r for r in self.retrieval_configs()}
+        unknown = [n for n in names if n not in rows]
+        if unknown:
+            raise NotFound(f"Unknown RAG config(s): {', '.join(unknown)}")
+        return [_retrieval(rows[n]) for n in names]
+
     def field_sets(self) -> Sequence[m.FieldSet]:
         return self.session.scalars(select(m.FieldSet).order_by(m.FieldSet.name, m.FieldSet.version)).all()
 
