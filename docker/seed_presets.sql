@@ -160,9 +160,10 @@ JOIN prompt_templates cpr ON cpr.name = 'classification_system' AND cpr.version 
 ON CONFLICT (name) DO NOTHING;
 
 -- Experiment E8a: an extraction system prompt with an explicit null policy (E6 found invented values on fields the
--- labels leave empty, some copied from a field definition's examples). Inactive: only the pipeline below uses it.
-INSERT INTO prompt_templates (name, version, role, body, notes, is_active) VALUES
-    ('extraction_system', 2, 'extraction_system', 'You are a precise information extraction assistant.
+-- labels leave empty, some copied from a field definition's examples). Its own name, so the extraction_system
+-- versions stay free for edits; only the pipeline below uses it.
+INSERT INTO prompt_templates (name, version, role, body, notes) VALUES
+    ('extraction_system_nullpolicy', 1, 'extraction_system', 'You are a precise information extraction assistant.
 Always follow these rules:
 1. Only extract values exactly as they appear in the text.
 2. Return null unless the text explicitly states the value for this contract. Do not compute, assume or fill in a
@@ -173,22 +174,22 @@ Always follow these rules:
    null for them.
 5. Return output strictly in JSON format with no extra commentary.
 6. Always follow the JSON schema provided by the user prompt.',
-     'E8a: version 1 plus an explicit null policy (rules 2-4)', false)
+     'E8a: extraction_system version 1 plus an explicit null policy (rules 2-4)')
 ON CONFLICT (name, version) DO NOTHING;
 
--- e6-qwen3-k5 with the version 2 extraction prompt; nothing else differs.
+-- e6-qwen3-k5 with the null-policy extraction prompt; nothing else differs.
 INSERT INTO pipeline_configs (name, description, decomposition_config_id, index_config_id, field_set_id,
                               extraction_profile_id, extraction_prompt_id, judge_enabled, judge_profile_id, judge_prompt_id,
                               judge_parallel, classification_enabled, classification_profile_id, classification_prompt_id,
                               classification_pages, classification_min_confidence, min_priority, extraction_granularity,
                               group_max_fields)
-SELECT 'e8-qwen3-k5-nullpolicy', 'E8a: e6-qwen3-k5 with extraction prompt version 2 (explicit null policy)',
+SELECT 'e8-qwen3-k5-nullpolicy', 'E8a: e6-qwen3-k5 with the extraction_system_nullpolicy prompt (explicit null policy)',
        p.decomposition_config_id, p.index_config_id, p.field_set_id, p.extraction_profile_id, xp.id, p.judge_enabled,
        p.judge_profile_id, p.judge_prompt_id, p.judge_parallel, p.classification_enabled, p.classification_profile_id,
        p.classification_prompt_id, p.classification_pages, p.classification_min_confidence, p.min_priority,
        p.extraction_granularity, p.group_max_fields
 FROM pipeline_configs p
-JOIN prompt_templates xp ON xp.name = 'extraction_system' AND xp.version = 2
+JOIN prompt_templates xp ON xp.name = 'extraction_system_nullpolicy' AND xp.version = 1
 WHERE p.name = 'e6-qwen3-k5'
 ON CONFLICT (name) DO NOTHING;
 
