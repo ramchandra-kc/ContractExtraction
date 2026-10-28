@@ -57,7 +57,7 @@ const thin = { style: BorderStyle.SINGLE, size: 4, color: "000000" };
 const none = { style: BorderStyle.NONE, size: 0, color: "FFFFFF" };
 
 // Booktabs-style table: rules above and below the header and at the bottom only.
-function table(header, body, widths, { firstColLeft = true } = {}) {
+function table(header, body, widths, { firstColLeft = true, left = false } = {}) {
   const total = widths.reduce((a, b) => a + b, 0);
   const scale = CONTENT_WIDTH / total;
   const w = widths.map((x) => Math.round(x * scale));
@@ -69,7 +69,7 @@ function table(header, body, widths, { firstColLeft = true } = {}) {
       margins: { top: 50, bottom: 50, left: 80, right: 80 },
       children: [
         new Paragraph({
-          alignment: i === 0 && firstColLeft ? AlignmentType.LEFT : AlignmentType.CENTER,
+          alignment: left || (i === 0 && firstColLeft) ? AlignmentType.LEFT : AlignmentType.CENTER,
           keepNext: keep, // keeps the table on one page
           children: runs(String(text), { size: 18, bold }),
         }),
@@ -134,7 +134,7 @@ const rgain = (base, c) => {
   const g = gain(base, c);
   return `${sgn(100 * g.diff, 1)} [${sgn(100 * g.lo, 1)}, ${sgn(100 * g.hi, 1)}]${g.p_holm < 0.05 ? "*" : " (n.s.)"}`;
 };
-// One Table 6 row over the E6 arms, the best value in bold.
+// One Table 8 row over the E6 arms, the best value in bold.
 function row6(label, key, fmt, higherIsBetter) {
   const vals = E6ARMS.map((a) => A[a][key]);
   const best = higherIsBetter ? Math.max(...vals) : Math.min(...vals);
@@ -153,6 +153,11 @@ const CAUSE = {
 };
 const GRADING_COST = 0.12 + 0.10 + 0.02 + 0.02 + 0.27; // printed by `experiment semantic` and the cross-check
 const SPENT = N.cost_log.reduce((s, e) => s + e.cost, 0) + GRADING_COST;
+const C = N.code.components;
+const TESTS = { backend: 397, live: 5, gateway: 18, frontend: 53 }; // pytest / vitest on 28 October 2026
+const SRC = ["backend", "gateway", "frontend", "sql", "scripts"], TST = ["backend_tests", "gateway_tests", "frontend_tests"];
+const SRC_FILES = SRC.reduce((s, k) => s + C[k].files, 0), SRC_LINES = SRC.reduce((s, k) => s + C[k].lines, 0);
+const TEST_FILES = TST.reduce((s, k) => s + C[k].files, 0), TEST_LINES = TST.reduce((s, k) => s + C[k].lines, 0);
 
 const progress = [
   h1("Progress at a Glance"),
@@ -162,7 +167,7 @@ const progress = [
     `held-out test split (108 contracts) has not been touched. LLM spending so far is about USD ${SPENT.toFixed(2)}.`,
   ),
   p("**Built.**"),
-  bullet("a reproducible extraction platform that snapshots every run's configuration and code version and stores the outcome of every retrieval configuration and field;"),
+  bullet(`a reproducible extraction platform (web interface, gateway, API, workers; about ${Math.round(SRC_LINES / 1000)},000 lines of code and ${TESTS.backend + TESTS.gateway + TESTS.frontend} automated tests, Section 3) that snapshots every run's configuration and code version and stores the outcome of every retrieval configuration and field;`),
   bullet("stage-wise evaluation: evidence recall without LLM calls, four extraction scores including an LLM-graded semantic score, and paired statistics clustered by document;"),
   bullet("new pipeline components behind configuration flags: a local cross-encoder reranker with a shared score cache, and versioned system prompts per pipeline."),
   p("**Key findings so far.**"),
@@ -190,7 +195,7 @@ const progress = [
   ),
   p(
     "**Next.** Retrieval experiments that need no LLM calls (query expansion × hybrid search, embedding models), then chunking, reader variants, " +
-    "verification and decomposition, the long-context comparison, and finally a single run on the test split (Section 9.1, Table 12).",
+    "verification and decomposition, the long-context comparison, and finally a single run on the test split (Section 10.1, Table 14).",
   ),
 ];
 
@@ -214,7 +219,7 @@ const title = [
   }),
   new Paragraph({
     alignment: AlignmentType.CENTER, spacing: { after: 360 },
-    children: [new TextRun({ text: "Progress report, 28 October 2026. Development-split results; test-split results pending.", size: 20, color: "6B6B6B" })],
+    children: [new TextRun({ text: "Code fair submission and progress report, 28 October 2026. Development-split results; test-split results pending.", size: 20, color: "6B6B6B" })],
   }),
 ];
 
@@ -260,7 +265,7 @@ const introduction = [
     "This report asks a practical question: **which components of a contract-extraction pipeline improve extraction quality, and by how much?** " +
     "We answer it with controlled experiments that change one component at a time, evaluate retrieval and extraction separately, and report " +
     "paired differences with uncertainty. The work is ongoing; this progress report covers the baseline, retrieval, reranking, context-size and first " +
-    "prompt experiments on the development split, and the remaining experiments are planned in Section 9.1.",
+    "prompt experiments on the development split, and the remaining experiments are planned in Section 10.1.",
   ),
   p("The research questions addressed so far are:"),
   numbered("**RQ1 (baseline).** How well does the current system perform, how does a single-configuration research baseline compare, and what is the smallest effect the data can resolve?"),
@@ -341,6 +346,78 @@ const system = [
     "settings at once, so they serve here only as the baseline \"current system\". For the research grid we defined a clean baseline, **R-base** " +
     "(dense retrieval, top 5, no threshold, query expansion, 5 hits per query), from which each arm changes a single setting.",
   ),
+  h2("3.1  Architecture and deployment"),
+  p(
+    "Figure 1 shows how the parts run. The browser talks only to the frontend, which reaches the backend through a gateway that adds request " +
+    "identifiers, timeouts, an upload size limit and an aggregated health check. The backend API never does pipeline work inside a request: it " +
+    "writes a queued run to PostgreSQL and returns. Workers claim queued runs with SELECT … FOR UPDATE SKIP LOCKED, send a heartbeat every 15 " +
+    "seconds, and write results back, so the API and the workers never call each other and any number of workers can run in parallel. Only the " +
+    "workers talk to Qdrant, the LLM providers and the reranker, which keeps the API fast. All pipeline configuration lives in the database, " +
+    "and each run executes from a frozen snapshot of it, so editing a configuration never changes a queued or finished run.",
+  ),
+  figure("fig_architecture.png", 620, 422),
+  caption(
+    "**Figure 1.** Deployment architecture. Blue: application processes; orange: data stores; green: model services. The API and the workers " +
+    "communicate only through the run queue in PostgreSQL.",
+  ),
+  h2("3.2  Technology stack"),
+  tableTitle("**Table 2.** Technology stack."),
+  table(
+    ["Layer", "Technologies"],
+    [
+      ["Frontend", "React 19, TypeScript 5.9, Vite 8, Tailwind CSS 4, Radix UI, TanStack Query, React Router, openapi-fetch with types generated from the API's OpenAPI schema"],
+      ["Gateway", "Python 3.13, Starlette, httpx (streaming reverse proxy), Uvicorn"],
+      ["Backend API and workers", "Python 3.13, FastAPI, Pydantic 2, SQLAlchemy 2 with psycopg 3, Uvicorn; one package with API, worker and CLI entry points"],
+      ["Document processing", "PyMuPDF and pymupdf4llm (PDF to Markdown, OCR and hybrid modes), BeautifulSoup and markdownify (HTML), mammoth (DOCX), Pillow (images)"],
+      ["Retrieval", "Qdrant 1.12 (dense and BM25 sparse vectors per chunk, reciprocal rank fusion), Snowball stemmer, fastembed (ONNX cross-encoder reranker on CPU, SQLite score cache)"],
+      ["Models", "Ollama (local Llama 3.1 8B, nomic-embed-text), OpenRouter (hosted Qwen3 30B, Llama 3.1 8B, Gemini, GPT-6 Luna and others) behind one OpenAI-compatible adapter"],
+      ["Data", "PostgreSQL 16 (31 tables and 2 views: configuration, documents, runs and queue, results, ground truth), local file storage"],
+      ["Tooling", "uv, npm, Docker Compose, pytest, Vitest with Testing Library and MSW, ESLint, TypeScript checks, one dev script (scripts/dev.sh) for start, status, smoke and test"],
+      ["Analysis and report", "experiment CLI (create, run, export, compare, semantic), matplotlib, docx"],
+    ],
+    [22, 78], { left: true },
+  ),
+  p(""),
+  h2("3.3  Code base and tests"),
+  p(
+    `The code base was built over ${N.code.commits} commits between ${N.code.first_commit} and ${N.code.last_commit}. Table 3 gives its size in ` +
+    "non-blank lines, without generated files. Every test suite runs offline: providers sit behind interfaces, so the pipeline is tested with " +
+    "fake LLMs, embedders and vector stores and needs no Docker or network. A separate smoke suite (scripts/dev.sh smoke) exercises the running stack end to end.",
+  ),
+  tableTitle("**Table 3.** Size of the code base and its tests (non-blank lines; test counts as of 28 October 2026)."),
+  table(
+    ["Component", "Source files", "Source lines", "Test files", "Test lines", "Tests"],
+    [
+      ["Backend (Python)", String(C.backend.files), int(C.backend.lines), String(C.backend_tests.files), int(C.backend_tests.lines), `${TESTS.backend} (+ ${TESTS.live} live and smoke)`],
+      ["Gateway (Python)", String(C.gateway.files), int(C.gateway.lines), String(C.gateway_tests.files), int(C.gateway_tests.lines), String(TESTS.gateway)],
+      ["Frontend (TypeScript, React)", String(C.frontend.files), int(C.frontend.lines), String(C.frontend_tests.files), int(C.frontend_tests.lines), String(TESTS.frontend)],
+      ["Schema and seed data (SQL)", String(C.sql.files), int(C.sql.lines), "—", "—", "—"],
+      ["Scripts (shell, Python)", String(C.scripts.files), int(C.scripts.lines), "—", "—", "—"],
+      ["**Total**", `**${SRC_FILES}**`, `**${int(SRC_LINES)}**`, `**${TEST_FILES}**`, `**${int(TEST_LINES)}**`, `**${TESTS.backend + TESTS.gateway + TESTS.frontend}**`],
+    ],
+    [28, 13, 14, 12, 13, 20],
+  ),
+  p(""),
+  p(
+    `Test code is ${Math.round((100 * TEST_LINES) / SRC_LINES)}% of the source by lines. The backend tests cover configuration resolution and ` +
+    "snapshots, the run queue and worker recovery, every document converter, chunking offsets, retrieval (fusion, anchors, reranking), answer " +
+    "parsing, evaluation and evidence matching, the experiment exports and the statistics; the frontend tests render the pages against a mocked API.",
+  ),
+  h2("3.4  User interface"),
+  p(
+    "The web interface covers the whole workflow: upload a contract in any supported format, follow a run's progress, inspect each extracted " +
+    "value next to its label and the retrieval configuration that produced it, read the extracted pages, and edit every configuration that " +
+    "shapes a run (Figures 2–4).",
+  ),
+  figure("ui_documents.png", 600, 375),
+  caption("**Figure 2.** Document list with upload. Each document shows its format, page count and latest run."),
+  figure("ui_run_results.png", 600, 375),
+  caption(
+    "**Figure 3.** Results of a run (k = 20 arm): the extracted value, the judge's verdict, the expected label, whether they match and which " +
+    "retrieval configuration produced the value. The contract is a public SEC filing.",
+  ),
+  figure("ui_configuration.png", 600, 375),
+  caption("**Figure 4.** Configuration: pipelines, retrieval configurations, contract types, fields, models, prompts and indexing are all editable data."),
 ];
 
 const data = [
@@ -404,7 +481,7 @@ const method = [
     "run-to-run noise floor measured in E1, and (iii) it holds on high-confidence labels.",
   ),
   h2("5.4  Models"),
-  tableTitle("**Table 2.** Models used so far."),
+  tableTitle("**Table 4.** Models used so far."),
   table(
     ["Role", "Model", "Access", "Price (USD per M tokens, in / out)"],
     [
@@ -432,9 +509,9 @@ const results = [
   h2("6.1  E1: Baseline and noise floor (RQ1)"),
   p(
     "E1 compares the current system (seven retrieval configurations, Llama 3.1 8B reader and judge) with the research baseline (R-base, Qwen3 30B, " +
-    "no judge). Table 3 and Figure 1 give the results."
+    "no judge). Table 5 and Figure 5 give the results."
   ),
-  tableTitle("**Table 3.** E1 on the development split (452 value cells and 280 absent cells per repeat, 3 repeats)."),
+  tableTitle("**Table 5.** E1 on the development split (452 value cells and 280 absent cells per repeat, 3 repeats)."),
   table(
     ["Metric", "Current system (Llama 3.1 8B, RAG01–07 + judge)", "R-base (Qwen3 30B)"],
     [
@@ -458,7 +535,7 @@ const results = [
   p(""),
   figure("fig_e1_baseline.png", 540, 300),
   caption(
-    "**Figure 1.** E1: current system against the research baseline, with 95% cluster bootstrap intervals. The baseline is better on both " +
+    "**Figure 5.** E1: current system against the research baseline, with 95% cluster bootstrap intervals. The baseline is better on both " +
     "quality scores and invents values on absent fields half as often.",
   ),
   p(
@@ -495,9 +572,9 @@ const results = [
 
   h2("6.3  E2: Retrieval settings (RQ2)"),
   p(
-    "E2 runs the retriever alone for every labelled field with an evidence quote (452 fields, no LLM calls). Table 4 shows the seeded configurations."
+    "E2 runs the retriever alone for every labelled field with an evidence quote (452 fields, no LLM calls). Table 6 shows the seeded configurations."
   ),
-  tableTitle("**Table 4.** Evidence recall of the seeded retrieval configurations (development split, 452 fields)."),
+  tableTitle("**Table 6.** Evidence recall of the seeded retrieval configurations (development split, 452 fields)."),
   table(
     ["Config", "Settings", "Recall", "Recall@1", "MRR", "Mean chunks"],
     [
@@ -528,7 +605,7 @@ const results = [
   ),
   figure("fig_recall_vs_k.png", 520, 300),
   caption(
-    "**Figure 2.** Evidence recall against the number of chunks passed to the reader, for dense and hybrid retrieval (20 hits per query, no " +
+    "**Figure 6.** Evidence recall against the number of chunks passed to the reader, for dense and hybrid retrieval (20 hits per query, no " +
     "threshold, development split). Recall keeps rising to k = 20, so ranking, not the candidate pool, limits recall at k = 5.",
   ),
   p(
@@ -539,7 +616,7 @@ const results = [
   ),
 
   h2("6.4  E6: Cross-encoder reranking, retrieval only (RQ3)"),
-  tableTitle("**Table 5.** Evidence recall at k = 5 with and without the reranker (20 hits per query, development split, 452 fields)."),
+  tableTitle("**Table 7.** Evidence recall at k = 5 with and without the reranker (20 hits per query, development split, 452 fields)."),
   table(
     ["Retrieval", "Candidates", "Recall", "Recall@1", "MRR", "Δ recall vs no reranker (points, 95% CI)"],
     [
@@ -566,9 +643,9 @@ const results = [
   p(
     "E6 then measures whether the recall gains reach the extracted values. All four arms use hybrid retrieval with anchors and 20 hits per query " +
     "(R07) and the Qwen3 30B reader; they differ only in how many chunks reach the reader (5, 10 or 20) and whether the reranker selects the five " +
-    "(Table 6, Figure 3). Table 7 and Figure 4 give the paired differences against k = 5."
+    "(Table 8, Figure 7). Table 9 and Figure 8 give the paired differences against k = 5."
   ),
-  tableTitle("**Table 6.** End-to-end results by context size and reranking (Qwen3 30B, development split, 3 repeats). Best value per row in bold."),
+  tableTitle("**Table 8.** End-to-end results by context size and reranking (Qwen3 30B, development split, 3 repeats). Best value per row in bold."),
   table(
     ["Metric", "R07, k = 5", "R07, k = 10", "R07, k = 20", "R07, k = 5 + reranker"],
     [
@@ -589,10 +666,10 @@ const results = [
   p(""),
   figure("fig_context_size.png", 620, 266),
   caption(
-    "**Figure 3.** Quality, evidence recall and invented values against the number of chunks passed to the reader (Qwen3 30B, development split, " +
+    "**Figure 7.** Quality, evidence recall and invented values against the number of chunks passed to the reader (Qwen3 30B, development split, " +
     "95% cluster bootstrap intervals). Open diamonds: five chunks chosen by the reranker.",
   ),
-  tableTitle("**Table 7.** Paired differences against R07, k = 5, in points on a 0–100 scale (95% cluster bootstrap CI; * Holm-adjusted p < 0.05)."),
+  tableTitle("**Table 9.** Paired differences against R07, k = 5, in points on a 0–100 scale (95% cluster bootstrap CI; * Holm-adjusted p < 0.05)."),
   table(
     ["Arm", "Labels", "Semantic", "Score", "Exact", "Invented on absent"],
     [K10, K20, RR].flatMap((a) => [
@@ -604,7 +681,7 @@ const results = [
   p(""),
   figure("fig_forest.png", 620, 250),
   caption(
-    "**Figure 4.** Paired differences against k = 5 for every arm tested on the same cells, including the null-policy prompt of E8a (Section 6.8). " +
+    "**Figure 8.** Paired differences against k = 5 for every arm tested on the same cells, including the null-policy prompt of E8a (Section 6.8). " +
     "Filled markers: all labels; open markers: high-confidence labels only.",
   ),
   p(
@@ -622,11 +699,11 @@ const results = [
     `**Cost-effectiveness.** Tokens and cost rise with k, to ${usd(A[K10].cost)} and ${usd(A[K20].cost)} USD per contract. k = 10 obtains ` +
     `${Math.round((100 * D6.semantic[K10].diff) / D6.semantic[K20].diff)}% of k = 20's semantic gain for ` +
     `${Math.round((100 * (A[K10].cost - A[K5].cost)) / (A[K20].cost - A[K5].cost))}% of its extra cost, so it is the better default when cost ` +
-    "matters and k = 20 when accuracy does (Figure 5). Both lie on the cost-quality Pareto front, together with the cheaper R-base and k = 5 arms.",
+    "matters and k = 20 when accuracy does (Figure 9). Both lie on the cost-quality Pareto front, together with the cheaper R-base and k = 5 arms.",
   ),
   figure("fig_cost_quality.png", 540, 320),
   caption(
-    "**Figure 5.** Cost per contract against semantic score for every arm run so far (95% intervals). Arms from different experiments ran on " +
+    "**Figure 9.** Cost per contract against semantic score for every arm run so far (95% intervals). Arms from different experiments ran on " +
     "different code versions, so the comparison across experiments is indicative; the dashed line joins the arms no cheaper arm beats.",
   ),
   p(
@@ -641,13 +718,13 @@ const results = [
 
   h2("6.6  Retrieval failures versus reading failures"),
   p(
-    "Figure 6 splits every labelled value into four outcomes by its semantic grade: correct, partially correct, wrong although the evidence was " +
+    "Figure 10 splits every labelled value into four outcomes by its semantic grade: correct, partially correct, wrong although the evidence was " +
     "retrieved (a reading failure), and wrong because the evidence was not retrieved (a retrieval failure). This attributes the remaining error to a " +
     "stage of the pipeline."
   ),
   figure("fig_error_attribution.png", 600, 300),
   caption(
-    "**Figure 6.** Outcome of every labelled value (all repeats) by arm. Grey: wrong and evidence not retrieved; orange: wrong although the " +
+    "**Figure 10.** Outcome of every labelled value (all repeats) by arm. Grey: wrong and evidence not retrieved; orange: wrong although the " +
     "evidence was retrieved.",
   ),
   p(
@@ -662,20 +739,20 @@ const results = [
 
   h2("6.7  Where invented values come from"),
   p(
-    `Invented values on absent fields are concentrated in a few fields: the eight fields in Table 8 account for ` +
+    `Invented values on absent fields are concentrated in a few fields: the eight fields in Table 10 account for ` +
     `${pc(INV.fields.reduce((s, f) => s + f.share_of_invented[K5], 0), 0)} of all invented values at k = 5, and the first four for ` +
     `${pc(INV.fields.slice(0, 4).reduce((s, f) => s + f.share_of_invented[K5], 0), 0)}. Inspecting the answers shows that most are not ` +
-    "hallucinations in the usual sense (Table 8, Figure 7):",
+    "hallucinations in the usual sense (Table 10, Figure 11):",
   ),
-  tableTitle("**Table 8.** Invented-value rate on absent labels for the fields with the most invented values (development split, all repeats)."),
+  tableTitle("**Table 10.** Invented-value rate on absent labels for the fields with the most invented values (development split, all repeats)."),
   table(
     ["Field", "Absent cells per repeat", "k = 5", "k = 20", "k = 5 + null policy", "What the model returns"],
     INV.fields.map((f) => [f.field, String(f.cells), pc(f.rate[K5], 0), pc(f.rate[K20], 0), pc(f.rate[NULLP], 0), CAUSE[f.field] || "not yet inspected"]),
-    [20, 11, 8, 8, 11, 42],
+    [20, 11, 8, 8, 11, 42], { left: true },
   ),
   p(""),
   figure("fig_invented_by_field.png", 600, 320),
-  caption("**Figure 7.** Invented-value rate on absent labels by field, for k = 5, k = 20 and the null-policy prompt (absent cells per repeat in brackets)."),
+  caption("**Figure 11.** Invented-value rate on absent labels by field, for k = 5, k = 20 and the null-policy prompt (absent cells per repeat in brackets)."),
   bullet(
     "**Label policy, not invention.** For expiration_date the model returns an expiry relative to an event (for example 90 days after termination) " +
     "where the label is empty; the field's own format help asks for exactly this. For document_status it answers \"executed\", and every one of " +
@@ -695,9 +772,9 @@ const results = [
   p(
     "E8a tests the obvious fix: a system prompt that adds three rules to the original (return null unless the text explicitly states the value; " +
     "examples in a field definition and the JSON template are never values to copy; blanks, template wording and sample data are not values). " +
-    "Everything else equals the k = 5 arm, so the comparison is paired on the same cells (Table 9).",
+    "Everything else equals the k = 5 arm, so the comparison is paired on the same cells (Table 11).",
   ),
-  tableTitle("**Table 9.** E8a: null-policy prompt against the original prompt (R07, k = 5, Qwen3 30B, development split, 3 repeats)."),
+  tableTitle("**Table 11.** E8a: null-policy prompt against the original prompt (R07, k = 5, Qwen3 30B, development split, 3 repeats)."),
   table(
     ["Metric", "Original prompt", "Null policy", "Difference (95% CI)", "p"],
     [
@@ -722,17 +799,17 @@ const results = [
   p(
     "Exact and partial-credit scores count paraphrased but correct answers as wrong, which is most visible on structured fields. Under the semantic " +
     "score, Qwen3's score on structured values whose evidence was retrieved rises from 0.24 to 0.47, and on lists from 0.10 to 0.60, while the " +
-    "ranking of systems is unchanged (Tables 3 and 6). Grading all E1 runs cost USD 0.12.",
+    "ranking of systems is unchanged (Tables 5 and 8). Grading all E1 runs cost USD 0.12.",
   ),
   p(
     `The grader was not validated against human grades. Instead, ${G.n} randomly sampled cells from E1 and E6 were re-graded by a second, ` +
-    `independent model from another provider (Gemini 4 Argon; Table 10). The two graders agree on ${pc(G.agreement, 0)} of cells (Cohen's kappa ` +
+    `independent model from another provider (Gemini 4 Argon; Table 12). The two graders agree on ${pc(G.agreement, 0)} of cells (Cohen's kappa ` +
     `${G.kappa.toFixed(2)}, substantial agreement) and on ${pc(G.correct_agreement, 0)} for the binary decision correct versus not correct. The main ` +
     `disagreement is partial versus correct (${G.confusion["partial->correct"]} of ${G.n} cells), with GPT-6 Luna slightly stricter; only ` +
     `${G.confusion["correct->wrong"] + G.confusion["wrong->correct"]} cells were graded correct by one model and wrong by the other. We therefore ` +
     "treat semantic scores as reliable for comparing arms, which share the grader, but not as calibrated absolute accuracies.",
   ),
-  tableTitle(`**Table 10.** Grades of the two graders on ${G.n} sampled cells (rows: GPT-6 Luna, columns: Gemini 4 Argon).`),
+  tableTitle(`**Table 12.** Grades of the two graders on ${G.n} sampled cells (rows: GPT-6 Luna, columns: Gemini 4 Argon).`),
   table(
     ["GPT-6 Luna \\ Gemini 4 Argon", "correct", "partial", "wrong", "Total"],
     ["correct", "partial", "wrong"].map((a) => [a, ...["correct", "partial", "wrong"].map((b) => String(G.confusion[`${a}->${b}`] || 0)),
@@ -823,8 +900,92 @@ const threats = [
   ),
 ];
 
+const critique = [
+  h1("9  Critique and Improvements"),
+  p(
+    "Building the platform and running the first experiments exposed weaknesses in both the software and the research design. This section " +
+    "lists them honestly, with the improvement each suggests; Table 13 gathers them by priority.",
+  ),
+  h2("9.1  Engineering"),
+  bullet(
+    "**The default pipeline is the weakest configuration.** New runs still default to the seven-configuration ensemble with a judge, which E1 " +
+    "and E11 show is slower, costlier and less accurate than a single hybrid configuration. The default should follow the evidence: hybrid " +
+    "retrieval with anchors, k = 10, no judge.",
+  ),
+  bullet(
+    "**No schema migrations.** schema.sql is the single source of truth and the documented way to change it is to recreate the database. The " +
+    "reranker columns were therefore added to the live database by hand, because recreating it would have deleted the experiment data. " +
+    "Versioned migrations (for example Alembic) would make such changes safe and repeatable.",
+  ),
+  bullet(
+    "**New pipeline settings are not yet in the API or the interface.** The reranker's model and candidate count exist in the schema and the " +
+    "pipeline but can be set only through SQL presets. Every configuration flag should be editable where the others are.",
+  ),
+  bullet(
+    "**Resource limits are implicit.** Eight workers each loading a 2–3.5 GB reranker exhausted a 16 GB laptop and failed runs through timeouts. " +
+    "The fix (a shared on-disk score cache, lazy loading, a thread cap) works, but a worker should declare the resources a run needs, or the " +
+    "model should run in one shared service, so that adding workers cannot overload the machine.",
+  ),
+  bullet(
+    "**Failure handling is minimal.** A run is attempted once; provider timeouts and disconnects fail the whole run, and the experiment runner " +
+    "re-queues it. Retrying a single failed field with back-off would lose less work.",
+  ),
+  bullet(
+    "**No authentication and no continuous integration.** The gateway is designed to hold authentication but does not yet, so the system must " +
+    "not be exposed beyond one machine. The tests run only when a developer runs them; a CI pipeline running the three offline suites, the type " +
+    "checks and the linter on every push would catch regressions earlier.",
+  ),
+  bullet(
+    "**Structured results are hard to read.** The results page shows structured values as raw JSON side by side (Figure 3). A field-by-field " +
+    "comparison that highlights the differing sub-fields would make reviewing extractions much faster. Run progress is polled every two " +
+    "seconds; server-sent events would be lighter.",
+  ),
+  h2("9.2  Research"),
+  bullet(
+    "**Labels are drafts.** Every label was written by an LLM, and some encode a policy choice (Section 6.7). A hand-verified subset of 30–50 " +
+    "contracts, and an explicit labelling policy for derived and relative values, would turn the invented-value rate into a trustworthy measure.",
+  ),
+  bullet(
+    "**The development split is small.** With 36 contracts, effects below about 0.03 cannot be resolved, and per-type results are anecdotal. " +
+    "Only the final test run (108 contracts) can confirm the findings.",
+  ),
+  bullet(
+    "**One reader model.** All grids use Qwen3 30B. The context-size result may not transfer to a reader with a short context window or a " +
+    "different family; E12 tests a local model, and a second hosted reader would strengthen the claim.",
+  ),
+  bullet(
+    "**Prompt instructions are a weak control.** E8a showed that the reader ignores system-prompt rules. Structural controls, such as JSON " +
+    "Schema-constrained output and a required verbatim evidence span that is checked against the document, are the better next steps.",
+  ),
+  bullet(
+    "**Partial credit dominates the remaining error.** About 44% of values are partially correct at k = 20, mostly structured fields with some " +
+    "sub-fields missing. Reporting sub-field recall and precision separately would show which sub-fields the reader misses.",
+  ),
+  bullet(
+    "**Code changed between experiments.** Only experiments on identical extraction code are compared directly. Freezing the code, tagging the " +
+    "commit and re-running the baseline before the final experiments, as planned, removes this caveat.",
+  ),
+  tableTitle("**Table 13.** Improvements by priority."),
+  table(
+    ["Priority", "Improvement", "Why"],
+    [
+      ["High", "Make hybrid retrieval, k = 10, no judge the default pipeline", "better, cheaper and faster on every measure so far"],
+      ["High", "Hand-verify a label subset; write a labelling policy for derived values", "makes accuracy and invented-value rates trustworthy"],
+      ["High", "Schema-constrained output and evidence-span checks (E8, E9)", "prompt rules alone do not change the reader's behaviour"],
+      ["Medium", "Versioned schema migrations", "safe changes to a database that holds experiment data"],
+      ["Medium", "CI for the offline test suites, type checks and linter", "regressions caught on every push"],
+      ["Medium", "Expose every pipeline flag in the API and UI; per-field retries", "no SQL needed to configure; fewer lost runs"],
+      ["Medium", "Field-by-field diff view for structured results", "faster review of extractions"],
+      ["Low", "Shared model service or declared worker resources", "adding workers cannot overload the machine"],
+      ["Low", "Authentication in the gateway; server-sent events for progress", "needed before any multi-user deployment"],
+    ],
+    [11, 49, 40], { left: true },
+  ),
+  p(""),
+];
+
 const conclusion = [
-  h1("9  Conclusion and Future Work"),
+  h1("10  Conclusion and Future Work"),
   p(
     "On the development split, the largest gains in contract extraction came not from a bigger ensemble or a judge but from getting the right text " +
     "to the reader: removing a context-starving threshold, adding lexical search and anchor chunks, and passing more chunks to a reader that can " +
@@ -834,7 +995,7 @@ const conclusion = [
     "adding to it, and its retrieval gain does not reach the answers. More context also brings more invented values on absent fields, which a " +
     "prompt rule does not remove; they trace back to field definitions and labelling policy.",
   ),
-  tableTitle("**Table 11.** Experiment programme and status."),
+  tableTitle("**Table 13.** Experiment programme and status."),
   table(
     ["#", "Question", "Status"],
     [
@@ -852,16 +1013,16 @@ const conclusion = [
       ["E12", "Leave-one-out ablation and transfer to a local model", "Planned"],
       ["E13", "Test split, once: baseline, full stack, long context, frontier ceiling", "Planned"],
     ],
-    [8, 62, 30],
+    [8, 62, 30], { left: true },
   ),
   p(""),
-  h2("9.1  Plan for the remaining work"),
+  h2("10.1  Plan for the remaining work"),
   p(
     "The remaining experiments run in the order below, all on the development split until the final test run. Retrieval experiments are scored " +
     "with the free retrieval-only evaluation first, and only their best arms are run end to end. Costs are estimates at the measured cost per arm " +
     `(about USD ${(A[K10].cost * 108).toFixed(2)} for one k = 10 arm over 36 contracts and three repeats).`,
   ),
-  tableTitle("**Table 12.** Order and estimated LLM cost of the remaining experiments."),
+  tableTitle("**Table 14.** Order and estimated LLM cost of the remaining experiments."),
   table(
     ["Step", "Experiment", "What it decides", "Estimated cost (USD)"],
     [
@@ -875,7 +1036,7 @@ const conclusion = [
       ["8", "E10 long context", "RAG vs the whole contract in context", "≈ 1–6"],
       ["9", "E13 test split", "final, once: baseline, full stack, long context, frontier ceiling", "≈ 30"],
     ],
-    [7, 24, 47, 22],
+    [7, 24, 47, 22], { left: true },
   ),
   p(""),
   p(
@@ -984,7 +1145,7 @@ const doc = new Document({
       },
       children: [
         ...title, ...abstract, ...progress, ...introduction, ...related, ...system, ...data, ...method, ...results,
-        ...discussion, ...threats, ...conclusion, ...references, ...appendix,
+        ...discussion, ...threats, ...critique, ...conclusion, ...references, ...appendix,
       ],
     },
   ],

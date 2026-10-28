@@ -1685,6 +1685,46 @@
    "e8-qwen3-k5-nullpolicy": 218
   }
  },
+ "code": {
+  "components": {
+   "backend": {
+    "files": 82,
+    "lines": 8960
+   },
+   "backend_tests": {
+    "files": 35,
+    "lines": 3425
+   },
+   "sql": {
+    "files": 4,
+    "lines": 3020
+   },
+   "frontend_tests": {
+    "files": 13,
+    "lines": 1275
+   },
+   "frontend": {
+    "files": 63,
+    "lines": 5255
+   },
+   "gateway": {
+    "files": 6,
+    "lines": 253
+   },
+   "gateway_tests": {
+    "files": 1,
+    "lines": 124
+   },
+   "scripts": {
+    "files": 2,
+    "lines": 404
+   }
+  },
+  "commits": 59,
+  "first_commit": "2026-10-14",
+  "last_commit": "2026-10-28",
+  "tables": 31
+ },
  "copied_example": {
   "e6-qwen3-k10|absent": 20,
   "e6-qwen3-k10|value": 11,

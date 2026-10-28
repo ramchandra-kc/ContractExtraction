@@ -364,6 +364,97 @@ def fig_invented(inv, arms):
     plt.close(fig)
 
 
+def code_stats():
+    """Non-blank lines and files per component, from the files git tracks (generated API types excluded)."""
+    import subprocess
+    files = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, check=True).stdout.split()
+    groups = [("backend/src/", "backend"), ("backend/tests/", "backend_tests"), ("gateway/src/", "gateway"),
+              ("gateway/tests/", "gateway_tests"), ("frontend/src/", "frontend"), ("docker/", "sql"), ("scripts/", "scripts")]
+    out = defaultdict(lambda: {"files": 0, "lines": 0})
+    for f in files:
+        if f.endswith(("schema.d.ts", "openapi.json")) or not f.endswith((".py", ".ts", ".tsx", ".sql", ".sh", ".css")):
+            continue
+        g = next((name for prefix, name in groups if f.startswith(prefix)), None)
+        if g is None:
+            continue
+        if g == "frontend" and (".test." in f or "/test/" in f):
+            g = "frontend_tests"
+        out[g]["files"] += 1
+        out[g]["lines"] += sum(1 for line in open(ROOT / f, encoding="utf-8", errors="ignore") if line.strip())
+    log = subprocess.run(["git", "log", "--format=%ad", "--date=short"], cwd=ROOT, capture_output=True, text=True, check=True).stdout.split()
+    return {"components": dict(out), "commits": len(log), "first_commit": log[-1], "last_commit": log[0],
+            "tables": (ROOT / "docker" / "schema.sql").read_text().count("CREATE TABLE")}
+
+
+def fig_architecture():
+    """The deployment diagram of docs/architecture.md, redrawn."""
+    from matplotlib.patches import FancyBboxPatch
+    fig, ax = plt.subplots(figsize=(7.2, 4.9), dpi=200)
+    ax.set_xlim(0, 12)
+    ax.set_ylim(0, 10)
+    ax.axis("off")
+
+    def group(x0, y0, x1, y1, title, color, top=True):
+        ax.add_patch(FancyBboxPatch((x0, y0), x1 - x0, y1 - y0, boxstyle="round,pad=0.02,rounding_size=0.25",
+                                    facecolor=color, edgecolor=GRID, linewidth=1.0, zorder=0))
+        ax.text(x1 - 0.18, y1 - 0.15 if top else y0 + 0.15, title, fontsize=7.5, color=MUTED, va="top" if top else "bottom",
+                ha="right", style="italic")
+
+    def box(x, y, title, sub, kind="proc", w=2.5, h=0.95):
+        face, edge = {"proc": ("white", BLUE), "store": ("#fff6ef", ORANGE), "ext": ("#f1fbf6", AQUA), "user": ("white", MUTED)}[kind]
+        ax.add_patch(FancyBboxPatch((x - w / 2, y - h / 2), w, h, boxstyle="round,pad=0.02,rounding_size=0.15",
+                                    facecolor=face, edgecolor=edge, linewidth=1.4, zorder=2))
+        ax.text(x, y + 0.14, title, ha="center", va="center", fontsize=8.2, weight="bold", color=INK, zorder=3)
+        ax.text(x, y - 0.2, sub, ha="center", va="center", fontsize=6.5, color=MUTED, zorder=3)
+        return (x, y, w, h)
+
+    def edge(a, b, label="", dashed=False, rad=0.0, lpos=0.5, loff=(0, 0)):
+        (ax_, ay, aw, ah), (bx, by, bw, bh) = a, b
+        def clip(x, y, w, h, tx, ty):
+            dx, dy = tx - x, ty - y
+            t = min((w / 2 + 0.05) / abs(dx) if dx else 1e9, (h / 2 + 0.05) / abs(dy) if dy else 1e9)
+            return x + dx * t, y + dy * t
+        p0, p1 = clip(ax_, ay, aw, ah, bx, by), clip(bx, by, bw, bh, ax_, ay)
+        ax.annotate("", xy=p1, xytext=p0, zorder=1,
+                    arrowprops={"arrowstyle": "-|>", "color": MUTED, "linewidth": 1.0, "mutation_scale": 9,
+                                "linestyle": (0, (3, 2)) if dashed else "solid", "connectionstyle": f"arc3,rad={rad}"})
+        if label:
+            mx, my = p0[0] + (p1[0] - p0[0]) * lpos + loff[0], p0[1] + (p1[1] - p0[1]) * lpos + loff[1]
+            ax.text(mx, my, label, fontsize=6.3, color=INK, ha="center", va="center", zorder=4,
+                    bbox={"boxstyle": "round,pad=0.15", "facecolor": "white", "edgecolor": "none"})
+
+    group(0.15, 3.35, 9.35, 8.75, "Local processes", "#f7f7f5")
+    group(0.15, 0.2, 9.35, 2.95, "Docker (docker-compose.yml)", "#f4f7fc", top=False)
+    group(9.6, 3.35, 11.9, 8.75, "Hosted", "#f3faf6")
+    browser = box(1.75, 9.45, "Browser", "user", "user", w=2.0, h=0.7)
+    fe = box(1.75, 7.6, "Frontend", "React 19 SPA · Vite :5173")
+    gw = box(1.75, 6.0, "Gateway", "Starlette + httpx :8080")
+    api = box(1.75, 4.4, "Backend API", "FastAPI :8000 (127.0.0.1)")
+    fs = box(4.7, 6.3, "File storage", "PDFs, page JSON, images", "store", w=2.6)
+    wk = box(8.0, 5.4, "Worker(s)", "pipeline stages · no HTTP", w=2.55, h=1.0)
+    rr = box(8.0, 7.6, "Reranker", "fastembed, CPU, score cache", "ext", w=2.7)
+    pg = box(1.75, 1.35, "Postgres :55432", "data · configuration · run queue", "store", w=2.7)
+    qd = box(4.95, 1.35, "Qdrant :56333", "vectors, one index per document", "store", w=2.8)
+    ol = box(8.0, 1.35, "Ollama :11434", "local models (optional)", "ext", w=2.5)
+    orr = box(10.75, 5.4, "OpenRouter", "hosted LLMs", "ext", w=1.95)
+    edge(browser, fe)
+    edge(fe, gw, "/api/*", lpos=0.5, loff=(0.45, 0))
+    edge(gw, api, "/api/v1/*", lpos=0.5, loff=(0.55, 0))
+    edge(api, pg, "enqueue run,\nread results", lpos=0.78, loff=(0.72, 0))
+    edge(api, fs, "uploads", lpos=0.55)
+    edge(wk, pg, "claim run (SKIP LOCKED),\nwrite results", lpos=0.42)
+    edge(wk, fs, "")
+    edge(wk, qd, "")
+    edge(wk, ol, "", dashed=True)
+    edge(wk, orr, "LLM calls", dashed=True)
+    edge(wk, rr, "")
+    ax.text(4.95, 4.55, "API and worker never call each other:\nPostgres is the queue", fontsize=6.5, color=RED, ha="center",
+            va="center", style="italic")
+    fig.tight_layout()
+    fig.savefig(OUT / "fig_architecture.png")
+    plt.close(fig)
+
+
 if __name__ == "__main__":
     OUT.mkdir(exist_ok=True)
     nums = {"arms": {}}
@@ -391,9 +482,10 @@ if __name__ == "__main__":
              "attribution": {a: attribution(rows, a) for a, rows in ((CURRENT, E1), (RBASE, E1), (K5, E6), (K10, E6),
                                                                       (K20, E6), (RR, E6), (NULLP, E8))},
              "invented_by_field": invented_by_field(E6 + [r for r in E8 if r["pipeline"] == NULLP], [K5, K20, NULLP]),
-             "copied_example": copied_example(E6 + [r for r in E8 if r["pipeline"] == NULLP]), "cost_log": cost_log(), "grader": grader()}
+             "code": code_stats(), "copied_example": copied_example(E6 + [r for r in E8 if r["pipeline"] == NULLP]), "cost_log": cost_log(), "grader": grader()}
     forest = {k: {**d6[k], NULLP: d8[k][NULLP]} for k in ("semantic", "score", "exact", "invented",
                                                           "semantic_high", "score_high", "exact_high", "invented_high")}
+    fig_architecture()
     fig_recall_vs_k(nums["retrieval"])
     fig_e1(nums["arms"])
     fig_context(nums["arms"])
