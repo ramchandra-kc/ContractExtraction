@@ -99,6 +99,8 @@ INSERT INTO retrieval_configs (name, description, top_k, score_threshold, query_
                                keyword_search, anchor_chunks, rerank_model, rerank_candidates) VALUES
     ('R07-k5',  'RAG07 with 20 hits per query: hybrid, top 5, threshold 0.5, 2 anchor chunks',
      5, 0.5, true, 20, 0.30, true, 2, NULL, 30),
+    ('R07-k10', 'R07-k5 passing the top 10 to the reader',
+     10, 0.5, true, 20, 0.30, true, 2, NULL, 30),
     ('R07-k20', 'R07-k5 passing the top 20 to the reader',
      20, 0.5, true, 20, 0.30, true, 2, NULL, 30),
     ('R07-k5-rr', 'R07-k5 with the best 40 fused hits reranked by bge-reranker-v2-m3 (int8), top 5 kept',
@@ -139,6 +141,8 @@ FROM (VALUES
      'extraction-or-qwen3-30b', NULL, 'classification-or-gemini-lite', false, 'P3', 'field'),
     ('e6-qwen3-k5',      'E6: Qwen3 30B field extraction under R07-k5 only, no judge',
      'extraction-or-qwen3-30b', NULL, 'classification-or-gemini-lite', false, 'P3', 'field'),
+    ('e6-qwen3-k10',     'E6: Qwen3 30B field extraction under R07-k10 only, no judge',
+     'extraction-or-qwen3-30b', NULL, 'classification-or-gemini-lite', false, 'P3', 'field'),
     ('e6-qwen3-k20',     'E6: Qwen3 30B field extraction under R07-k20 only, no judge',
      'extraction-or-qwen3-30b', NULL, 'classification-or-gemini-lite', false, 'P3', 'field'),
     ('e6-qwen3-k5-rr',   'E6: Qwen3 30B field extraction under R07-k5-rr (reranked) only, no judge',
@@ -172,7 +176,7 @@ FROM (VALUES
     ('or-rag-sweep', 'RAG10', 4), ('or-rag-sweep', 'RAG11', 5),
     ('or-p1-triage', 'RAG08', 1),
     ('e1-qwen3-rbase', 'R-base', 1),
-    ('e6-qwen3-k5', 'R07-k5', 1), ('e6-qwen3-k20', 'R07-k20', 1), ('e6-qwen3-k5-rr', 'R07-k5-rr', 1)
+    ('e6-qwen3-k5', 'R07-k5', 1), ('e6-qwen3-k10', 'R07-k10', 1), ('e6-qwen3-k20', 'R07-k20', 1), ('e6-qwen3-k5-rr', 'R07-k5-rr', 1)
 ) AS v (pipeline, retrieval, position)
 JOIN pipeline_configs p ON p.name = v.pipeline
 JOIN retrieval_configs r ON r.name = v.retrieval
