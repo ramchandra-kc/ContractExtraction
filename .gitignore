@@ -36,3 +36,6 @@ storage-test/
 
 # Experiment exports (they contain values from the contracts)
 /experiments/
+
+# Office lock files
+~$*
