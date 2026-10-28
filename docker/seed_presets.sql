@@ -24,7 +24,9 @@ JOIN (VALUES
     ('google/gemini-2.5-flash-lite',             1048576, 0.100, 0.400),
     ('anthropic/claude-haiku-5.5',               1000000, 0.100, 0.500),
     -- Reasoning model; reasoning tokens count against max_tokens, so its profile leaves room for them.
-    ('openai/gpt-6-luna',                        1050000, 0.100, 0.500)
+    ('openai/gpt-6-luna',                        1050000, 0.100, 0.500),
+    -- Frontier model, kept out of the grids: a second, stronger grader to cross-check the semantic score.
+    ('google/gemini-4-argon',                    1048576, 2.000, 10.000)
 ) AS m (name, context_window, input_cost, output_cost) ON true
 WHERE p.key = 'openrouter'
 ON CONFLICT (provider_id, name, kind) DO NOTHING;
@@ -64,7 +66,9 @@ FROM (VALUES
      'anthropic/claude-haiku-5.5',               0.1, NULL,          NULL,  512, NULL,         120, '{}'),
     ('judge-or-gpt6-luna',                 'LLM judge with GPT-6 Luna via OpenRouter, low reasoning effort',
      'openai/gpt-6-luna',                        1.0, NULL,          NULL, 4096, NULL,         180,
-     '{"params": {"reasoning": {"effort": "low"}}}')
+     '{"params": {"reasoning": {"effort": "low"}}}'),
+    ('judge-or-gemini4-argon',             'LLM judge with Gemini 4 Argon via OpenRouter (grader cross-check)',
+     'google/gemini-4-argon',                    1.0, NULL,          NULL, 8192, NULL,         240, '{}')
 ) AS v (name, description, model, temperature, top_p, top_k, max_tokens, num_ctx, timeout, extra)
 JOIN llm_models m ON m.name = v.model AND m.kind = 'chat'
 ON CONFLICT (name) DO NOTHING;
