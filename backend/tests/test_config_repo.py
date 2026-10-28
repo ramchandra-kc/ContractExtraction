@@ -41,7 +41,8 @@ def test_preset_pipelines_resolve(session):
     repo.update_provider("openrouter", enabled=True)
 
     pipelines = {row.name: repo.resolve_pipeline(row.name) for row in repo.pipelines()}
-    assert len(pipelines) == 11
+    assert len(pipelines) == 14
+    assert pipelines["e6-qwen3-k5-rr"].retrievals[0].rerank_model == "BAAI/bge-reranker-v2-m3-int8"
     rbase = pipelines["e1-qwen3-rbase"]
     assert [r.name for r in rbase.retrievals] == ["R-base"] and not rbase.judge_enabled
     assert rbase.retrievals[0].score_threshold == 0 and rbase.retrievals[0].top_k == 5
@@ -117,4 +118,4 @@ def test_listings(session):
     repo = ConfigRepo(session)
     assert {p.key for p in repo.providers()} == {"ollama-local", "openrouter"}
     assert [mo.name for mo in repo.models(ModelKind.EMBEDDING)] == ["nomic-embed-text:latest"]
-    assert len(repo.retrieval_configs()) == 12
+    assert len(repo.retrieval_configs()) == 15

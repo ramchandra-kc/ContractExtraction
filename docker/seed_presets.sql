@@ -89,6 +89,18 @@ INSERT INTO retrieval_configs (name, description, top_k, score_threshold, query_
      5, 0, true, 5, 0, false, 0)
 ON CONFLICT (name) DO NOTHING;
 
+-- Experiment E6 (end to end): RAG07 with 20 hits per query, varying only how many chunks reach the reader and
+-- whether a cross-encoder picks them (retrieval-eval e6-rerank: 70.8% / 91% / 75.0% evidence recall).
+INSERT INTO retrieval_configs (name, description, top_k, score_threshold, query_expansion, per_query_top, min_score,
+                               keyword_search, anchor_chunks, rerank_model, rerank_candidates) VALUES
+    ('R07-k5',  'RAG07 with 20 hits per query: hybrid, top 5, threshold 0.5, 2 anchor chunks',
+     5, 0.5, true, 20, 0.30, true, 2, NULL, 30),
+    ('R07-k20', 'R07-k5 passing the top 20 to the reader',
+     20, 0.5, true, 20, 0.30, true, 2, NULL, 30),
+    ('R07-k5-rr', 'R07-k5 with the best 40 fused hits reranked by bge-reranker-v2-m3 (int8), top 5 kept',
+     5, 0.5, true, 20, 0.30, true, 2, 'BAAI/bge-reranker-v2-m3-int8', 40)
+ON CONFLICT (name) DO NOTHING;
+
 -- Pipelines. All use the default decomposition and index, the contract_fields set and version 1 of the
 -- system prompts. A NULL judge or classification profile turns that stage off.
 INSERT INTO pipeline_configs (name, description, decomposition_config_id, index_config_id, field_set_id,
@@ -120,6 +132,12 @@ FROM (VALUES
      'extraction-group-or-gemini-lite', NULL, 'classification-or-gemini-lite', false, 'P1', 'group'),
     -- Research workhorse: Qwen3 30B field extraction under R-base only, no judge (experiment E1 and the grids).
     ('e1-qwen3-rbase',   'Research baseline: Qwen3 30B field extraction under R-base only, no judge',
+     'extraction-or-qwen3-30b', NULL, 'classification-or-gemini-lite', false, 'P3', 'field'),
+    ('e6-qwen3-k5',      'E6: Qwen3 30B field extraction under R07-k5 only, no judge',
+     'extraction-or-qwen3-30b', NULL, 'classification-or-gemini-lite', false, 'P3', 'field'),
+    ('e6-qwen3-k20',     'E6: Qwen3 30B field extraction under R07-k20 only, no judge',
+     'extraction-or-qwen3-30b', NULL, 'classification-or-gemini-lite', false, 'P3', 'field'),
+    ('e6-qwen3-k5-rr',   'E6: Qwen3 30B field extraction under R07-k5-rr (reranked) only, no judge',
      'extraction-or-qwen3-30b', NULL, 'classification-or-gemini-lite', false, 'P3', 'field')
 ) AS v (name, description, extraction_profile, judge_profile, classification_profile, judge_parallel, min_priority, granularity)
 JOIN decomposition_configs dc ON dc.name = 'default'
@@ -149,7 +167,8 @@ FROM (VALUES
     ('or-rag-sweep', 'RAG08', 1), ('or-rag-sweep', 'RAG07', 2), ('or-rag-sweep', 'RAG09', 3),
     ('or-rag-sweep', 'RAG10', 4), ('or-rag-sweep', 'RAG11', 5),
     ('or-p1-triage', 'RAG08', 1),
-    ('e1-qwen3-rbase', 'R-base', 1)
+    ('e1-qwen3-rbase', 'R-base', 1),
+    ('e6-qwen3-k5', 'R07-k5', 1), ('e6-qwen3-k20', 'R07-k20', 1), ('e6-qwen3-k5-rr', 'R07-k5-rr', 1)
 ) AS v (pipeline, retrieval, position)
 JOIN pipeline_configs p ON p.name = v.pipeline
 JOIN retrieval_configs r ON r.name = v.retrieval
