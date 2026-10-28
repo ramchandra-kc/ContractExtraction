@@ -134,7 +134,7 @@ const rgain = (base, c) => {
   const g = gain(base, c);
   return `${sgn(100 * g.diff, 1)} [${sgn(100 * g.lo, 1)}, ${sgn(100 * g.hi, 1)}]${g.p_holm < 0.05 ? "*" : " (n.s.)"}`;
 };
-// One Table 8 row over the E6 arms, the best value in bold.
+// One Table 7 row over the E6 arms, the best value in bold.
 function row6(label, key, fmt, higherIsBetter) {
   const vals = E6ARMS.map((a) => A[a][key]);
   const best = higherIsBetter ? Math.max(...vals) : Math.min(...vals);
@@ -153,51 +153,8 @@ const CAUSE = {
 };
 const GRADING_COST = 0.12 + 0.10 + 0.02 + 0.02 + 0.27; // printed by `experiment semantic` and the cross-check
 const SPENT = N.cost_log.reduce((s, e) => s + e.cost, 0) + GRADING_COST;
-const C = N.code.components;
-const TESTS = { backend: 397, live: 5, gateway: 18, frontend: 53 }; // pytest / vitest on 28 October 2026
-const SRC = ["backend", "gateway", "frontend", "sql", "scripts"], TST = ["backend_tests", "gateway_tests", "frontend_tests"];
-const SRC_FILES = SRC.reduce((s, k) => s + C[k].files, 0), SRC_LINES = SRC.reduce((s, k) => s + C[k].lines, 0);
-const TEST_FILES = TST.reduce((s, k) => s + C[k].files, 0), TEST_LINES = TST.reduce((s, k) => s + C[k].lines, 0);
+const COST = (i) => N.cost_log[i].cost.toFixed(2);
 
-const progress = [
-  h1("Progress at a Glance"),
-  p(
-    "This progress report covers the first phase of a research programme on what improves LLM-based contract extraction. The platform, the " +
-    "evaluation tooling and four of the thirteen planned experiments are complete and a fifth has started; all results are on the development split (36 contracts), and the " +
-    `held-out test split (108 contracts) has not been touched. LLM spending so far is about USD ${SPENT.toFixed(2)}.`,
-  ),
-  p("**Built.**"),
-  bullet(`a reproducible extraction platform (web interface, gateway, API, workers; about ${Math.round(SRC_LINES / 1000)},000 lines of code and ${TESTS.backend + TESTS.gateway + TESTS.frontend} automated tests, Section 3) that snapshots every run's configuration and code version and stores the outcome of every retrieval configuration and field;`),
-  bullet("stage-wise evaluation: evidence recall without LLM calls, four extraction scores including an LLM-graded semantic score, and paired statistics clustered by document;"),
-  bullet("new pipeline components behind configuration flags: a local cross-encoder reranker with a shared score cache, and versioned system prompts per pipeline."),
-  p("**Key findings so far.**"),
-  bullet(
-    `**The current system can be beaten cheaply.** A single dense configuration on Qwen3 30B raises the score from ${f3(A[CUR].score)} to ` +
-    `${f3(A[RB].score)} and halves invented values (${pc(A[CUR].invented, 0)} to ${pc(A[RB].invented, 0)}) at ${Math.round((100 * A[RB].cost) / A[CUR].cost)}% ` +
-    "of the cost; the seven-configuration ensemble with an LLM judge is no better than its best member.",
-  ),
-  bullet(
-    "**Retrieval settings were the first bottleneck.** Similarity thresholds of 0.7 retrieve almost nothing; hybrid search with anchor chunks adds " +
-    `${ptsOf(sw("RAG07", 5).recall - sw("RAG02", 5).recall)} points of evidence recall at k = 5.`,
-  ),
-  bullet(
-    `**More context beats better ranking.** Passing 10 or 20 chunks instead of 5 raises the semantic score by ${sgn(D6.semantic[K10].diff)} and ` +
-    `${sgn(D6.semantic[K20].diff)} (both significant); a cross-encoder reranker adds ${sgn(D6.semantic[RR].diff)} (not significant). k = 10 gives ` +
-    `${Math.round((100 * D6.semantic[K10].diff) / D6.semantic[K20].diff)}% of k = 20's gain for ` +
-    `${Math.round((100 * (A[K10].cost - A[K5].cost)) / (A[K20].cost - A[K5].cost))}% of its extra cost.`,
-  ),
-  bullet(
-    `**Invented values rise with context and resist prompting.** They grow from ${pc(A[K5].invented, 0)} to ${pc(A[K20].invented, 0)} of absent ` +
-    "fields; an explicit null-policy prompt changed nothing, and most cases trace to field definitions and labelling policy.",
-  ),
-  bullet(
-    `**The semantic score is consistent across graders** (Cohen's kappa ${G.kappa.toFixed(2)} against a second, independent model).`,
-  ),
-  p(
-    "**Next.** Retrieval experiments that need no LLM calls (query expansion × hybrid search, embedding models), then chunking, reader variants, " +
-    "verification and decomposition, the long-context comparison, and finally a single run on the test split (Section 10.1, Table 14).",
-  ),
-];
 
 // ---------- content ----------
 
@@ -207,7 +164,7 @@ const title = [
     spacing: { before: 600, after: 200 },
     children: [
       new TextRun({
-        text: "What Improves LLM Contract Extraction? A Stage-wise Evaluation of Retrieval and Reading in a RAG Pipeline",
+        text: "Structured Data Extraction from Bilateral Contracts: A Stage-wise Evaluation of an End-to-End Retrieval-Augmented Pipeline",
         bold: true, size: 34,
       }),
     ],
@@ -226,30 +183,31 @@ const title = [
 const abstract = [
   new Paragraph({ alignment: AlignmentType.CENTER, spacing: { after: 100 }, children: [new TextRun({ text: "Abstract", bold: true, size: 24 })] }),
   p(
-    "Large language models (LLMs) combined with retrieval-augmented generation (RAG) are a common way to turn contracts into structured data, " +
-    "yet the many design choices in such pipelines are usually tuned by intuition. We study which components actually improve field-level " +
-    "extraction quality, using a reproducible extraction platform that records every intermediate outcome and a corpus of 144 public contracts " +
-    "across 18 contract types with 2,928 field labels. We evaluate the pipeline stage by stage, separating whether the evidence reaches the model " +
-    "(evidence recall) from whether the model reads it correctly, and we report every comparison as a paired difference with a 95% confidence " +
-    "interval from a bootstrap over documents. On the development split (36 contracts), replacing the current seven-configuration ensemble with " +
-    `an LLM judge on Llama 3.1 8B by a single dense retrieval configuration on Qwen3 30B raises the partial-credit score from ${f3(A[CUR].score)} to ` +
-    `${f3(A[RB].score)} and halves the rate of invented values on fields the contract does not contain (${pc(A[CUR].invented, 0)} to ` +
-    `${pc(A[RB].invented, 0)}), at ${Math.round((100 * A[RB].cost) / A[CUR].cost)}% of the cost. Retrieval was the first bottleneck: absolute ` +
-    "similarity thresholds starve the model of context, hybrid lexical-dense search with anchor chunks adds about 15 points of evidence recall, " +
-    "and a cross-encoder reranker helps dense retrieval but adds little to hybrid retrieval and nothing measurable end to end. Passing more chunks " +
-    `works better: 10 and 20 chunks instead of 5 raise the semantic score from ${f2(A[K5].semantic)} to ${f2(A[K10].semantic)} and ` +
-    `${f2(A[K20].semantic)}, with k = 10 giving most of the gain at well under half the extra cost, at the price of more invented values on absent ` +
-    "fields. An explicit null-policy prompt does not reduce them; most trace to field definitions and labelling policy. Because labels paraphrase " +
-    `what models quote, we introduce an LLM-graded semantic score and check it against a second grader (Cohen's kappa ${G.kappa.toFixed(2)}).`,
+    "Two-party commercial contracts carry the facts a business must act on, such as who the parties are, what is paid and delivered, which " +
+    "penalties apply and how risk is shared, yet they are written for people and stored in formats built for page layout rather than for " +
+    "machines. Getting those facts out reliably depends on every link of a chain: turning the document into text, finding the right passages, " +
+    "reading them with a language model, and checking the result. We describe an end-to-end platform that implements this chain for contracts in " +
+    "PDF, scanned, HTML, Word and plain-text form, and we evaluate it one stage at a time. Documents are converted page by page into Markdown " +
+    "with PyMuPDF, PyMuPDF4LLM or OCR, chunked and indexed in Qdrant with dense and BM25 keyword vectors; each field is retrieved with expanded " +
+    "queries, optional keyword fusion, cover- and signature-page anchors and an optional cross-encoder reranker, and extracted by a prompted LLM. " +
+    "Because every stage is configuration, one component can be changed while the model, retriever and evaluator stay fixed, and each " +
+    "comparison is reported as a paired difference with a 95% confidence interval over documents. On the development split " +
+    `(${A[K5].semantic_ci.documents} of 144 public contracts, 18 contract types), retrieval is the main lever: the current system, seven retrieval ` +
+    `configurations with Llama 3.1 8B and an LLM judge, reaches a semantic score of ${f2(A[CUR].semantic)}, while a single hybrid configuration ` +
+    `with anchor chunks that passes 10 or 20 chunks to Qwen3 30B reaches ${f2(A[K10].semantic)}–${f2(A[K20].semantic)} at about one US cent per ` +
+    "contract. Neither the judge nor the reranker improves the answers, and more context brings more values for fields the contract does not " +
+    "contain, which an explicit prompt rule does not reduce. Comparing document representations and fine-tuning a smaller extraction model are " +
+    "scheduled for the end of the programme, once the best retrieval and reading setup is fixed, so that fine-tuning starts from the strongest " +
+    "pipeline. The findings are meant to guide teams building contract-intelligence systems.",
   ),
-  p("**Keywords:** contract analysis, information extraction, retrieval-augmented generation, hybrid retrieval, reranking, LLM evaluation"),
+  p("**Keywords:** contract analysis, information extraction, retrieval-augmented generation, hybrid retrieval, reranking, fine-tuning, LLM evaluation"),
 ];
 
 const introduction = [
   h1("1  Introduction"),
   p(
-    "Commercial contracts carry the facts an organisation must act on: who the parties are, when the agreement starts and ends, how it renews, " +
-    "what it costs, and how either side can leave it. Reading these facts out of hundreds of agreements by hand is slow and error-prone, so " +
+    "An organisation with hundreds of agreements needs to know, for each one, when it starts and ends, how it renews, what it costs and how " +
+    "either side can leave it. Reading these facts out by hand is slow and error-prone, so " +
     "automatic extraction into a fixed schema of fields is an attractive target for LLMs. Contracts are long (median 16 pages in our corpus, up to " +
     "428), so the usual architecture splits each document into chunks, retrieves the chunks most relevant to each field, and asks the model to " +
     "extract the value from them (retrieval-augmented generation, RAG).",
@@ -265,7 +223,14 @@ const introduction = [
     "This report asks a practical question: **which components of a contract-extraction pipeline improve extraction quality, and by how much?** " +
     "We answer it with controlled experiments that change one component at a time, evaluate retrieval and extraction separately, and report " +
     "paired differences with uncertainty. The work is ongoing; this progress report covers the baseline, retrieval, reranking, context-size and first " +
-    "prompt experiments on the development split, and the remaining experiments are planned in Section 10.1.",
+    "prompt experiments on the development split, and the remaining experiments are planned in Section 9.",
+  ),
+  p(
+    "**Scope and order of work.** The original proposal also compared intermediate document representations and fine-tuned the extraction " +
+    "model. Both deliberately come after the retrieval and reader experiments, with fine-tuning last before the test run. The representation " +
+    "comparison (E7) is only meaningful under the best retrieval setup, and " +
+    "fine-tuning pays off only once the best retrieval and prompting approach is known: its training data are that pipeline's retrieved context, " +
+    "and a fine-tuned model must beat the strongest prompted baseline, not the current one. Both appear in the plan of Section 9 (Table 12).",
   ),
   p("The research questions addressed so far are:"),
   numbered("**RQ1 (baseline).** How well does the current system perform, how does a single-configuration research baseline compare, and what is the smallest effect the data can resolve?"),
@@ -275,11 +240,11 @@ const introduction = [
   numbered("**RQ5 (ensembling and judging).** Does a multi-configuration ensemble with LLM-judge selection beat the best single configuration?"),
   numbered("**RQ6 (measurement).** How should extracted values be scored when reference labels paraphrase the contract while models quote it?"),
   numbered("**RQ7 (invented values).** Where do values for absent fields come from, and does an explicit instruction prevent them?"),
-  p("The contributions of this work are:"),
-  bullet("an open, reproducible extraction platform in which every run stores the fully resolved configuration, the code version, and the outcome of every retrieval configuration and field, not only the final answer;"),
-  bullet("a stage-wise evaluation protocol for contract extraction: evidence recall computed from labelled evidence quotes with no LLM calls, extraction metrics at several levels of strictness, and paired statistics clustered by document;"),
-  bullet("empirical findings on the development split showing that retrieval, not reading, is the main bottleneck, that absolute similarity thresholds and judge-selected ensembles are harmful or useless, and that more context helps the reader more than better ranking does;"),
-  bullet("an LLM-graded semantic score for structured and free-text fields, with an agreement analysis against a second, independent grader."),
+  p(
+    "The contributions are a reproducible extraction platform that records every intermediate outcome (Section 3), a stage-wise " +
+    "evaluation protocol with paired statistics clustered by document (Section 5), the findings of Section 6, and an LLM-graded semantic " +
+    "score checked against a second, independent grader.",
+  ),
 ];
 
 const related = [
@@ -341,7 +306,7 @@ const system = [
     "reranker scores a larger candidate pool (20 or 40 fused hits) with a cross-encoder, BAAI bge-reranker-v2-m3 quantised to int8 and run on CPU, and keeps the top *k*.",
   ),
   p(
-    "**The current system.** The default pipeline runs seven retrieval configurations, RAG01–RAG07 (Appendix A), for every field, extracts a value " +
+    "**The current system.** The default pipeline runs seven retrieval configurations, RAG01–RAG07 (Table 5), for every field, extracts a value " +
     "under each with Llama 3.1 8B, and lets an LLM judge choose the best value. Its configurations were designed by hand and differ in several " +
     "settings at once, so they serve here only as the baseline \"current system\". For the research grid we defined a clean baseline, **R-base** " +
     "(dense retrieval, top 5, no threshold, query expansion, 5 hits per query), from which each arm changes a single setting.",
@@ -378,46 +343,17 @@ const system = [
     [22, 78], { left: true },
   ),
   p(""),
-  h2("3.3  Code base and tests"),
-  p(
-    `The code base was built over ${N.code.commits} commits between ${N.code.first_commit} and ${N.code.last_commit}. Table 3 gives its size in ` +
-    "non-blank lines, without generated files. Every test suite runs offline: providers sit behind interfaces, so the pipeline is tested with " +
-    "fake LLMs, embedders and vector stores and needs no Docker or network. A separate smoke suite (scripts/dev.sh smoke) exercises the running stack end to end.",
-  ),
-  tableTitle("**Table 3.** Size of the code base and its tests (non-blank lines; test counts as of 28 October 2026)."),
-  table(
-    ["Component", "Source files", "Source lines", "Test files", "Test lines", "Tests"],
-    [
-      ["Backend (Python)", String(C.backend.files), int(C.backend.lines), String(C.backend_tests.files), int(C.backend_tests.lines), `${TESTS.backend} (+ ${TESTS.live} live and smoke)`],
-      ["Gateway (Python)", String(C.gateway.files), int(C.gateway.lines), String(C.gateway_tests.files), int(C.gateway_tests.lines), String(TESTS.gateway)],
-      ["Frontend (TypeScript, React)", String(C.frontend.files), int(C.frontend.lines), String(C.frontend_tests.files), int(C.frontend_tests.lines), String(TESTS.frontend)],
-      ["Schema and seed data (SQL)", String(C.sql.files), int(C.sql.lines), "—", "—", "—"],
-      ["Scripts (shell, Python)", String(C.scripts.files), int(C.scripts.lines), "—", "—", "—"],
-      ["**Total**", `**${SRC_FILES}**`, `**${int(SRC_LINES)}**`, `**${TEST_FILES}**`, `**${int(TEST_LINES)}**`, `**${TESTS.backend + TESTS.gateway + TESTS.frontend}**`],
-    ],
-    [28, 13, 14, 12, 13, 20],
-  ),
-  p(""),
-  p(
-    `Test code is ${Math.round((100 * TEST_LINES) / SRC_LINES)}% of the source by lines. The backend tests cover configuration resolution and ` +
-    "snapshots, the run queue and worker recovery, every document converter, chunking offsets, retrieval (fusion, anchors, reranking), answer " +
-    "parsing, evaluation and evidence matching, the experiment exports and the statistics; the frontend tests render the pages against a mocked API.",
-  ),
-  h2("3.4  User interface"),
+  h2("3.3  User interface"),
   p(
     "The web interface covers the whole workflow: upload a contract in any supported format, follow a run's progress, inspect each extracted " +
     "value next to its label and the retrieval configuration that produced it, read the extracted pages, and edit every configuration that " +
-    "shapes a run (Figures 2–4).",
+    "shapes a run. Figure 2 shows the results of one run.",
   ),
-  figure("ui_documents.png", 600, 375),
-  caption("**Figure 2.** Document list with upload. Each document shows its format, page count and latest run."),
   figure("ui_run_results.png", 600, 375),
   caption(
-    "**Figure 3.** Results of a run (k = 20 arm): the extracted value, the judge's verdict, the expected label, whether they match and which " +
+    "**Figure 2.** Results of a run (k = 20 arm): the extracted value, the judge's verdict, the expected label, whether they match and which " +
     "retrieval configuration produced the value. The contract is a public SEC filing.",
   ),
-  figure("ui_configuration.png", 600, 375),
-  caption("**Figure 4.** Configuration: pipelines, retrieval configurations, contract types, fields, models, prompts and indexing are all editable data."),
 ];
 
 const data = [
@@ -481,7 +417,7 @@ const method = [
     "run-to-run noise floor measured in E1, and (iii) it holds on high-confidence labels.",
   ),
   h2("5.4  Models"),
-  tableTitle("**Table 4.** Models used so far."),
+  tableTitle("**Table 3.** Models used so far."),
   table(
     ["Role", "Model", "Access", "Price (USD per M tokens, in / out)"],
     [
@@ -509,9 +445,9 @@ const results = [
   h2("6.1  E1: Baseline and noise floor (RQ1)"),
   p(
     "E1 compares the current system (seven retrieval configurations, Llama 3.1 8B reader and judge) with the research baseline (R-base, Qwen3 30B, " +
-    "no judge). Table 5 and Figure 5 give the results."
+    "no judge). Table 4 gives the results."
   ),
-  tableTitle("**Table 5.** E1 on the development split (452 value cells and 280 absent cells per repeat, 3 repeats)."),
+  tableTitle("**Table 4.** E1 on the development split (452 value cells and 280 absent cells per repeat, 3 repeats)."),
   table(
     ["Metric", "Current system (Llama 3.1 8B, RAG01–07 + judge)", "R-base (Qwen3 30B)"],
     [
@@ -533,11 +469,6 @@ const results = [
     [40, 34, 26],
   ),
   p(""),
-  figure("fig_e1_baseline.png", 540, 300),
-  caption(
-    "**Figure 5.** E1: current system against the research baseline, with 95% cluster bootstrap intervals. The baseline is better on both " +
-    "quality scores and invents values on absent fields half as often.",
-  ),
   p(
     `The research baseline is better on every quality metric: the score rises by ${ci(N.e1_diff.score)} and the semantic score by ` +
     `${ci(N.e1_diff.semantic)}, and both differences hold on high-confidence labels (score ${ci(N.e1_diff.score_high)}). The largest change is on ` +
@@ -572,9 +503,9 @@ const results = [
 
   h2("6.3  E2: Retrieval settings (RQ2)"),
   p(
-    "E2 runs the retriever alone for every labelled field with an evidence quote (452 fields, no LLM calls). Table 6 shows the seeded configurations."
+    "E2 runs the retriever alone for every labelled field with an evidence quote (452 fields, no LLM calls). Table 5 shows the seeded configurations."
   ),
-  tableTitle("**Table 6.** Evidence recall of the seeded retrieval configurations (development split, 452 fields)."),
+  tableTitle("**Table 5.** Evidence recall of the seeded retrieval configurations (development split, 452 fields)."),
   table(
     ["Config", "Settings", "Recall", "Recall@1", "MRR", "Mean chunks"],
     [
@@ -605,7 +536,7 @@ const results = [
   ),
   figure("fig_recall_vs_k.png", 520, 300),
   caption(
-    "**Figure 6.** Evidence recall against the number of chunks passed to the reader, for dense and hybrid retrieval (20 hits per query, no " +
+    "**Figure 3.** Evidence recall against the number of chunks passed to the reader, for dense and hybrid retrieval (20 hits per query, no " +
     "threshold, development split). Recall keeps rising to k = 20, so ranking, not the candidate pool, limits recall at k = 5.",
   ),
   p(
@@ -616,7 +547,7 @@ const results = [
   ),
 
   h2("6.4  E6: Cross-encoder reranking, retrieval only (RQ3)"),
-  tableTitle("**Table 7.** Evidence recall at k = 5 with and without the reranker (20 hits per query, development split, 452 fields)."),
+  tableTitle("**Table 6.** Evidence recall at k = 5 with and without the reranker (20 hits per query, development split, 452 fields)."),
   table(
     ["Retrieval", "Candidates", "Recall", "Recall@1", "MRR", "Δ recall vs no reranker (points, 95% CI)"],
     [
@@ -643,9 +574,9 @@ const results = [
   p(
     "E6 then measures whether the recall gains reach the extracted values. All four arms use hybrid retrieval with anchors and 20 hits per query " +
     "(R07) and the Qwen3 30B reader; they differ only in how many chunks reach the reader (5, 10 or 20) and whether the reranker selects the five " +
-    "(Table 8, Figure 7). Table 9 and Figure 8 give the paired differences against k = 5."
+    "(Table 7, Figure 4). Figure 5 gives the paired differences against k = 5."
   ),
-  tableTitle("**Table 8.** End-to-end results by context size and reranking (Qwen3 30B, development split, 3 repeats). Best value per row in bold."),
+  tableTitle("**Table 7.** End-to-end results by context size and reranking (Qwen3 30B, development split, 3 repeats). Best value per row in bold."),
   table(
     ["Metric", "R07, k = 5", "R07, k = 10", "R07, k = 20", "R07, k = 5 + reranker"],
     [
@@ -666,22 +597,12 @@ const results = [
   p(""),
   figure("fig_context_size.png", 620, 266),
   caption(
-    "**Figure 7.** Quality, evidence recall and invented values against the number of chunks passed to the reader (Qwen3 30B, development split, " +
+    "**Figure 4.** Quality, evidence recall and invented values against the number of chunks passed to the reader (Qwen3 30B, development split, " +
     "95% cluster bootstrap intervals). Open diamonds: five chunks chosen by the reranker.",
   ),
-  tableTitle("**Table 9.** Paired differences against R07, k = 5, in points on a 0–100 scale (95% cluster bootstrap CI; * Holm-adjusted p < 0.05)."),
-  table(
-    ["Arm", "Labels", "Semantic", "Score", "Exact", "Invented on absent"],
-    [K10, K20, RR].flatMap((a) => [
-      [LBL[a], "all", star(D6.semantic[a], true), star(D6.score[a], true), star(D6.exact[a], true), star(D6.invented[a], true)],
-      ["", "high conf.", star(D6.semantic_high[a], true), star(D6.score_high[a], true), star(D6.exact_high[a], true), star(D6.invented_high[a], true)],
-    ]),
-    [18, 12, 17, 17, 17, 19],
-  ),
-  p(""),
   figure("fig_forest.png", 620, 250),
   caption(
-    "**Figure 8.** Paired differences against k = 5 for every arm tested on the same cells, including the null-policy prompt of E8a (Section 6.8). " +
+    "**Figure 5.** Paired differences against k = 5 for every arm tested on the same cells, including the null-policy prompt of E8a (Section 6.8). " +
     "Filled markers: all labels; open markers: high-confidence labels only.",
   ),
   p(
@@ -699,11 +620,11 @@ const results = [
     `**Cost-effectiveness.** Tokens and cost rise with k, to ${usd(A[K10].cost)} and ${usd(A[K20].cost)} USD per contract. k = 10 obtains ` +
     `${Math.round((100 * D6.semantic[K10].diff) / D6.semantic[K20].diff)}% of k = 20's semantic gain for ` +
     `${Math.round((100 * (A[K10].cost - A[K5].cost)) / (A[K20].cost - A[K5].cost))}% of its extra cost, so it is the better default when cost ` +
-    "matters and k = 20 when accuracy does (Figure 9). Both lie on the cost-quality Pareto front, together with the cheaper R-base and k = 5 arms.",
+    "matters and k = 20 when accuracy does (Figure 6). Both lie on the cost-quality Pareto front, together with the cheaper R-base and k = 5 arms.",
   ),
   figure("fig_cost_quality.png", 540, 320),
   caption(
-    "**Figure 9.** Cost per contract against semantic score for every arm run so far (95% intervals). Arms from different experiments ran on " +
+    "**Figure 6.** Cost per contract against semantic score for every arm run so far (95% intervals). Arms from different experiments ran on " +
     "different code versions, so the comparison across experiments is indicative; the dashed line joins the arms no cheaper arm beats.",
   ),
   p(
@@ -718,13 +639,13 @@ const results = [
 
   h2("6.6  Retrieval failures versus reading failures"),
   p(
-    "Figure 10 splits every labelled value into four outcomes by its semantic grade: correct, partially correct, wrong although the evidence was " +
+    "Figure 7 splits every labelled value into four outcomes by its semantic grade: correct, partially correct, wrong although the evidence was " +
     "retrieved (a reading failure), and wrong because the evidence was not retrieved (a retrieval failure). This attributes the remaining error to a " +
     "stage of the pipeline."
   ),
   figure("fig_error_attribution.png", 600, 300),
   caption(
-    "**Figure 10.** Outcome of every labelled value (all repeats) by arm. Grey: wrong and evidence not retrieved; orange: wrong although the " +
+    "**Figure 7.** Outcome of every labelled value (all repeats) by arm. Grey: wrong and evidence not retrieved; orange: wrong although the " +
     "evidence was retrieved.",
   ),
   p(
@@ -739,20 +660,18 @@ const results = [
 
   h2("6.7  Where invented values come from"),
   p(
-    `Invented values on absent fields are concentrated in a few fields: the eight fields in Table 10 account for ` +
+    `Invented values on absent fields are concentrated in a few fields: the eight fields in Table 8 account for ` +
     `${pc(INV.fields.reduce((s, f) => s + f.share_of_invented[K5], 0), 0)} of all invented values at k = 5, and the first four for ` +
     `${pc(INV.fields.slice(0, 4).reduce((s, f) => s + f.share_of_invented[K5], 0), 0)}. Inspecting the answers shows that most are not ` +
-    "hallucinations in the usual sense (Table 10, Figure 11):",
+    "hallucinations in the usual sense (Table 8):",
   ),
-  tableTitle("**Table 10.** Invented-value rate on absent labels for the fields with the most invented values (development split, all repeats)."),
+  tableTitle("**Table 8.** Invented-value rate on absent labels for the fields with the most invented values (development split, all repeats)."),
   table(
     ["Field", "Absent cells per repeat", "k = 5", "k = 20", "k = 5 + null policy", "What the model returns"],
     INV.fields.map((f) => [f.field, String(f.cells), pc(f.rate[K5], 0), pc(f.rate[K20], 0), pc(f.rate[NULLP], 0), CAUSE[f.field] || "not yet inspected"]),
     [20, 11, 8, 8, 11, 42], { left: true },
   ),
   p(""),
-  figure("fig_invented_by_field.png", 600, 320),
-  caption("**Figure 11.** Invented-value rate on absent labels by field, for k = 5, k = 20 and the null-policy prompt (absent cells per repeat in brackets)."),
   bullet(
     "**Label policy, not invention.** For expiration_date the model returns an expiry relative to an event (for example 90 days after termination) " +
     "where the label is empty; the field's own format help asks for exactly this. For document_status it answers \"executed\", and every one of " +
@@ -772,9 +691,9 @@ const results = [
   p(
     "E8a tests the obvious fix: a system prompt that adds three rules to the original (return null unless the text explicitly states the value; " +
     "examples in a field definition and the JSON template are never values to copy; blanks, template wording and sample data are not values). " +
-    "Everything else equals the k = 5 arm, so the comparison is paired on the same cells (Table 11).",
+    "Everything else equals the k = 5 arm, so the comparison is paired on the same cells (Table 9).",
   ),
-  tableTitle("**Table 11.** E8a: null-policy prompt against the original prompt (R07, k = 5, Qwen3 30B, development split, 3 repeats)."),
+  tableTitle("**Table 9.** E8a: null-policy prompt against the original prompt (R07, k = 5, Qwen3 30B, development split, 3 repeats)."),
   table(
     ["Metric", "Original prompt", "Null policy", "Difference (95% CI)", "p"],
     [
@@ -799,17 +718,17 @@ const results = [
   p(
     "Exact and partial-credit scores count paraphrased but correct answers as wrong, which is most visible on structured fields. Under the semantic " +
     "score, Qwen3's score on structured values whose evidence was retrieved rises from 0.24 to 0.47, and on lists from 0.10 to 0.60, while the " +
-    "ranking of systems is unchanged (Tables 5 and 8). Grading all E1 runs cost USD 0.12.",
+    "ranking of systems is unchanged (Tables 4 and 7). Grading all E1 runs cost USD 0.12.",
   ),
   p(
     `The grader was not validated against human grades. Instead, ${G.n} randomly sampled cells from E1 and E6 were re-graded by a second, ` +
-    `independent model from another provider (Gemini 4 Argon; Table 12). The two graders agree on ${pc(G.agreement, 0)} of cells (Cohen's kappa ` +
+    `independent model from another provider (Gemini 4 Argon; Table 10). The two graders agree on ${pc(G.agreement, 0)} of cells (Cohen's kappa ` +
     `${G.kappa.toFixed(2)}, substantial agreement) and on ${pc(G.correct_agreement, 0)} for the binary decision correct versus not correct. The main ` +
     `disagreement is partial versus correct (${G.confusion["partial->correct"]} of ${G.n} cells), with GPT-6 Luna slightly stricter; only ` +
     `${G.confusion["correct->wrong"] + G.confusion["wrong->correct"]} cells were graded correct by one model and wrong by the other. We therefore ` +
     "treat semantic scores as reliable for comparing arms, which share the grader, but not as calibrated absolute accuracies.",
   ),
-  tableTitle(`**Table 12.** Grades of the two graders on ${G.n} sampled cells (rows: GPT-6 Luna, columns: Gemini 4 Argon).`),
+  tableTitle(`**Table 10.** Grades of the two graders on ${G.n} sampled cells (rows: GPT-6 Luna, columns: Gemini 4 Argon).`),
   table(
     ["GPT-6 Luna \\ Gemini 4 Argon", "correct", "partial", "wrong", "Total"],
     ["correct", "partial", "wrong"].map((a) => [a, ...["correct", "partial", "wrong"].map((b) => String(G.confusion[`${a}->${b}`] || 0)),
@@ -822,227 +741,113 @@ const results = [
 const discussion = [
   h1("7  Discussion"),
   p(
-    "**Retrieval was the first bottleneck, and its failures were ranking failures.** Almost all evidence is indexed (98%), but at k = 5 only " +
-    "57–71% of it reaches the reader, and values scored without their evidence are close to zero. Every intervention that raised recall without " +
-    "changing the reader also raised extraction quality. Chunking, which the original plan treated as a likely culprit, loses only 2% of evidence.",
+    "**Fix retrieval first, then the reader.** Almost all evidence is indexed, so the losses were ranking losses: every change that raised recall " +
+    "also raised extraction quality, while chunking cost only 2% of evidence. Once 20 chunks reach the reader, retrieval failures fall to a few " +
+    "per cent and wrong or partially correct readings dominate, so the next gains must come from the reader and from how structured values are scored.",
   ),
   p(
-    "**Simple configuration errors dominate hand-designed pipelines.** Half of the current system's retrieval configurations used a similarity " +
-    "threshold that removes nearly all context, and a top-k setting that the per-query pool silently capped. Neither problem is visible in an " +
-    "end-to-end accuracy figure; both are obvious in a retrieval-only evaluation that costs nothing to run. We recommend fixed-k retrieval with no " +
-    "absolute threshold, and an evidence-recall check whenever retrieval settings change.",
+    "**Check retrieval on its own.** The context-starving threshold and the silently capped top-k of the current system are invisible in an " +
+    "end-to-end figure but obvious in a retrieval-only evaluation that costs nothing. Likewise, an ensemble judged by a small model only adds cost: " +
+    "a judge helps only if it verifies better than the reader extracts, which E9 will test against a deterministic evidence check.",
   ),
   p(
-    "**Ensembles with a weak judge waste computation.** Running seven configurations and letting a small model choose among them was no better than " +
-    "the best single configuration, because the judge cannot tell correct values from incorrect ones. A judge is only useful if it is " +
-    "substantially better at verification than the reader is at extraction; whether a deterministic check (is the quoted evidence actually in the " +
-    "document?) does better is the subject of E9.",
+    "**More context beats better ranking, for a long-context reader.** The \"lost in the middle\" effect [10] does not outweigh the recall gain at " +
+    "about 9,000 tokens per call. A reranker matters mainly when the reader can take only a few chunks, as with an 8k-context local model. The price " +
+    "of more context is more values for absent fields, and these trace to field definitions and labelling policy rather than to instructions the " +
+    "model can be told to follow.",
   ),
   p(
-    "**Long-context readers change the trade-off.** With a 262k-token context window, Qwen3 30B benefits from up to four times as many chunks, and " +
-    "the \"lost in the middle\" degradation [10] does not outweigh the recall gain at this scale (about 9,000 tokens per call). Returns diminish: " +
-    "k = 10 captures most of the gain at well under the cost of k = 20. A reranker, the standard remedy for poor ranking, mainly helps when the " +
-    "reader can take only a few chunks, as with an 8k-context local model. Whether the trend continues to the whole contract is the question of E10.",
-  ),
-  p(
-    "**After retrieval, the reader and the labels are the limit.** At k = 20, retrieval failures are down to 6% of values; wrong and partially " +
-    "correct readings dominate. The invented values that rise with context are mostly not free hallucinations but disagreements about what a " +
-    "field should hold (relative dates, document status) and copies of the field definition. A prompt rule did not change them; clearer field " +
-    "definitions and an explicit labelling policy for derived values are the more promising fix.",
-  ),
-  p(
-    "**Scoring choices change conclusions about readers.** Under exact scoring, structured fields appeared to be read badly even with the right " +
-    "evidence; under semantic scoring, much of that gap was paraphrase. Reports on contract extraction should state which notion of correctness " +
-    "they use, and should not compare strict and lenient numbers across studies.",
+    "**State the notion of correctness.** Under exact scoring structured fields looked badly read; under semantic scoring much of that gap was " +
+    "paraphrase. Strict and lenient numbers should not be compared across studies.",
   ),
 ];
 
-const threats = [
-  h1("8  Threats to Validity"),
+const limitations = [
+  h1("8  Limitations and Improvements"),
+  h2("8.1  Threats to validity"),
   bullet(
-    "**Draft labels.** Labels were written by an LLM and not verified by hand. Errors in labels lower all arms alike and so affect absolute numbers " +
-    "more than paired differences, but a systematic labelling style can favour models that write like the labeller; a Claude-family model would " +
-    "likely be favoured, which is why the ceiling model in E13 is planned to come from another family. Every claimed effect is checked on " +
-    "high-confidence labels.",
-  ),
-  bullet(
-    "**Label policy for derived values.** Several absent labels (relative expiry dates, document status) record a policy choice rather than a fact, " +
-    "so the invented-value rate overstates hallucination on those fields (Section 6.7).",
+    "**Draft labels.** Labels were written by an LLM and not checked by hand, and some absent labels record a policy choice (relative expiry " +
+    "dates, document status), so the invented-value rate overstates hallucination on those fields. Label style may favour Claude-family models, " +
+    "so the planned ceiling model comes from another family; every claim is checked on high-confidence labels.",
   ),
   bullet(
-    "**LLM-graded semantic score.** The semantic score is graded by an LLM and is not human-validated. Agreement with a second grader is " +
-    "substantial (kappa 0.68) but not perfect, and both graders may share biases. We report exact, partial-credit and lenient scores alongside it.",
+    "**LLM-graded semantic score.** It agrees substantially with a second grader (kappa 0.68) but is not human-validated; exact, partial-credit " +
+    "and lenient scores are reported alongside it.",
   ),
   bullet(
-    "**Sample size.** The development split has 36 contracts, so effects smaller than about 0.03 in score cannot be resolved, and per-type " +
-    "breakdowns are descriptive only. The test split (108 contracts) will give tighter intervals.",
+    "**Small development split, also used for tuning.** With 36 contracts, effects below about 0.03 are not resolvable and reported gains are " +
+    "optimistic; the final claims rest on the 108-contract test split, run once.",
   ),
   bullet(
-    "**Tuning on the development split.** Configurations are selected on the same 36 contracts on which they are reported, so the reported gains " +
-    "are optimistic. Final claims will rest on the held-out test split.",
+    "**One reader and changing code.** All grids use Qwen3 30B, and the experiments span several commits. Arms are compared directly only on " +
+    "identical extraction code (E6, E6b, E8a); the baseline will be re-run on the frozen final code.",
   ),
   bullet(
-    "**Code versions.** The experiments ran on several commits (the reranker and its cache were added between E1 and E6). Arms are compared only " +
-    "within an experiment or between experiments whose extraction code is identical (E6, E6b and E8a); other cross-experiment numbers are marked " +
-    "as indicative. The plan re-runs the baseline on the frozen final code.",
+    "**Public documents and fuzzy evidence matching.** The SEC filings may be in the models' pre-training data, and evidence recall relies on " +
+    "80% token coverage of a quote, so absent fields and multi-passage values are not covered.",
   ),
-  bullet(
-    "**Failed runs.** Up to 6 of 108 runs per arm failed (provider errors and timeouts, most during a memory overload) and were retried; paired " +
-    "comparisons use cells present in both arms.",
-  ),
-  bullet(
-    "**Public documents.** The contracts are public SEC filings that may appear in the models' pre-training data, which could inflate absolute " +
-    "accuracy, mostly for well-known parties and dates.",
-  ),
-  bullet(
-    "**Evidence matching.** Evidence recall relies on fuzzy matching of quotes (80% token coverage) and covers only labels that have a quote; " +
-    "evidence for absent fields and for values inferred from several passages is not measured.",
-  ),
-];
-
-const critique = [
-  h1("9  Critique and Improvements"),
-  p(
-    "Building the platform and running the first experiments exposed weaknesses in both the software and the research design. This section " +
-    "lists them honestly, with the improvement each suggests; Table 13 gathers them by priority.",
-  ),
-  h2("9.1  Engineering"),
-  bullet(
-    "**The default pipeline is the weakest configuration.** New runs still default to the seven-configuration ensemble with a judge, which E1 " +
-    "and E11 show is slower, costlier and less accurate than a single hybrid configuration. The default should follow the evidence: hybrid " +
-    "retrieval with anchors, k = 10, no judge.",
-  ),
-  bullet(
-    "**No schema migrations.** schema.sql is the single source of truth and the documented way to change it is to recreate the database. The " +
-    "reranker columns were therefore added to the live database by hand, because recreating it would have deleted the experiment data. " +
-    "Versioned migrations (for example Alembic) would make such changes safe and repeatable.",
-  ),
-  bullet(
-    "**New pipeline settings are not yet in the API or the interface.** The reranker's model and candidate count exist in the schema and the " +
-    "pipeline but can be set only through SQL presets. Every configuration flag should be editable where the others are.",
-  ),
-  bullet(
-    "**Resource limits are implicit.** Eight workers each loading a 2–3.5 GB reranker exhausted a 16 GB laptop and failed runs through timeouts. " +
-    "The fix (a shared on-disk score cache, lazy loading, a thread cap) works, but a worker should declare the resources a run needs, or the " +
-    "model should run in one shared service, so that adding workers cannot overload the machine.",
-  ),
-  bullet(
-    "**Failure handling is minimal.** A run is attempted once; provider timeouts and disconnects fail the whole run, and the experiment runner " +
-    "re-queues it. Retrying a single failed field with back-off would lose less work.",
-  ),
-  bullet(
-    "**No authentication and no continuous integration.** The gateway is designed to hold authentication but does not yet, so the system must " +
-    "not be exposed beyond one machine. The tests run only when a developer runs them; a CI pipeline running the three offline suites, the type " +
-    "checks and the linter on every push would catch regressions earlier.",
-  ),
-  bullet(
-    "**Structured results are hard to read.** The results page shows structured values as raw JSON side by side (Figure 3). A field-by-field " +
-    "comparison that highlights the differing sub-fields would make reviewing extractions much faster. Run progress is polled every two " +
-    "seconds; server-sent events would be lighter.",
-  ),
-  h2("9.2  Research"),
-  bullet(
-    "**Labels are drafts.** Every label was written by an LLM, and some encode a policy choice (Section 6.7). A hand-verified subset of 30–50 " +
-    "contracts, and an explicit labelling policy for derived and relative values, would turn the invented-value rate into a trustworthy measure.",
-  ),
-  bullet(
-    "**The development split is small.** With 36 contracts, effects below about 0.03 cannot be resolved, and per-type results are anecdotal. " +
-    "Only the final test run (108 contracts) can confirm the findings.",
-  ),
-  bullet(
-    "**One reader model.** All grids use Qwen3 30B. The context-size result may not transfer to a reader with a short context window or a " +
-    "different family; E12 tests a local model, and a second hosted reader would strengthen the claim.",
-  ),
-  bullet(
-    "**Prompt instructions are a weak control.** E8a showed that the reader ignores system-prompt rules. Structural controls, such as JSON " +
-    "Schema-constrained output and a required verbatim evidence span that is checked against the document, are the better next steps.",
-  ),
-  bullet(
-    "**Partial credit dominates the remaining error.** About 44% of values are partially correct at k = 20, mostly structured fields with some " +
-    "sub-fields missing. Reporting sub-field recall and precision separately would show which sub-fields the reader misses.",
-  ),
-  bullet(
-    "**Code changed between experiments.** Only experiments on identical extraction code are compared directly. Freezing the code, tagging the " +
-    "commit and re-running the baseline before the final experiments, as planned, removes this caveat.",
-  ),
-  tableTitle("**Table 13.** Improvements by priority."),
+  h2("8.2  Improvements"),
+  p("Building the platform and running the first experiments exposed the following weaknesses, ordered by priority (Table 11)."),
+  tableTitle("**Table 11.** Weaknesses found and the improvement each suggests."),
   table(
-    ["Priority", "Improvement", "Why"],
+    ["Priority", "Weakness", "Improvement"],
     [
-      ["High", "Make hybrid retrieval, k = 10, no judge the default pipeline", "better, cheaper and faster on every measure so far"],
-      ["High", "Hand-verify a label subset; write a labelling policy for derived values", "makes accuracy and invented-value rates trustworthy"],
-      ["High", "Schema-constrained output and evidence-span checks (E8, E9)", "prompt rules alone do not change the reader's behaviour"],
-      ["Medium", "Versioned schema migrations", "safe changes to a database that holds experiment data"],
-      ["Medium", "CI for the offline test suites, type checks and linter", "regressions caught on every push"],
-      ["Medium", "Expose every pipeline flag in the API and UI; per-field retries", "no SQL needed to configure; fewer lost runs"],
-      ["Medium", "Field-by-field diff view for structured results", "faster review of extractions"],
-      ["Low", "Shared model service or declared worker resources", "adding workers cannot overload the machine"],
-      ["Low", "Authentication in the gateway; server-sent events for progress", "needed before any multi-user deployment"],
+      ["High", "The default pipeline is the seven-configuration ensemble with a judge, the weakest and costliest setup measured", "make hybrid retrieval with anchors, k = 10, no judge the default"],
+      ["High", "Labels are LLM drafts with no policy for derived or relative values", "hand-verify 30–50 contracts; write a labelling policy"],
+      ["High", "The reader ignores prompt rules (E8a)", "schema-constrained output and a required evidence span checked against the document (E8, E9)"],
+      ["Medium", "No schema migrations: the reranker columns were added to the live database by hand", "versioned migrations (e.g. Alembic)"],
+      ["Medium", "No continuous integration; tests run only when a developer runs them", "CI for the three offline suites, type checks and linter"],
+      ["Medium", "The reranker settings exist only in the schema and SQL presets; a failed provider call fails the whole run", "expose every pipeline flag in the API and UI; retry single fields with back-off"],
+      ["Medium", "Structured results are shown as raw JSON side by side (Figure 2); about 44% of values are partially correct", "a field-by-field diff view; report sub-field recall and precision"],
+      ["Low", "Eight workers each loading the reranker exhausted a 16 GB machine", "one shared model service, or workers that declare the resources a run needs"],
+      ["Low", "No authentication; progress is polled every two seconds", "authentication in the gateway; server-sent events"],
     ],
-    [11, 49, 40], { left: true },
+    [10, 50, 40],
+    { left: true },
   ),
   p(""),
 ];
 
 const conclusion = [
-  h1("10  Conclusion and Future Work"),
+  h1("9  Conclusion and Next Steps"),
   p(
-    "On the development split, the largest gains in contract extraction came not from a bigger ensemble or a judge but from getting the right text " +
-    "to the reader: removing a context-starving threshold, adding lexical search and anchor chunks, and passing more chunks to a reader that can " +
-    `use them. A single hybrid configuration with 20 chunks and Qwen3 30B reaches a semantic score of ${f2(A[K20].semantic)} at about one US cent ` +
-    `per contract, against ${f2(A[CUR].semantic)} for the current seven-configuration system with Llama 3.1 8B at almost a cent per contract; ` +
-    `10 chunks reach ${f2(A[K10].semantic)} for ${usd(A[K10].cost)} USD. A cross-encoder reranker substitutes for hybrid retrieval rather than ` +
-    "adding to it, and its retrieval gain does not reach the answers. More context also brings more invented values on absent fields, which a " +
-    "prompt rule does not remove; they trace back to field definitions and labelling policy.",
+    "On the development split, the largest gains came not from a bigger ensemble or a judge but from getting the right text to the reader: " +
+    "removing a context-starving threshold, adding lexical search and anchor chunks, and passing more chunks to a reader that can use them. " +
+    `A single hybrid configuration with 10 chunks and Qwen3 30B reaches a semantic score of ${f2(A[K10].semantic)} for ${usd(A[K10].cost)} USD ` +
+    `per contract (${f2(A[K20].semantic)} with 20 chunks), against ${f2(A[CUR].semantic)} for the current seven-configuration system. The ` +
+    "reranker's retrieval gain does not reach the answers, and the extra invented values that come with more context call for better field " +
+    "definitions and labels, not stronger instructions.",
   ),
-  tableTitle("**Table 13.** Experiment programme and status."),
+  p(
+    `Table 12 gives the status of the programme. LLM spending so far is about USD ${SPENT.toFixed(2)}, measured from the logged calls at OpenRouter ` +
+    "list prices (including USD 0.53 for semantic grading and the grader cross-check). The remaining experiments run in the order shown, on the " +
+    "development split, with retrieval variants scored first by the free retrieval-only evaluation; fine-tuning follows once the best " +
+    "approach is fixed, and an error analysis of 50 development-split failures decides whether it targets the retriever or the reader.",
+  ),
+  tableTitle("**Table 12.** Experiment programme: status, cost so far and estimated cost of the remaining steps (USD)."),
   table(
-    ["#", "Question", "Status"],
+    ["#", "Question", "Status", "Cost"],
     [
-      ["E1", "Baseline and noise floor", "Done (Section 6.1)"],
-      ["E2", "Retrieval sweep: top-k, threshold, hits per query", "Done (Section 6.3)"],
-      ["E3", "Embedding models: nomic with and without task prefixes, Qwen3-Embedding, bge-m3", "Planned"],
-      ["E4", "Chunking: per page vs structure-aware, chunk size, contextual chunk text", "Planned"],
-      ["E5", "Query expansion × hybrid search (2×2), HyDE and description-as-query", "Planned"],
-      ["E6", "Reranking and context size (k = 5, 10, 20)", "Done (Sections 6.4–6.6)"],
-      ["E7", "Decomposition method for PDFs", "Planned"],
-      ["E8", "Reader: null-policy prompt; field vs group calls, schema-constrained output, quote-then-answer, oracle evidence", "Null-policy arm done (6.8); rest planned"],
-      ["E9", "Verification: LLM judge vs evidence-span check", "Planned"],
-      ["E10", "RAG vs whole contract in a long context", "Planned (last before the test run)"],
-      ["E11", "Ensemble with judge selection", "Done (Section 6.2)"],
-      ["E12", "Leave-one-out ablation and transfer to a local model", "Planned"],
-      ["E13", "Test split, once: baseline, full stack, long context, frontier ceiling", "Planned"],
+      ["E1", "Baseline and noise floor", "Done (6.1)", COST(0)],
+      ["E2", "Retrieval sweep: top-k, threshold, hits per query", "Done (6.3)", "0"],
+      ["E6", "Reranking and context size (k = 5, 10, 20)", "Done (6.4–6.6)", (N.cost_log[1].cost + N.cost_log[2].cost).toFixed(2)],
+      ["E8", "Reader: null-policy prompt", "Done (6.8)", COST(3)],
+      ["E11", "Ensemble with judge selection", "Done (6.2)", "0 (reuses E1)"],
+      ["E5", "Query expansion × hybrid search; HyDE and description queries", "Next, step 1", "≈ 1.5"],
+      ["E3", "Embedding models, nomic task prefixes", "Step 2", "≈ 1.5"],
+      ["E4", "Structure-aware and contextual chunking", "Step 3", "≈ 1.5 (+ 4–6)"],
+      ["E8", "Reader: group calls, constrained output, quote-then-answer, oracle evidence", "Step 4", "≈ 3"],
+      ["E9", "Verification: LLM judge vs evidence-span check", "Step 5", "≈ 2"],
+      ["E7", "PDF decomposition method", "Step 6", "≈ 1.5"],
+      ["E12", "Leave-one-out ablation; transfer to a local model", "Step 7", "≈ 3"],
+      ["E10", "RAG vs the whole contract in context", "Step 8", "≈ 1–6"],
+      ["FT", "Fine-tune Llama 3.1 8B (LoRA) on the best pipeline's retrieved context", "Step 9", "local, no API cost"],
+      ["E13", "Test split, once: baseline, full stack, fine-tuned model, long context, frontier ceiling", "Step 10", "≈ 30"],
     ],
-    [8, 62, 30], { left: true },
+    [8, 58, 18, 16],
+    { left: true },
   ),
   p(""),
-  h2("10.1  Plan for the remaining work"),
-  p(
-    "The remaining experiments run in the order below, all on the development split until the final test run. Retrieval experiments are scored " +
-    "with the free retrieval-only evaluation first, and only their best arms are run end to end. Costs are estimates at the measured cost per arm " +
-    `(about USD ${(A[K10].cost * 108).toFixed(2)} for one k = 10 arm over 36 contracts and three repeats).`,
-  ),
-  tableTitle("**Table 14.** Order and estimated LLM cost of the remaining experiments."),
-  table(
-    ["Step", "Experiment", "What it decides", "Estimated cost (USD)"],
-    [
-      ["1", "E5 query expansion × hybrid", "whether expansion and BM25 each help, and HyDE or description queries", "0 retrieval + ≈ 1.5 end to end"],
-      ["2", "E3 embeddings", "whether a stronger embedding model or nomic task prefixes raise recall", "0 retrieval + ≈ 1.5"],
-      ["3", "E4 chunking", "structure-aware and contextual chunks", "≈ 1.5 (+ 4–6 for contextual chunk text)"],
-      ["4", "E8 reader (rest)", "group calls, constrained output, quote-then-answer, clearer field definitions, oracle evidence", "≈ 3"],
-      ["5", "E9 verification", "LLM judge vs evidence-span check", "≈ 2"],
-      ["6", "E7 decomposition", "PDF converters on the 42 PDFs", "≈ 1.5"],
-      ["7", "E12 ablation and transfer", "what each component is worth in the full stack; local model", "≈ 3"],
-      ["8", "E10 long context", "RAG vs the whole contract in context", "≈ 1–6"],
-      ["9", "E13 test split", "final, once: baseline, full stack, long context, frontier ceiling", "≈ 30"],
-    ],
-    [7, 24, 47, 22], { left: true },
-  ),
-  p(""),
-  p(
-    "An error analysis of 50 test-set failures, classified as not indexed, not retrieved, retrieved but misread, normalisation, or label error " +
-    "using the evidence-recall data, will decide whether further effort should go to the retriever or the reader.",
-  ),
 ];
 
 const references = [
@@ -1067,52 +872,11 @@ const references = [
   ].map((t) => new Paragraph({ children: runs(t, { size: 20 }), indent: { left: 440, hanging: 440 }, spacing: { after: 80 } })),
 ];
 
-const appendix = [
-  h1("Appendix A  Retrieval configurations"),
-  tableTitle("**Table A1.** Retrieval configurations used in this report. Expansion = field label plus expansion queries."),
-  table(
-    ["Name", "Top-k", "Threshold", "Expansion", "Hits / query", "BM25", "Anchors", "Reranker"],
-    [
-      ["RAG01", "10", "0.5", "yes", "3", "no", "0", "—"],
-      ["RAG02", "5", "0.5", "yes", "3", "no", "0", "—"],
-      ["RAG03", "3", "0.5", "yes", "3", "no", "0", "—"],
-      ["RAG04", "10", "0.7", "no", "3", "no", "0", "—"],
-      ["RAG05", "5", "0.7", "no", "3", "no", "0", "—"],
-      ["RAG06", "3", "0.7", "no", "3", "no", "0", "—"],
-      ["RAG07", "5", "0.5", "yes", "3", "yes", "2", "—"],
-      ["R-base", "5", "none", "yes", "5", "no", "0", "—"],
-      ["R07-k5", "5", "0.5", "yes", "20", "yes", "2", "—"],
-      ["R07-k10", "10", "0.5", "yes", "20", "yes", "2", "—"],
-      ["R07-k20", "20", "0.5", "yes", "20", "yes", "2", "—"],
-      ["R07-k5-rr", "5", "0.5", "yes", "20", "yes", "2", "bge-reranker-v2-m3 (int8), 40 candidates"],
-    ],
-    [12, 8, 10, 11, 11, 8, 9, 31],
-  ),
-  p(""),
-  h1("Appendix B  Experiment log and cost"),
-  tableTitle("**Table B1.** Experiments run so far (development split). LLM cost from the runs' logged calls at OpenRouter list prices."),
-  table(
-    ["Experiment", "Arms × repeats", "Runs (incl. retries)", "LLM cost (USD)", "Notes"],
-    [
-      ["E1 baseline", "2 × 3", String(N.cost_log[0].runs), N.cost_log[0].cost.toFixed(2), "current system and R-base; also yields E11"],
-      ["E2 retrieval sweeps", "37 configs", "—", "0", "retrieval only, no LLM calls"],
-      ["E6 reranker retrieval", "8 configs", "—", "0", "local CPU, about 78 minutes"],
-      ["E6 end to end", "3 × 3", String(N.cost_log[1].runs), N.cost_log[1].cost.toFixed(2), "R07-k5, R07-k20, R07-k5-rr"],
-      ["E6b k = 10", "1 × 3", String(N.cost_log[2].runs), N.cost_log[2].cost.toFixed(2), "R07-k10"],
-      ["E8a null policy", "1 × 3", String(N.cost_log[3].runs), N.cost_log[3].cost.toFixed(2), "R07-k5 with the null-policy prompt"],
-      ["Semantic grading", "—", "—", (0.12 + 0.10 + 0.02 + 0.02).toFixed(2), "GPT-6 Luna, E1, E6, E6b, E8a"],
-      ["Grader cross-check", "150 cells", "—", "0.27", "Gemini 4 Argon"],
-      ["**Total**", "", "", `**${SPENT.toFixed(2)}**`, ""],
-    ],
-    [22, 14, 14, 14, 36],
-  ),
-];
-
 // ---------- document ----------
 
 const doc = new Document({
   creator: "Ram",
-  title: "What Improves LLM Contract Extraction?",
+  title: "Structured Data Extraction from Bilateral Contracts",
   styles: {
     default: { document: { run: { font: FONT, size: 22 } } },
     paragraphStyles: [
@@ -1137,15 +901,15 @@ const doc = new Document({
       properties: { page: { size: { width: 11906, height: 16838 }, margin: { top: 1134, bottom: 1134, left: 1134, right: 1134 } } },
       headers: {
         default: new Header({ children: [new Paragraph({ alignment: AlignmentType.RIGHT,
-          children: [new TextRun({ text: "What Improves LLM Contract Extraction? Progress report", size: 16, color: "8A8A8A" })] })] }),
+          children: [new TextRun({ text: "Structured Data Extraction from Bilateral Contracts · Progress report", size: 16, color: "8A8A8A" })] })] }),
       },
       footers: {
         default: new Footer({ children: [new Paragraph({ alignment: AlignmentType.CENTER,
           children: [new TextRun({ children: [PageNumber.CURRENT], size: 18 })] })] }),
       },
       children: [
-        ...title, ...abstract, ...progress, ...introduction, ...related, ...system, ...data, ...method, ...results,
-        ...discussion, ...threats, ...critique, ...conclusion, ...references, ...appendix,
+        ...title, ...abstract, ...introduction, ...related, ...system, ...data, ...method, ...results,
+        ...discussion, ...limitations, ...conclusion, ...references,
       ],
     },
   ],

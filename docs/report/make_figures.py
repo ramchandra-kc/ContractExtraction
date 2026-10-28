@@ -207,27 +207,6 @@ def fig_recall_vs_k(ret):
     plt.close(fig)
 
 
-def fig_e1(nums):
-    metrics = [("score_ci", "Score (partial credit)"), ("semantic_ci", "Semantic score"), ("invented_ci", "Invented on absent")]
-    arms = [(CURRENT, GREY), (RBASE, BLUE)]
-    fig, ax = plt.subplots(figsize=(5.4, 3.0), dpi=200)
-    width = 0.36
-    for i, (arm, color) in enumerate(arms):
-        cis = [nums[arm][m] for m, _ in metrics]
-        xs = [j + (i - 0.5) * (width + 0.03) for j in range(len(metrics))]
-        ax.bar(xs, [c["mean"] for c in cis], width, color=color, label=LABEL[arm] + (" (Llama 3.1 8B, 7 configs + judge)" if arm == CURRENT else " (Qwen3 30B)"),
-               yerr=errorbar_args(cis), error_kw={"elinewidth": 0.8, "capsize": 2.5, "ecolor": INK})
-        for x, c in zip(xs, cis):
-            ax.annotate(f"{c['mean']:.2f}", (x, c["hi"]), textcoords="offset points", xytext=(0, 2), ha="center", fontsize=7, color=INK)
-    ax.set_xticks(range(len(metrics)), [m for _, m in metrics])
-    ax.set_ylim(0, 0.6)
-    ax.set_ylabel("Mean over cells")
-    ax.legend(loc="upper center", bbox_to_anchor=(0.5, 1.14), ncol=2, fontsize=7.5)
-    fig.tight_layout()
-    fig.savefig(OUT / "fig_e1_baseline.png")
-    plt.close(fig)
-
-
 def fig_context(nums):
     ks = [5, 10, 20]
     arms = [K5, K10, K20]
@@ -344,48 +323,6 @@ def fig_attribution(att):
     plt.close(fig)
 
 
-def fig_invented(inv, arms):
-    fields = inv["fields"]
-    colors = {K5: ORANGE, K20: RED, NULLP: VIOLET}
-    fig, ax = plt.subplots(figsize=(6.2, 3.3), dpi=200)
-    height = 0.26
-    for i, a in enumerate(arms):
-        ys = [len(fields) - 1 - j + (1 - i) * height for j in range(len(fields))]
-        ax.barh(ys, [f["rate"].get(a, 0) for f in fields], height, color=colors[a], label=LABEL[a])
-    ax.set_yticks([len(fields) - 1 - j for j in range(len(fields))], [f"{f['field']} ({f['cells']})" for f in fields], fontsize=7.5)
-    ax.set_xlim(0, 1)
-    ax.xaxis.set_major_formatter(matplotlib.ticker.PercentFormatter(1.0))
-    ax.grid(axis="y", visible=False)
-    ax.grid(axis="x", color=GRID, linewidth=0.6)
-    ax.set_xlabel("Invented-value rate on absent labels (cells per repeat in brackets)")
-    ax.legend(loc="lower right", fontsize=7.5)
-    fig.tight_layout()
-    fig.savefig(OUT / "fig_invented_by_field.png")
-    plt.close(fig)
-
-
-def code_stats():
-    """Non-blank lines and files per component, from the files git tracks (generated API types excluded)."""
-    import subprocess
-    files = subprocess.run(["git", "ls-files"], cwd=ROOT, capture_output=True, text=True, check=True).stdout.split()
-    groups = [("backend/src/", "backend"), ("backend/tests/", "backend_tests"), ("gateway/src/", "gateway"),
-              ("gateway/tests/", "gateway_tests"), ("frontend/src/", "frontend"), ("docker/", "sql"), ("scripts/", "scripts")]
-    out = defaultdict(lambda: {"files": 0, "lines": 0})
-    for f in files:
-        if f.endswith(("schema.d.ts", "openapi.json")) or not f.endswith((".py", ".ts", ".tsx", ".sql", ".sh", ".css")):
-            continue
-        g = next((name for prefix, name in groups if f.startswith(prefix)), None)
-        if g is None:
-            continue
-        if g == "frontend" and (".test." in f or "/test/" in f):
-            g = "frontend_tests"
-        out[g]["files"] += 1
-        out[g]["lines"] += sum(1 for line in open(ROOT / f, encoding="utf-8", errors="ignore") if line.strip())
-    log = subprocess.run(["git", "log", "--format=%ad", "--date=short"], cwd=ROOT, capture_output=True, text=True, check=True).stdout.split()
-    return {"components": dict(out), "commits": len(log), "first_commit": log[-1], "last_commit": log[0],
-            "tables": (ROOT / "docker" / "schema.sql").read_text().count("CREATE TABLE")}
-
-
 def fig_architecture():
     """The deployment diagram of docs/architecture.md, redrawn."""
     from matplotlib.patches import FancyBboxPatch
@@ -482,21 +419,18 @@ if __name__ == "__main__":
              "attribution": {a: attribution(rows, a) for a, rows in ((CURRENT, E1), (RBASE, E1), (K5, E6), (K10, E6),
                                                                       (K20, E6), (RR, E6), (NULLP, E8))},
              "invented_by_field": invented_by_field(E6 + [r for r in E8 if r["pipeline"] == NULLP], [K5, K20, NULLP]),
-             "code": code_stats(), "copied_example": copied_example(E6 + [r for r in E8 if r["pipeline"] == NULLP]), "cost_log": cost_log(), "grader": grader()}
+             "copied_example": copied_example(E6 + [r for r in E8 if r["pipeline"] == NULLP]), "cost_log": cost_log(), "grader": grader()}
     forest = {k: {**d6[k], NULLP: d8[k][NULLP]} for k in ("semantic", "score", "exact", "invented",
                                                           "semantic_high", "score_high", "exact_high", "invented_high")}
     fig_architecture()
     fig_recall_vs_k(nums["retrieval"])
-    fig_e1(nums["arms"])
     fig_context(nums["arms"])
     fig_forest(forest)
     fig_cost(nums["arms"])
     fig_attribution(nums["attribution"])
-    fig_invented(nums["invented_by_field"], [K5, K20, NULLP])
     (OUT / "numbers.json").write_text(json.dumps(nums, indent=1, default=float))
-    old = OUT / "fig_e6_end_to_end.png"
-    if old.exists():
-        old.unlink()
+    for stale in ("fig_e6_end_to_end.png", "fig_e1_baseline.png", "fig_invented_by_field.png", "ui_documents.png", "ui_configuration.png"):
+        (OUT / stale).unlink(missing_ok=True)
     a = nums["arms"]
     print("check:", {x: (round(a[x]["semantic"], 3), round(a[x]["score"], 3), round(a[x]["invented"], 4), a[x]["recall"]) for x in a})
     print("e6 semantic diffs:", {k: (round(v["diff"], 3), round(v["lo"], 3), round(v["hi"], 3)) for k, v in d6["semantic"].items()})
