@@ -93,7 +93,9 @@ def variants(configs: list[RetrievalConfig], top_ks: list[int] | None = None,
 
 def evaluate(db: Database, storage: FileStorage, settings: Settings, providers: Providers, pipeline_name: str | None,
              documents: list[m.Document], configs: list[RetrievalConfig],
-             report: Callable[[str], None] = print) -> list[RetrievalRow]:
+             report: Callable[[str], None] = print, every_label: bool = False) -> list[RetrievalRow]:
+    """Recall rows for labels with a value and an evidence quote. ``every_label`` also retrieves the other labelled
+    fields (no row: nothing to match), as an experiment run would, to fill the reranker's score cache."""
     with db.session() as s:
         pipeline = ConfigRepo(s).resolve_pipeline(pipeline_name)
     fields = {f.id: f for f in pipeline.field_set.fields}
@@ -105,8 +107,9 @@ def evaluate(db: Database, storage: FileStorage, settings: Settings, providers: 
             gt = GroundTruthRepo(s)
             quoted = [(fields[f.id], quote, confidence_from_notes(label.notes))
                       for f, label in gt.labels(doc.id, gt.field_set())
-                      if label is not None and label.expected_value not in (None, "") and f.id in fields
-                      and (quote := quote_from_notes(label.notes))]
+                      if label is not None and f.id in fields
+                      and ((quote := quote_from_notes(label.notes) if label.expected_value not in (None, "") else None)
+                           or every_label)]
         if not quoted:
             report(f"[{n}/{len(documents)}] {doc.code}: no labels with an evidence quote, skipped")
             continue
@@ -121,6 +124,8 @@ def evaluate(db: Database, storage: FileStorage, settings: Settings, providers: 
         for f, quote, confidence in quoted:
             for rc in configs:
                 hits = retriever.retrieve(f, rc)
+                if quote is None:
+                    continue
                 ev = matcher.match(quote, [(i, h.chunk_id) for i, h in enumerate(hits, start=1)], chunk_ids)
                 if ev is None:
                     continue

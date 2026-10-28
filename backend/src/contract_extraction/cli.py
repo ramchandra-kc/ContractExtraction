@@ -542,7 +542,7 @@ def experiment_retrieval_eval(args: argparse.Namespace) -> int:
             return 1
         print(f"{len(docs)} documents × {len(configs)} RAG config variants, pipeline {pipeline.name}")
         rows = evaluate(db, FileStorage(settings.storage_root), settings, Providers.from_settings(settings),
-                        pipeline.name, sorted(docs.values(), key=lambda d: d.code), configs)
+                        pipeline.name, sorted(docs.values(), key=lambda d: d.code), configs, every_label=args.warm)
         out = args.output or BACKEND_ROOT.parent / "experiments" / args.name
         out.mkdir(parents=True, exist_ok=True)
         overall = summary(rows)
@@ -837,6 +837,9 @@ def main(argv: list[str] | None = None) -> int:
     p_eret.add_argument("--per-query-top", help="comma-separated hits per query before merging, to sweep (caps top_k)")
     p_eret.add_argument("--rerank", help="comma-separated cross-encoders (fastembed names) to sweep; none = off")
     p_eret.add_argument("--candidates", help="comma-separated rerank candidate pool sizes to sweep")
+    p_eret.add_argument("--warm", action="store_true",
+                        help="also retrieve labelled fields without an evidence quote, as runs do: fills the reranker "
+                             "score cache in one process before workers run a reranking experiment")
     p_eret.add_argument("-o", "--output", type=Path, help="folder (default: experiments/NAME in the repository)")
     p_ecmp = exp_sub.add_parser("compare", help="paired comparison of arms with cluster bootstrap CIs and p-values")
     p_ecmp.add_argument("name", type=Path, help="export folder, or its name under experiments/")
